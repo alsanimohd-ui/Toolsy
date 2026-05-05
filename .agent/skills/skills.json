@@ -1,0 +1,40 @@
+{
+  "installedSkills": [
+    {
+      "name": "api-integration",
+      "category": "core",
+      "path": "skills/core/api-integration.md",
+      "description": "Guidelines for integrating external APIs safely and securely"
+    },
+    {
+      "name": "typescript-best-practices",
+      "category": "core",
+      "path": "skills/core/typescript-best-practices.md",
+      "description": "Rules for type safety and clean TypeScript code"
+    },
+    {
+      "name": "git-commit",
+      "category": "workflows",
+      "path": "skills/workflows/git-commit.md",
+      "description": "Workflow for generating conventional commit messages"
+    },
+    {
+      "name": "new-component",
+      "category": "workflows",
+      "path": "skills/workflows/new-component.md",
+      "description": "Workflow for creating reusable, framework-independent UI components"
+    },
+    {
+      "name": "code-review",
+      "category": "workflows",
+      "path": "skills/workflows/code-review.md",
+      "description": "Workflow for performing detailed, constructive code reviews"
+    },
+    {
+      "name": "cinematic-ui",
+      "category": "ui",
+      "path": "skills/ui/cinematic-ui.md",
+      "description": "Design and build websites with film-inspired visual systems"
+    }
+  ]
+}
