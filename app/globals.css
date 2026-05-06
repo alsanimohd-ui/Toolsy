@@ -3,16 +3,29 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0a0f;
-  --surface: #111118;
-  --surface-raised: #16161f;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-raised: #f1f5f9;
+  --border: #e2e8f0;
+  --border-subtle: #cbd5e1;
+  --muted: #64748b;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-glow: rgba(59, 130, 246, 0.1);
+}
+
+.dark {
+  --background: #020205;
+  --foreground: #f8fafc;
+  --surface: #0a0a0f;
+  --surface-raised: #111118;
   --border: #1e1e2e;
   --border-subtle: #2a2a3d;
-  --foreground: #e8e8f0;
-  --muted: #6b6b8a;
+  --muted: #94a3b8;
   --accent: #7c6aff;
   --accent-hover: #9b8dff;
-  --accent-glow: rgba(124, 106, 255, 0.15);
+  --accent-glow: rgba(124, 106, 255, 0.2);
 }
 
 * {
@@ -32,15 +45,32 @@ body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+/* Mesh Gradient Styles */
+.mesh-gradient {
+  background-color: var(--background);
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+}
+
+.light .mesh-gradient {
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(210,100%,95%,1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(190,100%,95%,1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(280,100%,95%,1) 0, transparent 50%);
 }
 
 ::selection {
   background-color: var(--accent-glow);
-  color: var(--accent-hover);
+  color: var(--accent);
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -49,7 +79,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-subtle);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
