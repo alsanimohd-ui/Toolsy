@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { Tool } from "@/lib/tools";
+import GlassCard from "@/components/ui/GlassCard";
 
 interface ToolCardProps {
   tool: Tool;
@@ -16,43 +17,37 @@ export function ToolCard({ tool, color }: ToolCardProps) {
     <Link
       href={tool.route}
       target={isExternal ? "_blank" : undefined}
-      className="group relative block p-6 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all overflow-hidden"
+      className="group relative block transition-all"
     >
-      {/* Hover Glow */}
-      <div 
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-        style={{
-          background: `radial-gradient(600px circle at var(--mouse-x) var(--mouse-y), ${color}11, transparent 40%)`
-        }}
-      />
-
-      <div className="relative z-10">
-        <div className="flex items-start justify-between mb-4">
+      <GlassCard className="p-6 h-full flex flex-col gap-4 border-slate-200/60 dark:border-white/5 hover:border-accent/40">
+        <div className="flex items-start justify-between">
           <div 
-            className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border border-white/5 bg-white/[0.03] group-hover:bg-white/[0.06] transition-colors shadow-inner"
-            style={{ borderColor: `${color}22` }}
+            className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border border-border-subtle bg-surface group-hover:bg-accent/5 transition-all shadow-inner"
+            style={{ borderColor: `${color}44` }}
           >
             {tool.icon}
           </div>
           {isExternal && (
-            <span className="text-[10px] font-black tracking-widest text-white/20 uppercase border border-white/5 px-2 py-1 rounded">
+            <span className="text-[10px] font-black tracking-widest text-muted uppercase border border-border-subtle px-2 py-1 rounded">
               External
             </span>
           )}
         </div>
 
-        <h3 className="text-lg font-bold text-white mb-2 group-hover:text-white transition-colors">
-          {tool.name}
-        </h3>
-        <p className="text-sm text-white/40 leading-relaxed mb-6">
-          {tool.description}
-        </p>
+        <div className="flex flex-col gap-2">
+          <h3 className="text-lg font-black text-foreground group-hover:text-accent transition-colors">
+            {tool.name}
+          </h3>
+          <p className="text-sm text-muted leading-relaxed line-clamp-2 font-medium">
+            {tool.description}
+          </p>
+        </div>
 
-        <div className="flex items-center gap-1.5 text-xs font-black tracking-widest uppercase opacity-40 group-hover:opacity-100 transition-all" style={{ color: color }}>
+        <div className="mt-auto flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase text-muted group-hover:text-accent transition-all">
           <span>{isExternal ? "Open" : "Launch"}</span>
           <ArrowUpRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
         </div>
-      </div>
+      </GlassCard>
     </Link>
   );
 }
@@ -67,21 +62,21 @@ interface SectionBlockProps {
 
 export function SectionBlock({ id, title, description, color, tools }: SectionBlockProps) {
   return (
-    <section id={id} className="py-32 scroll-mt-20">
+    <section id={id} className="py-24 md:py-32 scroll-mt-20">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex flex-col gap-4 mb-16">
           <div className="flex items-center gap-4">
-            <h2 className="text-4xl font-black tracking-tighter text-white uppercase italic">
+            <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-foreground uppercase italic drop-shadow-sm">
               {title}
             </h2>
-            <div className="h-0.5 flex-1 bg-gradient-to-r from-white/10 to-transparent" />
+            <div className="h-[2px] flex-1 bg-gradient-to-r from-accent/20 to-transparent" />
           </div>
-          <p className="text-[var(--muted)] max-w-xl">
+          <p className="text-muted max-w-xl font-medium leading-relaxed">
             {description}
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {tools.map((tool) => (
             <ToolCard key={tool.slug} tool={tool} color={color} />
           ))}

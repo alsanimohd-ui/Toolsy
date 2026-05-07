@@ -3,19 +3,28 @@
 @tailwind utilities;
 
 :root {
+  /* High-Contrast Light Mode */
   --background: #f8fafc;
-  --foreground: #0f172a;
+  --foreground: #020617; /* Deepest Navy for maximum contrast */
   --surface: #ffffff;
   --surface-raised: #f1f5f9;
   --border: #e2e8f0;
   --border-subtle: #cbd5e1;
-  --muted: #64748b;
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-glow: rgba(59, 130, 246, 0.1);
+  --muted: #475569; /* Darker muted text */
+  
+  --accent: #2563eb; /* Stronger Blue */
+  --accent-hover: #1d4ed8;
+  --accent-glow: rgba(37, 99, 235, 0.12);
+
+  /* Semantic Glass Tokens - Light */
+  --glass-bg: rgba(255, 255, 255, 0.4);
+  --glass-border: rgba(15, 23, 42, 0.1);
+  --glass-shadow: rgba(0, 0, 0, 0.05);
+  --glass-blur: 24px;
 }
 
 .dark {
+  /* Premium Dark Mode */
   --background: #020205;
   --foreground: #f8fafc;
   --surface: #0a0a0f;
@@ -23,9 +32,16 @@
   --border: #1e1e2e;
   --border-subtle: #2a2a3d;
   --muted: #94a3b8;
+  
   --accent: #7c6aff;
   --accent-hover: #9b8dff;
-  --accent-glow: rgba(124, 106, 255, 0.2);
+  --accent-glow: rgba(124, 106, 255, 0.25);
+
+  /* Semantic Glass Tokens - Dark */
+  --glass-bg: rgba(0, 0, 0, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: rgba(0, 0, 0, 0.4);
+  --glass-blur: 40px;
 }
 
 * {
@@ -48,7 +64,7 @@ body {
   transition: background-color 0.5s ease, color 0.5s ease;
 }
 
-/* Mesh Gradient Styles */
+/* Mesh Gradient System - Dynamic & Atmospheric */
 .mesh-gradient {
   background-color: var(--background);
   background-image: 
@@ -59,9 +75,18 @@ body {
 
 .light .mesh-gradient {
   background-image: 
-    radial-gradient(at 0% 0%, hsla(210,100%,95%,1) 0, transparent 50%), 
-    radial-gradient(at 50% 0%, hsla(190,100%,95%,1) 0, transparent 50%), 
-    radial-gradient(at 100% 0%, hsla(280,100%,95%,1) 0, transparent 50%);
+    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.08) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, rgba(124, 106, 255, 0.05) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, rgba(239, 68, 68, 0.05) 0, transparent 50%);
+}
+
+/* Glassmorphism Standard Utility */
+.glass-container {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 var(--glass-shadow);
 }
 
 ::selection {

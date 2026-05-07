@@ -81,19 +81,12 @@ function polarToCartesian(centerX: number, centerY: number, radius: number, angl
 export default function RadialMenu({ activeSegment }: RadialMenuProps) {
   const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
 
-  const scrollToSection = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // Fixed internal coordinates for viewBox consistency
   const cx = 450;
   const cy = 450;
-  const mainRadius = 310;
+  const mainRadius = 300;
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-visible">
-      {/* SVG is now fully fluid within its parent responsive container */}
       <svg 
         viewBox="0 0 900 900" 
         className="w-full h-full pointer-events-auto overflow-visible"
@@ -102,8 +95,7 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
         <defs>
           {segments.map((s) => (
             <filter key={`glow-${s.id}`} id={`glow-${s.id}`}>
-              <feGaussianBlur stdDeviation="15" result="blur" />
-              <feColorMatrix type="matrix" values="0 0 0 0 1   0 0 0 0 1   0 0 0 0 1  0 0 0 0.2 0" />
+              <feGaussianBlur stdDeviation="12" result="blur" />
               <feComposite in="SourceGraphic" operator="over" />
             </filter>
           ))}
@@ -119,11 +111,12 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
         <circle
           cx={cx}
           cy={cy}
-          r={mainRadius}
+          r="410"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1"
-          className="opacity-[0.05] text-foreground dark:text-white"
+          strokeWidth="0.5"
+          strokeDasharray="6 48"
+          className="opacity-10 dark:opacity-[0.05] text-slate-400 dark:text-white"
         />
 
         {segments.map((s) => {
@@ -137,64 +130,61 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
           return (
             <g
               key={s.id}
-              className="cursor-pointer group/segment"
+              className="cursor-pointer"
               onMouseEnter={() => setHoveredSegment(s.id)}
               onMouseLeave={() => setHoveredSegment(null)}
-              onClick={() => scrollToSection(s.id)}
             >
-              {/* Fluid Arc Segment */}
+              {/* Vibrant Arc Segment - Higher opacity in light mode */}
               <motion.path
                 d={visualArc}
                 fill="none"
                 stroke={s.color}
-                strokeWidth={56}
+                strokeWidth={54}
                 strokeLinecap="round"
                 initial={{ opacity: 0, pathLength: 0 }}
                 animate={{ 
                   pathLength: 1,
-                  opacity: isSelected ? 0.95 : 0.1,
-                  strokeWidth: isSelected ? 62 : 56,
+                  opacity: isSelected ? 0.95 : 0.15, // Increased base opacity
+                  strokeWidth: isSelected ? 60 : 54,
                 }}
-                transition={{ duration: 1.2, ease: [0.23, 1, 0.32, 1] }}
+                transition={{ duration: 1, ease: [0.23, 1, 0.32, 1] }}
                 style={{ 
-                  filter: isSelected ? `drop-shadow(0 0 30px ${s.color}66)` : "none"
+                  filter: isSelected ? `drop-shadow(0 0 25px ${s.color}66)` : "none"
                 }}
               />
 
-              {/* Responsive Label */}
-              <text className="pointer-events-none select-none uppercase tracking-[0.5em] font-black text-[14px]">
+              {/* Upright Label - High contrast for light mode */}
+              <text className="pointer-events-none select-none uppercase tracking-[0.5em] font-black text-[13px]">
                 <textPath
                   href={`#path-${s.id}`}
                   startOffset="50%"
                   textAnchor="middle"
-                  className="fill-white dark:fill-white"
+                  className="fill-slate-900 dark:fill-white" // DARK in light mode
                   style={{ 
-                    opacity: isSelected ? 1 : 0.3,
-                    transition: "opacity 0.3s ease",
-                    filter: isSelected ? "drop-shadow(0 0 10px rgba(255,255,255,0.5))" : "none"
+                    opacity: isSelected ? 1 : 0.4, // Increased base opacity
+                    transition: "opacity 0.3s ease"
                   }}
                 >
                   {s.label}
                 </textPath>
               </text>
 
-              {/* Dynamic Quick Tools - Relative Positioning */}
+              {/* Tool Cards */}
               <AnimatePresence>
                 {isSelected && (
                   <g>
                     {s.tools.map((tool, idx) => {
-                      const angleOffset = (idx - 1) * 28;
-                      // Move tools inward on smaller viewports (handled by overall SVG scaling)
-                      const toolPos = polarToCartesian(cx, cy, mainRadius + 115, midAngle + angleOffset);
+                      const angleOffset = (idx - 1) * 26;
+                      const toolPos = polarToCartesian(cx, cy, mainRadius + 110, midAngle + angleOffset);
                       const Icon = tool.icon;
                       
                       return (
                         <foreignObject
                           key={tool.name}
-                          x={toolPos.x - 75}
-                          y={toolPos.y - 40}
-                          width="150"
-                          height="80"
+                          x={toolPos.x - 70}
+                          y={toolPos.y - 35}
+                          width="140"
+                          height="70"
                           className="overflow-visible"
                         >
                           <Link
@@ -202,31 +192,31 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
                             target={tool.isExternal ? "_blank" : undefined}
                           >
                             <motion.div
-                              initial={{ opacity: 0, y: 20, scale: 0.8, rotateX: -20 }}
-                              animate={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }}
+                              initial={{ opacity: 0, y: 15, scale: 0.8 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
                               exit={{ opacity: 0, y: 10, scale: 0.8 }}
                               transition={{ 
                                 type: "spring",
-                                stiffness: 260,
+                                stiffness: 300,
                                 damping: 20,
                                 delay: idx * 0.05 
                               }}
-                              className="flex items-center gap-4 p-4 rounded-3xl 
-                                bg-white/30 dark:bg-black/60 backdrop-blur-3xl 
-                                border border-white/40 dark:border-white/10 
-                                hover:bg-white/40 dark:hover:bg-black/80 transition-all group shadow-2xl"
+                              className="flex items-center gap-3 p-3 rounded-2xl 
+                                bg-white/60 dark:bg-black/40 backdrop-blur-3xl 
+                                border border-slate-200 dark:border-white/10 
+                                hover:bg-white/80 dark:hover:bg-black/60 transition-all group shadow-2xl"
                             >
-                              <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${tool.gradient} 
-                                flex items-center justify-center shadow-xl group-hover:scale-110 group-hover:rotate-6 transition-transform`}>
-                                <Icon className="w-6 h-6 text-white" />
+                              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tool.gradient} 
+                                flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
+                                <Icon className="w-5 h-5 text-white" />
                               </div>
                               <div className="flex flex-col">
-                                <span className="text-[11px] font-black text-foreground dark:text-white uppercase tracking-tight">
+                                <span className="text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-tight">
                                   {tool.name}
                                 </span>
-                                <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                                  <span className="text-[9px] font-bold uppercase tracking-tighter">Launch</span>
-                                  <ArrowUpRight className="w-3 h-3" />
+                                <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                  <span className="text-[8px] font-bold uppercase tracking-tighter text-slate-500 dark:text-white/40">Open</span>
+                                  <ArrowUpRight className="w-2 h-2 text-slate-500 dark:text-white/40" />
                                 </div>
                               </div>
                             </motion.div>
