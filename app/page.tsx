@@ -18,30 +18,33 @@ export default function HomePage() {
     <main className="min-h-screen bg-background transition-colors duration-500 overflow-x-hidden flex flex-col items-center">
       <ThemeToggle />
 
-      {/* 1. Hero Section - Vibrant Minimal Hub */}
-      <section className="relative h-screen w-full flex flex-col items-center justify-center overflow-hidden mesh-gradient">
-        {/* Background Atmosphere */}
+      {/* 1. Hero Section - Dynamically Adaptive Hub */}
+      <section className="relative h-screen w-full flex flex-col items-center justify-center overflow-hidden mesh-gradient px-4 md:px-8">
+        {/* Background Atmosphere - Scales with viewport */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1400px] h-[1200px] bg-blue-500/[0.05] dark:bg-blue-500/[0.02] rounded-full blur-[160px]" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-purple-500/[0.03] dark:bg-purple-500/[0.01] rounded-full blur-[140px] animate-pulse" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120vw] h-[100vh] bg-blue-500/[0.05] dark:bg-blue-500/[0.02] rounded-full blur-[min(20vw,160px)]" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] h-[80vh] bg-purple-500/[0.03] dark:bg-purple-500/[0.01] rounded-full blur-[min(15vw,140px)] animate-pulse" />
         </div>
 
-        {/* The Nucleus */}
-        <div className="relative z-20 w-[900px] h-[900px] flex items-center justify-center">
+        {/* The Nucleus - Dynamic Sizing System */}
+        <div className="relative z-20 w-full max-w-[min(85vw,85vh,900px)] aspect-square flex items-center justify-center">
+          {/* Radial Hub (Background layer) - Scales to fill parent */}
           <RadialMenu activeSegment={activeSegment} />
-          <div className="relative z-30 pointer-events-none">
+          
+          {/* Centerpiece (Core nucleus) - Proportional to hub */}
+          <div className="relative z-30 pointer-events-none w-[28%] aspect-square">
             <Centerpiece />
           </div>
         </div>
 
-        {/* Minimal Scroll Indicator */}
+        {/* Adaptive Scroll Indicator */}
         <motion.div
           animate={{ y: [0, 8, 0] }}
           transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-20 dark:opacity-[0.03]"
+          className="absolute bottom-[clamp(2rem,5vh,4rem)] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-20 dark:opacity-[0.05]"
         >
-          <span className="text-[10px] font-black tracking-[0.6em] uppercase text-foreground">Explore</span>
-          <div className="w-px h-8 bg-gradient-to-b from-foreground to-transparent" />
+          <span className="text-[clamp(8px,1vw,10px)] font-black tracking-[0.6em] uppercase text-foreground">Explore</span>
+          <div className="w-px h-[clamp(1.5rem,4vh,2rem)] bg-gradient-to-b from-foreground to-transparent" />
         </motion.div>
       </section>
 
@@ -72,9 +75,9 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Footer */}
+      {/* Footer - Responsive padding */}
       <footer className="w-full border-t border-border bg-surface">
-        <div className="max-w-7xl mx-auto px-6 py-20 flex flex-col md:flex-row items-center justify-between gap-12">
+        <div className="max-w-7xl mx-auto px-6 py-[clamp(3rem,8vw,5rem)] flex flex-col md:flex-row items-center justify-between gap-12">
           <div className="flex flex-col gap-2 text-center md:text-left">
             <h2 className="text-xl font-black tracking-tighter text-foreground uppercase italic">Toolsy</h2>
             <p className="text-sm text-muted max-w-xs">Premium developer utilities. Speed, privacy, and precision as standard.</p>

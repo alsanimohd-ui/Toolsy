@@ -25,7 +25,7 @@ const segments = [
     id: "data",
     label: "DATA",
     color: "#3b82f6",
-    startAngle: -150, // Perfectly balanced 110 deg
+    startAngle: -150,
     endAngle: -40,
     clockwise: true,
     tools: [
@@ -51,8 +51,8 @@ const segments = [
     id: "logs",
     label: "LOGS",
     color: "#a855f7",
-    startAngle: 200, // Balanced bottom segment
-    endAngle: 90,   // Flipped for upright text (counter-clockwise)
+    startAngle: 200,
+    endAngle: 90,
     clockwise: false,
     tools: [
       { name: "Analyzer", route: "/tools/log-analyzer", icon: Terminal, gradient: "from-purple-400 to-fuchsia-400" },
@@ -86,24 +86,27 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
     if (el) el.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Fixed internal coordinates for viewBox consistency
   const cx = 450;
   const cy = 450;
   const mainRadius = 310;
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-visible">
+      {/* SVG is now fully fluid within its parent responsive container */}
       <svg 
         viewBox="0 0 900 900" 
-        className="w-[900px] h-[900px] pointer-events-auto overflow-visible"
+        className="w-full h-full pointer-events-auto overflow-visible"
+        preserveAspectRatio="xMidYMid meet"
       >
         <defs>
           {segments.map((s) => (
             <filter key={`glow-${s.id}`} id={`glow-${s.id}`}>
               <feGaussianBlur stdDeviation="15" result="blur" />
+              <feColorMatrix type="matrix" values="0 0 0 0 1   0 0 0 0 1   0 0 0 0 1  0 0 0 0.2 0" />
               <feComposite in="SourceGraphic" operator="over" />
             </filter>
           ))}
-          {/* Paths for text labels - Perfectly centered in arc */}
           {segments.map((s) => (
             <path
               key={`path-${s.id}`}
@@ -113,7 +116,6 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
           ))}
         </defs>
 
-        {/* Subtle background guide ring */}
         <circle
           cx={cx}
           cy={cy}
@@ -129,20 +131,18 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
           const isActive = activeSegment === s.id;
           const isSelected = isHovered || isActive;
           
-          // Use a fixed clockwise path for the visual arc to avoid "flipping" animation
           const visualArc = describeArc(cx, cy, mainRadius, s.clockwise ? s.startAngle : s.endAngle, s.clockwise ? s.endAngle : s.startAngle, true);
-          
           const midAngle = (s.startAngle + s.endAngle) / 2;
 
           return (
             <g
               key={s.id}
-              className="cursor-pointer"
+              className="cursor-pointer group/segment"
               onMouseEnter={() => setHoveredSegment(s.id)}
               onMouseLeave={() => setHoveredSegment(null)}
               onClick={() => scrollToSection(s.id)}
             >
-              {/* Vibrant Arc Segment */}
+              {/* Fluid Arc Segment */}
               <motion.path
                 d={visualArc}
                 fill="none"
@@ -161,7 +161,7 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
                 }}
               />
 
-              {/* Upright Label */}
+              {/* Responsive Label */}
               <text className="pointer-events-none select-none uppercase tracking-[0.5em] font-black text-[14px]">
                 <textPath
                   href={`#path-${s.id}`}
@@ -178,12 +178,13 @@ export default function RadialMenu({ activeSegment }: RadialMenuProps) {
                 </textPath>
               </text>
 
-              {/* Rich Tool Cards */}
+              {/* Dynamic Quick Tools - Relative Positioning */}
               <AnimatePresence>
                 {isSelected && (
                   <g>
                     {s.tools.map((tool, idx) => {
                       const angleOffset = (idx - 1) * 28;
+                      // Move tools inward on smaller viewports (handled by overall SVG scaling)
                       const toolPos = polarToCartesian(cx, cy, mainRadius + 115, midAngle + angleOffset);
                       const Icon = tool.icon;
                       
