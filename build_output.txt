@@ -1,0 +1,18 @@
+  ▲ Next.js 14.2.35
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+Failed to compile.
+
+./app/page.tsx
+27:7  Error: 'gridDots' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./components/home/RadialMenu.tsx
+3:18  Error: 'useMotionValue' is defined but never used.  @typescript-eslint/no-unused-vars
+3:34  Error: 'useTransform' is defined but never used.  @typescript-eslint/no-unused-vars
+96:10  Error: 'describeArcEdge' is defined but never used.  @typescript-eslint/no-unused-vars
+106:7  Error: 'ORBITAL_EASE' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules

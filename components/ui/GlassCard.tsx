@@ -11,8 +11,8 @@ interface GlassCardProps {
 export default function GlassCard({ children, className = "", hoverEffect = true }: GlassCardProps) {
   return (
     <motion.div
-      whileHover={hoverEffect ? { y: -4, scale: 1.01 } : undefined}
-      className={`glass-container rounded-[2rem] p-6 transition-all duration-300 ${className}`}
+      whileHover={hoverEffect ? { y: -3, scale: 1.005 } : undefined}
+      className={`toolsy-card ${hoverEffect ? "toolsy-card-hover" : ""} p-[var(--space-card)] ${className}`}
     >
       {children}
     </motion.div>

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Braces, ShieldCheck, Workflow } from "lucide-react";
+import { CategoryId, getCategory } from "@/lib/tools";
 
 interface ToolHeaderProps {
   /** Tool name — rendered as the page <h1> */
@@ -7,7 +9,15 @@ interface ToolHeaderProps {
   description: string;
   /** Optional category badge label (e.g. "Text", "JSON", "Crypto") */
   badge?: string;
+  /** Canonical category identity */
+  categoryId?: CategoryId;
 }
+
+const categoryIcons = {
+  Braces,
+  ShieldCheck,
+  Workflow,
+};
 
 /**
  * ToolHeader
@@ -18,51 +28,55 @@ export default function ToolHeader({
   title,
   description,
   badge,
+  categoryId,
 }: ToolHeaderProps) {
+  const category = categoryId ? getCategory(categoryId) : null;
+  const Icon = category ? categoryIcons[category.icon] : null;
+
   return (
-    <header className="flex flex-col gap-4">
+    <header className="flex flex-col gap-[clamp(0.85rem,1.8svh,1.25rem)]">
       {/* Back navigation */}
-      <Link
-        href="/tools"
-        className="inline-flex items-center gap-1.5 text-sm text-[var(--muted)]
-          hover:text-[var(--foreground)] transition-colors duration-150 w-fit group"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="w-4 h-4 transition-transform duration-150 group-hover:-translate-x-0.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-        </svg>
-        All Tools
-      </Link>
+      <div className="toolsy-meta flex flex-wrap items-center gap-2 text-muted">
+        <Link href="/tools" className="transition-colors duration-200 hover:text-foreground">
+          Toolsy
+        </Link>
+        {category && (
+          <>
+            <span className="text-muted/40">/</span>
+            <Link href={category.route} className="transition-colors duration-200 hover:text-foreground">
+              {category.label}
+            </Link>
+          </>
+        )}
+      </div>
 
       {/* Title row */}
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-3xl font-bold tracking-tight text-[var(--foreground)]">
+        <h1 className="toolsy-page-title">
           {title}
         </h1>
-        {badge && (
+        {(category || badge) && (
           <span
-            className="px-2.5 py-0.5 rounded-full text-xs font-medium tracking-wide
-              border border-[var(--accent-glow)] bg-[var(--accent-glow)]
-              text-[var(--accent-hover)]"
+            className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em]"
+            style={{
+              borderColor: "color-mix(in srgb, var(--category-accent, var(--accent)) 24%, transparent)",
+              backgroundColor: "var(--category-glow, var(--accent-glow))",
+              color: "var(--category-accent, var(--accent-hover))",
+            }}
           >
-            {badge}
+            {Icon && <Icon className="h-3 w-3" />}
+            {category?.label ?? badge}
           </span>
         )}
       </div>
 
       {/* Description */}
-      <p className="text-[var(--muted)] text-base leading-relaxed max-w-2xl">
+      <p className="toolsy-description">
         {description}
       </p>
 
       {/* Divider */}
-      <div className="h-px bg-[var(--border)]" />
+      <div className="toolsy-divider" />
     </header>
   );
 }

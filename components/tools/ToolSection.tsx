@@ -24,21 +24,19 @@ export default function ToolSection({
   return (
     <section
       className={`
-        rounded-2xl border border-[var(--border)]
-        bg-[var(--surface)] p-6
-        flex flex-col gap-5
+        toolsy-card flex flex-col gap-[clamp(1rem,2svh,1.5rem)] p-[var(--space-card)]
         ${className}
       `}
     >
       {(title || description) && (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           {title && (
-            <h2 className="text-sm font-semibold text-[var(--foreground)] tracking-wide uppercase">
+            <h2 className="toolsy-section-title">
               {title}
             </h2>
           )}
           {description && (
-            <p className="text-xs text-[var(--muted)] leading-relaxed">
+            <p className="text-sm text-muted leading-relaxed font-medium">
               {description}
             </p>
           )}

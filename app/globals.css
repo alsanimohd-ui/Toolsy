@@ -8,19 +8,27 @@
   --foreground: #020617; /* Deepest Navy for maximum contrast */
   --surface: #ffffff;
   --surface-raised: #f1f5f9;
-  --border: #e2e8f0;
-  --border-subtle: #cbd5e1;
-  --muted: #475569; /* Darker muted text */
+  --muted: #334155; /* Even darker for better accessibility */
+  --border: #cbd5e1; /* Stronger border */
+  --border-subtle: #94a3b8;
   
   --accent: #2563eb; /* Stronger Blue */
+  --accent-rgb: 37, 99, 235;
   --accent-hover: #1d4ed8;
   --accent-glow: rgba(37, 99, 235, 0.12);
 
   /* Semantic Glass Tokens - Light */
-  --glass-bg: rgba(255, 255, 255, 0.4);
-  --glass-border: rgba(15, 23, 42, 0.1);
-  --glass-shadow: rgba(0, 0, 0, 0.05);
-  --glass-blur: 24px;
+  --glass-bg: rgba(255, 255, 255, 0.7); /* More opaque for better contrast */
+  --glass-border: rgba(15, 23, 42, 0.15);
+  --glass-shadow: rgba(0, 0, 0, 0.08);
+  --glass-blur: 20px;
+
+  --space-page-x: clamp(1rem, 3vw, 2.5rem);
+  --space-page-y: clamp(1.25rem, 4svh, 5rem);
+  --space-section: clamp(1rem, 2.5vw, 2rem);
+  --space-card: clamp(1rem, 2.2vw, 1.75rem);
+  --radius-card: clamp(1rem, 1.8vw, 1.5rem);
+  --home-footer-block: clamp(3.5rem, 9svh, 5.25rem);
 }
 
 .dark {
@@ -34,6 +42,7 @@
   --muted: #94a3b8;
   
   --accent: #7c6aff;
+  --accent-rgb: 124, 106, 255;
   --accent-hover: #9b8dff;
   --accent-glow: rgba(124, 106, 255, 0.25);
 
@@ -62,6 +71,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.5s ease, color 0.5s ease;
+  overflow-x: hidden;
 }
 
 /* Mesh Gradient System - Dynamic & Atmospheric */
@@ -95,18 +105,321 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--surface);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: 4px;
+  background: var(--border);
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+  background-clip: content-box;
+}
+
+/* Custom Scrollbar Utility */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 25%, transparent);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+@layer components {
+  .toolsy-page-shell {
+    @apply min-h-[100dvh] bg-background;
+    background-image:
+      radial-gradient(circle at 18% 0%, var(--category-glow, transparent), transparent 30rem),
+      radial-gradient(circle at 88% 18%, color-mix(in srgb, var(--category-accent, var(--accent)) 8%, transparent), transparent 28rem);
+  }
+
+  .toolsy-content {
+    width: min(100%, 80rem);
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(1.25rem, 3svh, 3rem);
+    padding: var(--space-page-y) var(--space-page-x);
+  }
+
+  .toolsy-kicker {
+    @apply text-[10px] font-black uppercase tracking-[0.42em] text-accent;
+  }
+
+  .toolsy-page-title {
+    @apply text-[clamp(2rem,5vw,4.25rem)] font-black leading-[0.95] tracking-tighter text-foreground;
+  }
+
+  .toolsy-section-title {
+    @apply text-[clamp(0.72rem,1.1vw,0.9rem)] font-black uppercase tracking-[0.28em] text-foreground;
+  }
+
+  .toolsy-description {
+    @apply max-w-2xl text-sm font-medium leading-relaxed text-muted md:text-base;
+  }
+
+  .toolsy-label {
+    @apply text-[11px] font-black uppercase tracking-[0.24em] text-muted;
+  }
+
+  .toolsy-meta {
+    @apply text-[10px] font-black uppercase tracking-[0.22em] text-muted;
+  }
+
+  .toolsy-card {
+    border-radius: var(--radius-card);
+    @apply border border-border bg-white/[0.85] shadow-[0_24px_70px_rgba(15,23,42,0.12)] backdrop-blur-xl transition-all duration-300 dark:bg-black/[0.45] dark:shadow-[0_24px_70px_rgba(0,0,0,0.4)];
+  }
+
+  .toolsy-card-hover {
+    @apply hover:-translate-y-0.5 hover:bg-white/[0.86] hover:shadow-[0_28px_80px_rgba(37,99,235,0.14)] dark:hover:bg-black/[0.46] dark:hover:shadow-[0_28px_80px_rgba(124,106,255,0.14)];
+  }
+
+  .toolsy-card-hover:hover {
+    border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 40%, transparent);
+  }
+
+  .toolsy-panel {
+    border-radius: var(--radius-card);
+    @apply border border-border-subtle bg-surface-raised shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:shadow-[0_16px_45px_rgba(0,0,0,0.26)];
+  }
+
+  .toolsy-input {
+    @apply w-full rounded-2xl border border-border-subtle bg-white/[0.74] px-4 py-3 text-sm font-medium text-foreground outline-none transition-all duration-200 focus:bg-white/90 focus:ring-4 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/[0.24] dark:focus:bg-black/[0.34];
+  }
+
+  /* ──────────────────────────────────────────────────────────── */
+  /* HOME PAGE — premium radial system */
+  /* ──────────────────────────────────────────────────────────── */
+
+  .toolsy-home-shell {
+    @apply bg-background overflow-hidden;
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .toolsy-home-stage {
+    @apply relative z-10 flex w-full min-h-0 flex-1 items-center justify-center;
+    padding: clamp(0.5rem, 1.8svh, 1.5rem) clamp(0.75rem, 2vw, 1.5rem);
+  }
+
+  /* Radial scale wrapper — responsive sizing */
+  .toolsy-radial-scale {
+    @apply relative flex items-center justify-center;
+    width: min(88vw, calc(100dvh - var(--home-footer-block) - 3rem), 54rem);
+    height: min(88vw, calc(100dvh - var(--home-footer-block) - 3rem), 54rem);
+    aspect-ratio: 1 / 1;
+    flex: 0 0 auto;
+  }
+
+  /* Premium glass container */
+  .toolsy-glass {
+    @apply bg-white/[0.06] dark:bg-white/[0.04];
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Portal footer */
+  .toolsy-portal-footer {
+    @apply relative z-10 w-full shrink-0 border-t backdrop-blur-2xl;
+    background-color: color-mix(in srgb, var(--background) 30%, transparent);
+    border-color: color-mix(in srgb, var(--border) 50%, transparent);
+    height: auto;
+    padding-block: 0;
+  }
+
+  .dark .toolsy-portal-footer {
+    background-color: color-mix(in srgb, var(--background) 40%, transparent);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .toolsy-input::placeholder {
+    color: color-mix(in srgb, var(--muted) 55%, transparent);
+  }
+
+  .toolsy-input:focus {
+    border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 55%, transparent);
+    --tw-ring-color: var(--category-glow, var(--accent-glow));
+  }
+
+  .toolsy-textarea {
+    @apply toolsy-input min-h-[160px] resize-y font-mono leading-relaxed;
+  }
+
+  .toolsy-button {
+    @apply inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-black transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45;
+  }
+
+  .toolsy-button-primary {
+    background-color: var(--category-accent, var(--accent));
+    box-shadow: 0 14px 35px var(--category-glow, var(--accent-glow));
+    @apply text-white hover:-translate-y-0.5;
+  }
+
+  .toolsy-button-primary:hover {
+    background-color: var(--category-accent, var(--accent-hover));
+    box-shadow: 0 18px 45px var(--category-glow, var(--accent-glow));
+  }
+
+  .toolsy-button-secondary {
+    @apply border border-border-subtle bg-white/[0.68] text-foreground hover:-translate-y-0.5 hover:bg-white/[0.88] hover:text-accent-hover dark:bg-white/5 dark:hover:bg-white/[0.08];
+  }
+
+  .toolsy-button-secondary:hover {
+    border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 45%, transparent);
+  }
+
+  .toolsy-button-ghost {
+    @apply text-muted hover:bg-surface-raised hover:text-foreground;
+  }
+
+  .toolsy-divider {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-border to-transparent;
+  }
+
+  .toolsy-empty-state {
+    @apply toolsy-panel flex flex-col items-center justify-center p-8 text-center text-muted;
+  }
+
+  .toolsy-portal-footer {
+    min-height: var(--home-footer-block);
+    padding-block: clamp(0.65rem, 1.7svh, 1.25rem);
+  }
+
+  /* ═══════════════════════════════════════════════════════ */
+  /* PREMIUM ANIMATION UTILITIES */
+  /* ═══════════════════════════════════════════════════════ */
+
+  .premium-glow {
+    box-shadow:
+      0 0 20px var(--accent-glow),
+      0 0 40px color-mix(in srgb, var(--accent) 30%, transparent),
+      0 0 80px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  .premium-border-glow {
+    box-shadow:
+      inset 0 0 20px color-mix(in srgb, var(--accent) 10%, transparent),
+      0 0 0 1px var(--accent),
+      0 0 30px var(--accent-glow);
+  }
+
+  .text-glow {
+    text-shadow:
+      0 0 10px var(--accent-glow),
+      0 0 20px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+
+  .glass-deep {
+    background: rgba(10, 10, 20, 0.75);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-premium {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.12) 0%,
+      rgba(255, 255, 255, 0.04) 100%
+    );
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Precise orbital animation timing */
+  @keyframes orbital-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.08); opacity: 0.3; }
+  }
+
+  @keyframes core-rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes core-rotate-reverse {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0deg); }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(0.25rem); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translate(-50%, 0.5rem); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
+
+  .animate-orbital {
+    animation: orbital-pulse 4s ease-in-out infinite;
+  }
+
+  .animate-core-spin {
+    animation: core-rotate 60s linear infinite;
+  }
+
+  .animate-core-spin-reverse {
+    animation: core-rotate-reverse 90s linear infinite;
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.35s ease-out both;
+  }
+
+  .animate-slideUp {
+    animation: slideUp 0.25s ease-out both;
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (max-width: 640px) {
+    :root {
+      --home-footer-block: clamp(4.5rem, 13dvh, 6.25rem);
+    }
+
+    .toolsy-radial-scale {
+      width: min(74vw, calc(100dvh - var(--home-footer-block) - 2rem));
+      height: min(74vw, calc(100dvh - var(--home-footer-block) - 2rem));
+    }
+
+    .toolsy-portal-footer {
+      font-size: 0.625rem;
+    }
+  }
 }

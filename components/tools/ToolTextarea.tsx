@@ -32,20 +32,20 @@ export default function ToolTextarea({
     typeof props.value === "string" ? props.value.length : undefined;
 
   return (
-    <div className="flex flex-col gap-1.5 w-full">
+    <div className="flex flex-col gap-2 w-full">
       {/* Label row */}
       {(label || showCount) && (
         <div className="flex items-center justify-between">
           {label && (
             <label
               htmlFor={textareaId}
-              className="text-xs font-medium text-[var(--muted)] tracking-wide uppercase"
+              className="toolsy-label"
             >
               {label}
             </label>
           )}
           {showCount && charCount !== undefined && (
-            <span className="text-xs tabular-nums text-[var(--muted)]">
+            <span className="toolsy-meta tabular-nums">
               {charCount.toLocaleString()} chars
             </span>
           )}
@@ -54,33 +54,24 @@ export default function ToolTextarea({
 
       {/* Hint */}
       {hint && !error && (
-        <p className="text-xs text-[var(--muted)]">{hint}</p>
+        <p className="text-xs text-muted">{hint}</p>
       )}
 
       {/* Error */}
       {error && (
-        <p className="text-xs text-red-400">{error}</p>
+        <p className="text-xs font-semibold text-red-500 dark:text-red-400">{error}</p>
       )}
 
       {/* Textarea */}
       <textarea
         id={textareaId}
         className={`
-          w-full min-h-[140px] px-4 py-3
-          rounded-xl border
-          bg-[var(--surface-raised)] text-[var(--foreground)]
-          text-sm font-mono leading-relaxed
-          placeholder:text-[var(--muted)]
-          resize-y
-          transition-colors duration-150
-          outline-none
-          focus:ring-1
+          toolsy-textarea min-h-[clamp(8rem,22svh,14rem)]
           ${
             error
-              ? "border-red-700/60 focus:border-red-500 focus:ring-red-500/20"
-              : "border-[var(--border-subtle)] focus:border-[var(--accent)] focus:ring-[var(--accent-glow)]"
+              ? "border-red-500/60 focus:border-red-500 focus:ring-red-500/20"
+              : ""
           }
-          disabled:opacity-50 disabled:cursor-not-allowed
           ${className}
         `}
         {...props}

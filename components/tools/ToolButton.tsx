@@ -19,32 +19,23 @@ interface ToolButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ToolButtonVariant, string> = {
   primary: `
-    bg-[var(--accent)] text-white
-    hover:bg-[var(--accent-hover)]
-    shadow-lg shadow-[var(--accent-glow)]
-    disabled:bg-[var(--border-subtle)] disabled:shadow-none disabled:text-[var(--muted)]
+    toolsy-button-primary
   `,
   secondary: `
-    border border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--foreground)]
-    hover:border-[var(--accent)] hover:text-[var(--accent-hover)]
-    disabled:opacity-40
+    toolsy-button-secondary
   `,
   ghost: `
-    text-[var(--muted)]
-    hover:text-[var(--foreground)] hover:bg-[var(--surface-raised)]
-    disabled:opacity-40
+    toolsy-button-ghost
   `,
   danger: `
-    border border-red-900/50 bg-red-950/30 text-red-400
-    hover:bg-red-900/40 hover:text-red-300
-    disabled:opacity-40
+    border border-red-500/25 bg-red-500/10 text-red-600 hover:-translate-y-0.5 hover:bg-red-500/15 dark:text-red-300
   `,
 };
 
 const sizeClasses: Record<ToolButtonSize, string> = {
   sm: "px-3 py-1.5 text-xs rounded-lg gap-1.5",
   md: "px-5 py-2.5 text-sm rounded-xl gap-2",
-  lg: "px-7 py-3.5 text-base rounded-xl gap-2.5",
+  lg: "px-7 py-3.5 text-base rounded-2xl gap-2.5",
 };
 
 /**
@@ -70,9 +61,7 @@ export default function ToolButton({
     <button
       disabled={isDisabled}
       className={`
-        inline-flex items-center justify-center font-medium
-        transition-all duration-200 cursor-pointer
-        disabled:cursor-not-allowed
+        toolsy-button cursor-pointer
         ${variantClasses[variant]}
         ${sizeClasses[size]}
         ${className}

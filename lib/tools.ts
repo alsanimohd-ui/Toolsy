@@ -1,20 +1,44 @@
 /**
  * Central Tools Registry
  *
- * Each tool has a name, description, category, route, and visual metadata.
+ * Category-aware metadata powers the homepage radial system,
+ * tools index, breadcrumbs, and nested platform routes.
  */
+
+export type CategoryId = "data-analytics" | "network-security" | "dev-automation";
+
+export interface ToolCategory {
+  id: CategoryId;
+  label: string;
+  shortLabel: string;
+  description: string;
+  icon: "Braces" | "ShieldCheck" | "Workflow";
+  color: string;
+  glow: string;
+  glowColor: string;
+  gradientStart: string;
+  gradientMid: string;
+  gradientEnd: string;
+  radialStartAngle: number;
+  radialEndAngle: number;
+  route: string;
+}
 
 export interface Tool {
   /** Display name */
   name: string;
+  /** URL-safe identifier */
+  slug: string;
+  /** Nested category-aware application path */
+  route: string;
+  /** Legacy flat path kept for compatibility */
+  legacyRoute?: string;
   /** Short description */
   description: string;
-  /** Category visually grouping the tool */
+  /** Display category label */
   category: string;
-  /** Full application path to the tool page */
-  route: string;
-  /** URL-safe identifier for compatibility */
-  slug: string;
+  /** Canonical category id */
+  categoryId: CategoryId;
   /** Emoji icon displayed on the card */
   icon: string;
   /** Flag to indicate if the tool is an external link */
@@ -23,79 +47,119 @@ export interface Tool {
   externalUrl?: string;
 }
 
-export const tools: Tool[] = [
-  {
-    name: "Paste to Code",
-    slug: "paste-to-code",
-    route: "/tools/paste-to-code",
-    description: "Paste messy data (CSV, TSV, HTML tables) → instantly convert it into clean JSON, TS, SQL, or PHP code.",
-    category: "Data",
-    icon: "📋",
+export const toolCategories: Record<CategoryId, ToolCategory> = {
+  "network-security": {
+    id: "network-security",
+    label: "Network & Security",
+    shortLabel: "Security",
+    description: "Offline-first systems tools for certificates, keys, and secure inspection.",
+    icon: "ShieldCheck",
+    color: "#ef4444",
+    glow: "rgba(239, 68, 68, 0.18)",
+    glowColor: "rgba(239,68,68,0.5)",
+    gradientStart: "#fca5a5",
+    gradientMid: "#ef4444",
+    gradientEnd: "#dc2626",
+    radialStartAngle: 7.5,
+    radialEndAngle: 112.5,
+    route: "/tools/network-security",
   },
+  "data-analytics": {
+    id: "data-analytics",
+    label: "Data & Analytics",
+    shortLabel: "Data",
+    description: "Structured utilities for formatting, parsing, and analyzing information.",
+    icon: "Braces",
+    color: "#3b82f6",
+    glow: "rgba(59, 130, 246, 0.18)",
+    glowColor: "rgba(59,130,246,0.5)",
+    gradientStart: "#93c5fd",
+    gradientMid: "#3b82f6",
+    gradientEnd: "#2563eb",
+    radialStartAngle: 127.5,
+    radialEndAngle: 232.5,
+    route: "/tools/data-analytics",
+  },
+  "dev-automation": {
+    id: "dev-automation",
+    label: "Dev & Automation",
+    shortLabel: "Dev",
+    description: "Developer workflows for conversion, generation, automation, and operations.",
+    icon: "Workflow",
+    color: "#a855f7",
+    glow: "rgba(168, 85, 247, 0.18)",
+    glowColor: "rgba(168,85,247,0.5)",
+    gradientStart: "#d8b4fe",
+    gradientMid: "#a855f7",
+    gradientEnd: "#9333ea",
+    radialStartAngle: 247.5,
+    radialEndAngle: 352.5,
+    route: "/tools/dev-automation",
+  },
+};
+
+export const categoryList = Object.values(toolCategories);
+
+export function getCategory(categoryId: CategoryId) {
+  return toolCategories[categoryId];
+}
+
+export function getToolPath(categoryId: CategoryId, slug: string) {
+  return `/tools/${categoryId}/${slug}`;
+}
+
+export const tools: Tool[] = [
   {
     name: "SSL Toolkit",
     slug: "ssl-toolkit",
-    route: "/tools/ssl-toolkit",
+    route: getToolPath("network-security", "ssl-toolkit"),
+    legacyRoute: "/tools/ssl-toolkit",
     description: "Extract PFX, generate certificates, and decode PEM/CRT info completely offline.",
-    category: "Security",
-    icon: "🔐",
+    category: toolCategories["network-security"].label,
+    categoryId: "network-security",
+    icon: "SSL",
   },
   {
-    name: "JSON Lego",
-    slug: "json-lego",
-    route: "https://jsonlego.app",
-    description: "Build, format, and manipulate JSON visually.",
-    category: "Data",
-    icon: "📦",
-    isExternal: true,
-    externalUrl: "https://jsonlego.app"
+    name: "Threat Inspector",
+    slug: "threat-inspector",
+    route: getToolPath("network-security", "threat-inspector"),
+    description: "Local-first file analysis & VirusTotal reputation check. Extract IOCs and detect threats securely.",
+    category: toolCategories["network-security"].label,
+    categoryId: "network-security",
+    icon: "BIO",
+  },
+  {
+    name: "JSON Formatter",
+    slug: "json-formatter",
+    route: getToolPath("data-analytics", "json-formatter"),
+    legacyRoute: "/tools/json-formatter",
+    description: "Format, prettify, minify, and validate messy or compact JSON data.",
+    category: toolCategories["data-analytics"].label,
+    categoryId: "data-analytics",
+    icon: "FMT",
   },
   {
     name: "Log Analyzer",
     slug: "log-analyzer",
-    route: "/tools/log-analyzer",
+    route: getToolPath("data-analytics", "log-analyzer"),
+    legacyRoute: "/tools/log-analyzer",
     description: "Instantly filter, highlight, and summarize raw server or application log outputs.",
-    category: "Logs",
-    icon: "📋",
+    category: toolCategories["data-analytics"].label,
+    categoryId: "data-analytics",
+    icon: "LOG",
   },
   {
-    name: "CSV Tool",
-    slug: "csv-tool",
-    route: "/tools/csv-tool",
-    description: "Clean, filter, and export CSV data with ease.",
-    category: "Data",
-    icon: "📊",
+    name: "Paste to Code",
+    slug: "paste-to-code",
+    route: getToolPath("dev-automation", "paste-to-code"),
+    legacyRoute: "/tools/paste-to-code",
+    description: "Paste messy data (CSV, TSV, HTML tables) and instantly convert it into clean JSON, TS, SQL, or PHP code.",
+    category: toolCategories["dev-automation"].label,
+    categoryId: "dev-automation",
+    icon: "DEV",
   },
-  {
-    name: "PFX Generator",
-    slug: "pfx-generator",
-    route: "/tools/pfx-generator",
-    description: "Combine certificates and keys into a password-protected PFX file.",
-    category: "Security",
-    icon: "📦",
-  },
-  {
-    name: "Decoder",
-    slug: "decoder",
-    route: "/tools/decoder",
-    description: "Base64, URL, and HEX decoder for quick data inspection.",
-    category: "Security",
-    icon: "🔍",
-  },
-  {
-    name: "Log Filter",
-    slug: "log-filter",
-    route: "/tools/log-filter",
-    description: "Advanced pattern matching and exclusion for large log files.",
-    category: "Logs",
-    icon: "🧹",
-  },
-  {
-    name: "Error Finder",
-    slug: "error-finder",
-    route: "/tools/error-finder",
-    description: "AI-powered stack trace analysis and error grouping.",
-    category: "Logs",
-    icon: "🚨",
-  }
 ];
+
+export function findTool(categoryId: CategoryId, slug: string) {
+  return tools.find((tool) => tool.categoryId === categoryId && tool.slug === slug);
+}

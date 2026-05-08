@@ -311,29 +311,29 @@ export default function PasteToCodeClient() {
   const simpleContent = simpleActiveFormat ? generatedOutputs[simpleActiveFormat as keyof typeof generatedOutputs] : "";
 
   return (
-    <ToolContainer>
+    <ToolContainer categoryId="dev-automation">
       <div className="flex items-start justify-between">
         <ToolHeader
           title="Paste Data → Get Code"
           description="The cleanest, smartest data converter. Paste messy CSV, TSV, or HTML tables and instantly get structured code."
-          badge="Data Converter"
+          categoryId="dev-automation"
         />
         
         <div className="flex gap-4 items-center">
-          {inputText && <button onClick={clearAll} className="text-sm font-bold text-[var(--muted)] hover:text-white transition-colors">Clear Input</button>}
+          {inputText && <button onClick={clearAll} className="toolsy-button toolsy-button-ghost">Clear Input</button>}
           <button 
             onClick={() => setIsSimpleMode(!isSimpleMode)}
-            className="text-sm font-bold bg-[var(--surface-raised)] border border-[var(--border)] px-4 py-2 rounded-xl text-[var(--foreground)] hover:border-[var(--accent)] hover:text-white transition-all shadow-md"
+            className="toolsy-button toolsy-button-secondary"
           >
             {isSimpleMode ? "Switch to Advanced Mode" : "Switch to Simple Mode"}
           </button>
         </div>
       </div>
 
-      <div className="flex flex-col gap-8 w-full max-w-7xl mx-auto animate-fadeIn relative">
+      <div className="flex flex-col gap-[clamp(1.25rem,3svh,2rem)] w-full max-w-7xl mx-auto animate-fadeIn relative">
         {/* Toast */}
         {parsed.message && (
-          <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-[var(--surface-raised)] border border-[var(--accent)] text-white text-sm font-bold rounded-xl shadow-2xl shadow-[var(--accent-glow)]/20 animate-slideUp">
+          <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 rounded-xl border border-accent bg-surface-raised px-4 py-2 text-sm font-bold text-foreground shadow-2xl animate-slideUp">
             {parsed.message}
           </div>
         )}
@@ -342,28 +342,28 @@ export default function PasteToCodeClient() {
           
           {/* LEFT: INPUT ZONE */}
           <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-bold text-[var(--foreground)] tracking-wide uppercase">1. Paste Messy Data</h2>
+            <h2 className="toolsy-section-title">1. Paste Messy Data</h2>
 
-            <div className="flex flex-col gap-0 rounded-2xl overflow-hidden border border-[var(--border-subtle)] focus-within:border-[var(--accent)] transition-colors bg-[var(--surface-raised)] shadow-lg">
+            <div className="toolsy-panel flex flex-col gap-0 overflow-hidden focus-within:border-accent">
               
               {/* Toolbar - Only visible in Advanced Mode */}
               {!isSimpleMode && (
                 <div className="flex flex-wrap items-center justify-between bg-[var(--surface)] px-4 py-2 border-b border-[var(--border)] animate-fadeIn">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono text-[var(--muted)] bg-[var(--background)] px-2 py-1 rounded">
+                    <span className="toolsy-meta rounded bg-background px-2 py-1 font-mono">
                       {parsed.data.length > 0 ? `Detected: ${parsed.separator}` : "Waiting for input..."}
                     </span>
                     {parsed.data.length > 0 && (
-                      <span className="text-xs font-mono text-[var(--muted)] bg-[var(--background)] px-2 py-1 rounded">
+                      <span className="toolsy-meta rounded bg-background px-2 py-1 font-mono">
                         {parsed.data.length} rows
                       </span>
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={fixMessyData} disabled={!parsed.data.length} className="px-3 py-1.5 bg-[var(--background)] hover:bg-[var(--accent)]/20 border border-[var(--border)] hover:border-[var(--accent)] text-xs font-bold text-[var(--foreground)] hover:text-white rounded-lg transition-all disabled:opacity-50">
+                    <button onClick={fixMessyData} disabled={!parsed.data.length} className="toolsy-button toolsy-button-secondary px-3 py-1.5 text-xs">
                       ✨ Fix Data
                     </button>
-                    <button onClick={toggleHeaders} disabled={!parsed.data.length} className={`px-3 py-1.5 border text-xs font-bold rounded-lg transition-all disabled:opacity-50 ${useHeaders ? 'bg-[var(--accent)] text-white border-[var(--accent)]' : 'bg-[var(--background)] text-[var(--foreground)] hover:border-[var(--border-subtle)] border-[var(--border)]'}`}>
+                    <button onClick={toggleHeaders} disabled={!parsed.data.length} className={`toolsy-button px-3 py-1.5 text-xs ${useHeaders ? 'toolsy-button-primary' : 'toolsy-button-secondary'}`}>
                       Headers: {useHeaders ? 'ON' : 'OFF'}
                     </button>
                   </div>
@@ -378,7 +378,7 @@ export default function PasteToCodeClient() {
                 onDragLeave={handleDrag}
                 onDrop={handleDrop}
                 placeholder="Paste your CSV, Excel cells, TSV, or HTML table here... or drag and drop a file."
-                className={`w-full min-h-[400px] p-6 bg-transparent text-[var(--foreground)] font-mono text-sm outline-none resize-none transition-colors ${isDragging ? 'bg-[var(--accent-glow)]/10' : ''}`}
+                className={`w-full min-h-[clamp(18rem,52svh,25rem)] p-[var(--space-card)] bg-transparent text-foreground font-mono text-sm outline-none resize-none transition-colors placeholder:text-muted/55 ${isDragging ? 'bg-accent-glow' : ''}`}
                 spellCheck={false}
               />
             </div>
@@ -386,10 +386,10 @@ export default function PasteToCodeClient() {
 
           {/* RIGHT: OUTPUT TABS OR SIMPLE BUTTONS */}
           <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-bold text-[var(--foreground)] tracking-wide uppercase">2. Get Clean Code</h2>
+            <h2 className="toolsy-section-title">2. Get Clean Code</h2>
             
             {isSimpleMode ? (
-              <div className="flex flex-col h-[400px] animate-fadeIn">
+              <div className="flex flex-col h-[clamp(18rem,52svh,25rem)] animate-fadeIn">
                 {!simpleActiveFormat ? (
                   <div className="grid grid-cols-2 gap-4 h-full">
                     {["JSON", "JavaScript", "PHP Array", "Python", "SQL", "HTML Table"].map(fmt => (
@@ -397,19 +397,19 @@ export default function PasteToCodeClient() {
                         key={fmt}
                         disabled={!parsed.data.length}
                         onClick={() => setSimpleActiveFormat(fmt)}
-                        className="flex items-center justify-center p-6 bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface)] text-[var(--foreground)] hover:text-white rounded-2xl shadow-md transition-all group disabled:opacity-50 disabled:hover:border-[var(--border-subtle)] disabled:hover:bg-[var(--surface-raised)] disabled:hover:text-[var(--foreground)]"
+                        className="toolsy-card toolsy-card-hover flex items-center justify-center p-6 text-foreground transition-all group disabled:opacity-50"
                       >
                         <span className="text-lg font-bold group-hover:scale-105 transition-transform">Convert → {fmt}</span>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col h-full rounded-2xl overflow-hidden border border-[var(--border-subtle)] bg-[var(--surface-raised)] shadow-lg animate-fadeIn">
+                  <div className="toolsy-panel flex flex-col h-full overflow-hidden animate-fadeIn">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--surface)]">
-                      <button onClick={() => setSimpleActiveFormat("")} className="text-sm font-bold text-[var(--muted)] hover:text-white flex items-center gap-2 transition-colors">
+                      <button onClick={() => setSimpleActiveFormat("")} className="text-sm font-bold text-muted hover:text-foreground flex items-center gap-2 transition-colors">
                         <span>←</span> Choose another format
                       </button>
-                      <button onClick={() => copyToClipboard(simpleContent)} className="text-xs font-bold bg-[var(--accent)] text-white px-4 py-1.5 rounded-lg shadow-md hover:-translate-y-0.5 transition-all">
+                      <button onClick={() => copyToClipboard(simpleContent)} className="toolsy-button toolsy-button-primary px-4 py-1.5 text-xs">
                         Copy Code
                       </button>
                     </div>
@@ -422,7 +422,7 @@ export default function PasteToCodeClient() {
                 )}
               </div>
             ) : (
-              <div className="flex flex-col rounded-2xl overflow-hidden border border-[var(--border-subtle)] bg-[var(--surface-raised)] shadow-lg h-[456px] animate-fadeIn">
+              <div className="toolsy-panel flex flex-col overflow-hidden h-[clamp(21rem,58svh,28.5rem)] animate-fadeIn">
                 {/* Tab Header */}
                 <div className="flex overflow-x-auto bg-[var(--surface)] border-b border-[var(--border)] hide-scrollbar">
                   {Object.keys(generatedOutputs).map(tab => (
@@ -445,16 +445,16 @@ export default function PasteToCodeClient() {
                         type="text" 
                         value={sqlTableName}
                         onChange={(e) => setSqlTableName(e.target.value)}
-                        className="bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--foreground)] px-2 py-1 rounded outline-none focus:border-[var(--accent)] font-mono"
+                        className="toolsy-input px-2 py-1 text-xs font-mono rounded-lg"
                       />
                     </div>
                   ) : <div />}
                   
                   <div className="flex gap-2">
-                    <button onClick={() => copyToClipboard(activeContent)} disabled={!activeContent} className="text-xs font-bold text-[var(--muted)] hover:text-white px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded hover:border-[var(--accent)] transition-all disabled:opacity-50">
+                    <button onClick={() => copyToClipboard(activeContent)} disabled={!activeContent} className="toolsy-button toolsy-button-secondary px-2 py-1 text-xs rounded-lg">
                       Copy Code
                     </button>
-                    <button onClick={() => downloadFile(activeContent, `export.${activeTab.toLowerCase()}`)} disabled={!activeContent} className="text-xs font-bold text-[var(--muted)] hover:text-white px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded hover:border-[var(--accent)] transition-all disabled:opacity-50">
+                    <button onClick={() => downloadFile(activeContent, `export.${activeTab.toLowerCase()}`)} disabled={!activeContent} className="toolsy-button toolsy-button-secondary px-2 py-1 text-xs rounded-lg">
                       Download
                     </button>
                   </div>
@@ -475,10 +475,10 @@ export default function PasteToCodeClient() {
         {!isSimpleMode && parsed.data.length > 0 && (
           <div className="flex flex-col gap-3 animate-fadeIn mt-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold text-[var(--foreground)] tracking-wide uppercase">3. Clean Data Preview</h2>
+              <h2 className="toolsy-section-title">3. Clean Data Preview</h2>
             </div>
             
-            <div className="w-full overflow-x-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-raised)] shadow-lg">
+            <div className="toolsy-panel w-full overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-[var(--surface)] border-b border-[var(--border)]">
                   <tr>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ToolContainer,
@@ -18,6 +18,23 @@ export default function JsonFormatterClient() {
   const [error, setError] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const searchParams = useSearchParams();
+
+  const handleFormat = useCallback(() => {
+    try {
+      setError("");
+      if (!input.trim()) {
+        setStatus("Input is empty.");
+        setTimeout(() => setStatus(""), 2000);
+        return;
+      }
+      const parsed = JSON.parse(input);
+      setOutput(JSON.stringify(parsed, null, 2));
+      setStatus("Prettified successfully!");
+      setTimeout(() => setStatus(""), 2000);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? `Syntax Error: ${e.message}` : "Invalid JSON syntax.");
+    }
+  }, [input]);
 
   useEffect(() => {
     const prefill = searchParams.get("input");
@@ -56,24 +73,7 @@ export default function JsonFormatterClient() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [input]);
-
-  const handleFormat = () => {
-    try {
-      setError("");
-      if (!input.trim()) {
-        setStatus("Input is empty.");
-        setTimeout(() => setStatus(""), 2000);
-        return;
-      }
-      const parsed = JSON.parse(input);
-      setOutput(JSON.stringify(parsed, null, 2));
-      setStatus("Prettified successfully!");
-      setTimeout(() => setStatus(""), 2000);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? `Syntax Error: ${e.message}` : "Invalid JSON syntax.");
-    }
-  };
+  }, [handleFormat]);
 
   const handleMinify = () => {
     try {
@@ -119,14 +119,14 @@ export default function JsonFormatterClient() {
   };
 
   return (
-    <ToolContainer>
+    <ToolContainer categoryId="data-analytics">
       <ToolHeader
         title="JSON Formatter"
         description="Format, prettify, minify, and validate messy or compact JSON data."
-        badge="Data"
+        categoryId="data-analytics"
       />
 
-      <div className="flex flex-col gap-6 animate-fadeIn">
+      <div className="flex flex-col gap-[clamp(1rem,2.4svh,1.5rem)] animate-fadeIn">
         <ToolSection
           title="JSON Input Data"
           description="Paste raw JSON here, then press Ctrl+Enter to format."
@@ -138,7 +138,7 @@ export default function JsonFormatterClient() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             error={error}
-            className="min-h-[160px] font-mono"
+            className="min-h-[clamp(8rem,22svh,11rem)] font-mono"
           />
 
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -173,7 +173,7 @@ export default function JsonFormatterClient() {
                 readOnly
                 showCount
                 value={output}
-                className="min-h-[220px] font-mono"
+                className="min-h-[clamp(10rem,28svh,16rem)] font-mono"
               />
               <div className="flex self-end">
                 <ToolButton variant="secondary" onClick={handleCopy}>
@@ -183,18 +183,17 @@ export default function JsonFormatterClient() {
             </div>
           </ToolSection>
         ) : (
-          <div className="flex flex-col items-center justify-center p-8 border border-dashed border-[var(--border-subtle)] rounded-xl text-center text-[var(--muted)] animate-fadeIn">
+          <div className="toolsy-empty-state animate-fadeIn border-dashed">
             <span className="text-3xl mb-1 select-none">⌨️</span>
             <p className="text-sm">Ready for input. Paste your JSON data or use the Sample data.</p>
             <p className="text-xs mt-1 text-[var(--muted)]/70">Press Ctrl+Enter to format instantly.</p>
           </div>
         )}
 
-        {/* Structured SEO educational content section */}
-        <section className="mt-8 border-t border-[var(--border)] pt-8 flex flex-col gap-6 select-text">
+        <section className="mt-8 border-t border-border pt-8 flex flex-col gap-6 select-text">
           <div className="flex flex-col gap-2">
-            <h2 className="text-lg font-bold text-[var(--foreground)]">What is a JSON Formatter?</h2>
-            <p className="text-sm text-[var(--muted)] leading-relaxed">
+            <h2 className="toolsy-section-title">What is a JSON Formatter?</h2>
+            <p className="toolsy-description">
               A JSON formatter converts messy or compact JavaScript Object Notation data into a readable format.
               It parses strings, removes unnecessary whitespace, and formats elements using proper indentation.
             </p>
@@ -202,8 +201,8 @@ export default function JsonFormatterClient() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-bold text-[var(--foreground)] tracking-wide uppercase">How to Use This Tool</h3>
-              <ol className="text-sm text-[var(--muted)] leading-relaxed list-decimal list-inside flex flex-col gap-1.5">
+              <h3 className="toolsy-label text-foreground">How to Use This Tool</h3>
+              <ol className="text-sm text-muted leading-relaxed list-decimal list-inside flex flex-col gap-1.5">
                 <li>Paste your compact or unformatted JSON into the source field.</li>
                 <li>Press <strong>Ctrl+Enter</strong> or click the <strong>Format JSON</strong> button.</li>
                 <li>Instantly copy the prettified JSON via the copy button.</li>
@@ -211,8 +210,8 @@ export default function JsonFormatterClient() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-bold text-[var(--foreground)] tracking-wide uppercase">Benefits & Use Cases</h3>
-              <ul className="text-sm text-[var(--muted)] leading-relaxed list-disc list-inside flex flex-col gap-1.5">
+              <h3 className="toolsy-label text-foreground">Benefits & Use Cases</h3>
+              <ul className="text-sm text-muted leading-relaxed list-disc list-inside flex flex-col gap-1.5">
                 <li>Enhance readability when analyzing server or database API responses.</li>
                 <li>Quickly minify files to save bandwidth and maximize network payload efficiency.</li>
                 <li>Identify Syntax Errors instantly with structural highlights.</li>

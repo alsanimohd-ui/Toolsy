@@ -2,75 +2,152 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { tools, type Tool } from "@/lib/tools";
-import GlassCard from "@/components/ui/GlassCard";
-import { motion } from "framer-motion";
-import { Search, Sparkles, ArrowRight, Clock, Box } from "lucide-react";
+import { categoryList, tools, type Tool, type CategoryId } from "@/lib/tools";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  Search, 
+  Sparkles, 
+  ArrowRight, 
+  ShieldCheck, 
+  Braces, 
+  Workflow, 
+  Cpu,
+  Layers,
+  Activity
+} from "lucide-react";
 
 /* ─────────────────────────────────────────────
-   Premium Tool Card
- ───────────────────────────────────────────── */
-function ToolCard({ tool }: { tool: Tool }) {
-  const trackRecent = () => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("toolsy_recent_tools");
-        const existing: string[] = stored ? JSON.parse(stored) : [];
-        const updated = [tool.slug, ...existing.filter((s) => s !== tool.slug)].slice(0, 3);
-        localStorage.setItem("toolsy_recent_tools", JSON.stringify(updated));
-      } catch {}
-    }
-  };
-
+   Premium Tool Card - Restructured for OS feel
+  ───────────────────────────────────────────── */
+function ToolCard({ tool, categoryColor }: { tool: Tool; categoryColor: string }) {
   const isExternal = tool.isExternal;
 
   return (
-    <Link href={tool.route} onClick={trackRecent} target={isExternal ? "_blank" : undefined}>
-      <GlassCard className="h-full flex flex-col gap-6 group hover:border-accent transition-all duration-500">
-        <div className="flex items-start justify-between">
-          <div className="w-14 h-14 rounded-2xl bg-accent/10 dark:bg-accent/20 flex items-center justify-center text-3xl shadow-inner group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
+    <Link href={tool.route} target={isExternal ? "_blank" : undefined} className="block h-full">
+      <motion.div
+        whileHover={{ y: -5, scale: 1.01 }}
+        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+        className="toolsy-card h-full flex flex-col p-8 group relative overflow-hidden transition-all duration-500 hover:border-accent/40"
+      >
+        {/* Subtle background glow on hover */}
+        <div 
+          className="absolute -right-20 -top-20 size-40 blur-[80px] opacity-0 transition-opacity duration-500 group-hover:opacity-20"
+          style={{ backgroundColor: categoryColor }}
+        />
+
+        <div className="flex items-start justify-between mb-8">
+          <div 
+            className="flex size-14 items-center justify-center rounded-2xl bg-slate-100 dark:bg-white/5 text-xl font-black shadow-inner transition-all duration-500 group-hover:scale-110 group-hover:bg-accent/10 group-hover:text-accent dark:group-hover:bg-accent/20"
+          >
             {tool.icon}
           </div>
+          
           <div className="flex flex-col items-end gap-2">
             {isExternal && (
-              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
-                External
-              </span>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+                <Activity className="size-2.5" />
+                Remote
+              </div>
             )}
-            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-border-subtle text-muted group-hover:border-accent/40 group-hover:text-accent transition-colors duration-500">
-              {tool.category}
-            </span>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <h2 className="text-xl font-black text-foreground group-hover:text-accent transition-colors duration-300">
+        <div className="flex flex-col gap-4 flex-1">
+          <h2 className="text-xl font-black tracking-tight text-foreground group-hover:text-accent transition-colors duration-300">
             {tool.name}
           </h2>
-          <p className="text-sm text-muted leading-relaxed line-clamp-2 font-medium">
+          <p className="text-sm text-muted/80 leading-relaxed font-medium line-clamp-3">
             {tool.description}
           </p>
         </div>
 
-        <div className="mt-auto pt-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted group-hover:text-accent transition-colors duration-300">
-          <span>{isExternal ? "Open" : "Launch"}</span>
-          <ArrowRight className="w-3 h-3 transition-transform duration-500 group-hover:translate-x-2" />
+        <div className="mt-10 pt-6 border-t border-border/40 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-muted/60 group-hover:text-accent transition-colors duration-300">
+            <span>{isExternal ? "Establish Connection" : "Initialize Module"}</span>
+          </div>
+          <motion.div
+            initial={{ x: 0 }}
+            animate={{ x: [0, 5, 0] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <ArrowRight className="w-4 h-4 text-accent opacity-0 -translate-x-4 transition-all duration-500 group-hover:opacity-100 group-hover:translate-x-0" />
+          </motion.div>
         </div>
-      </GlassCard>
+      </motion.div>
     </Link>
   );
 }
 
 /* ─────────────────────────────────────────────
-   Page
- ───────────────────────────────────────────── */
+   Futuristic Tab Component
+  ───────────────────────────────────────────── */
+function CategoryTabs({ 
+  activeTab, 
+  setActiveTab 
+}: { 
+  activeTab: CategoryId; 
+  setActiveTab: (id: CategoryId) => void 
+}) {
+  const icons = {
+    "network-security": ShieldCheck,
+    "data-analytics": Braces,
+    "dev-automation": Workflow
+  };
+
+  return (
+    <div className="relative mx-auto flex w-full max-w-3xl items-center justify-center p-1.5 rounded-2xl bg-white/40 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 backdrop-blur-2xl shadow-2xl overflow-hidden">
+      {categoryList.map((cat) => {
+        const isActive = activeTab === cat.id;
+        const Icon = icons[cat.id];
+
+        return (
+          <button
+            key={cat.id}
+            onClick={() => setActiveTab(cat.id)}
+            className={`relative flex flex-1 items-center justify-center gap-3 py-3.5 px-4 rounded-xl transition-all duration-500 z-10 ${
+              isActive 
+                ? "text-slate-900 dark:text-white" 
+                : "text-muted hover:text-foreground/80"
+            }`}
+          >
+            {isActive && (
+              <motion.div
+                layoutId="active-tab-bg"
+                className="absolute inset-0 rounded-xl bg-white dark:bg-white/10 shadow-lg border border-slate-200 dark:border-white/10"
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              />
+            )}
+            
+            <Icon className={`size-4.5 transition-colors duration-500 ${isActive ? "text-accent" : "text-muted/60"}`} />
+            <span className="text-[11px] font-black uppercase tracking-[0.18em] whitespace-nowrap">
+              {cat.shortLabel}
+            </span>
+
+            {isActive && (
+              <motion.div
+                layoutId="active-tab-glow"
+                className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 blur-md opacity-60"
+                style={{ backgroundColor: cat.color }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Main Page Component
+  ───────────────────────────────────────────── */
 export default function ToolsIndexPage() {
+  const [activeTab, setActiveTab] = useState<CategoryId>("network-security");
   const [search, setSearch] = useState("");
-  const [routerInput, setRouterInput] = useState("");
-  const [recentSlugs, setRecentSlugs] = useState<string[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Stability: Ensure keyboard shortcuts and search behavior are initialized
   useEffect(() => {
+    
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
@@ -81,160 +158,129 @@ export default function ToolsIndexPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Clear search when switching tabs to prevent "stuck" no-results state
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("toolsy_recent_tools");
-      if (stored) setRecentSlugs(JSON.parse(stored));
-    } catch {}
-  }, []);
+    setSearch("");
+  }, [activeTab]);
 
-  const coreSlugs = ["paste-to-code", "ssl-toolkit", "json-lego"];
-  const coreTools = coreSlugs.map(slug => tools.find(t => t.slug === slug)).filter(Boolean) as Tool[];
-  const recentTools = recentSlugs
-    .filter(slug => !coreSlugs.includes(slug))
-    .map((slug) => tools.find((t) => t.slug === slug))
-    .filter(Boolean) as Tool[];
-
+  const activeCategory = categoryList.find(c => c.id === activeTab)!;
+  
   const filteredTools = tools.filter((t) =>
-    t.name.toLowerCase().includes(search.toLowerCase()) &&
-    !coreSlugs.includes(t.slug) &&
-    !recentSlugs.includes(t.slug)
+    t.categoryId === activeTab &&
+    t.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const groupedTools: Record<string, Tool[]> = {};
-  filteredTools.forEach((tool) => {
-    if (!groupedTools[tool.category]) groupedTools[tool.category] = [];
-    groupedTools[tool.category].push(tool);
-  });
-
-  const categories = Object.keys(groupedTools);
-
   return (
-    <div className="max-w-7xl mx-auto px-6 py-24 flex flex-col gap-24 relative z-10">
+    <div className="toolsy-content relative z-10 flex flex-col gap-[clamp(1.5rem,5svh,3rem)]">
       
-      {/* 1. High-Impact Header */}
+      {/* 1. Futuristic Header */}
       <header className="flex flex-col items-center text-center gap-10">
         <div className="flex flex-col gap-4">
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center justify-center gap-2 mb-2"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center justify-center gap-3"
           >
-            <div className="w-10 h-[2px] bg-accent" />
-            <span className="text-[10px] font-black uppercase tracking-[0.6em] text-accent">Developer OS</span>
-            <div className="w-10 h-[2px] bg-accent" />
+            <Layers className="size-4 text-accent/60" />
+            <span className="toolsy-kicker tracking-[0.5em]">Command Center v2.0</span>
+            <Layers className="size-4 text-accent/60" />
           </motion.div>
-          <h1 className="text-6xl md:text-7xl font-black tracking-tighter text-foreground drop-shadow-sm">
-            Control Center
+          <h1 className="toolsy-page-title text-[clamp(2.5rem,6vw,5rem)]">
+            Platform Modules
           </h1>
-          <p className="text-muted text-lg md:text-xl max-w-2xl mx-auto leading-relaxed font-medium">
-            A unified ecosystem of high-fidelity utilities designed for performance. 
-            All tools are processed locally for maximum privacy.
+          <p className="toolsy-description mx-auto opacity-70">
+            A high-fidelity categorized ecosystem for advanced development workflows.
           </p>
         </div>
         
-        {/* Premium Search Bar */}
-        <div className="w-full max-w-md relative group">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted group-focus-within:text-accent transition-colors" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search platform... (Ctrl+K)"
-            className="w-full h-16 pl-14 pr-6 rounded-3xl bg-white/50 dark:bg-black/40 backdrop-blur-3xl border border-border group-focus-within:border-accent/40 outline-none transition-all text-foreground font-semibold placeholder:text-muted/60 shadow-xl"
-          />
+        {/* Integrated Search & Navigation Container */}
+        <div className="w-full flex flex-col gap-8 items-center">
+          <div className="w-full max-w-lg relative group">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-accent transition-colors" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Query modules... (Ctrl+K)"
+              className="toolsy-input h-14 pl-14 pr-6 rounded-2xl border-white/5 bg-white/[0.02] backdrop-blur-md font-semibold text-sm tracking-wide shadow-2xl focus:bg-white/[0.04]"
+            />
+          </div>
+
+          <CategoryTabs activeTab={activeTab} setActiveTab={setActiveTab} />
         </div>
       </header>
 
-      {/* 2. Smart Router - Refactored as a Glass Interface */}
-      <section className="relative">
-        <GlassCard className="p-10 border-2 border-accent/20 dark:border-accent/10 shadow-[0_30px_100px_rgba(37,99,235,0.1)]">
-          <div className="flex flex-col gap-8">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-5 h-5 text-accent animate-pulse" />
-                <h2 className="text-sm font-black text-foreground uppercase tracking-[0.4em]">
-                  Intelligent Router
-                </h2>
-              </div>
-              <p className="text-sm text-muted font-medium">
-                Paste raw logs, JSON, or certificates—we&apos;ll identify the right tool instantly.
-              </p>
-            </div>
 
-            <textarea
-              value={routerInput}
-              onChange={(e) => setRouterInput(e.target.value)}
-              placeholder="Paste raw input here..."
-              className="w-full min-h-[160px] px-8 py-6 rounded-3xl border border-border bg-white/20 dark:bg-black/20 text-foreground font-mono text-base focus:border-accent/40 focus:ring-4 focus:ring-accent/5 outline-none transition-all placeholder:text-muted/30"
-            />
-          </div>
-        </GlassCard>
-      </section>
+      {/* 3. Dynamic Tools Grid */}
+      <main className="relative">
+        {/* Background Mood Glow */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 0.15, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.1 }}
+            transition={{ duration: 0.8 }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 size-[80%] rounded-full blur-[120px] pointer-events-none z-0"
+            style={{ backgroundColor: activeCategory.color }}
+          />
+        </AnimatePresence>
 
-      {/* 3. Grid Sections */}
-      <div className="flex flex-col gap-24">
-        {/* Core Essentials */}
-        <section className="flex flex-col gap-8">
-          <div className="flex items-center gap-4">
-            <Box className="w-5 h-5 text-accent" />
-            <h2 className="text-xl font-black tracking-tight text-foreground uppercase">Core Platform</h2>
-            <div className="h-[2px] bg-gradient-to-r from-accent/40 to-transparent flex-1" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {coreTools.map((tool) => (
-              <ToolCard key={tool.slug} tool={tool} />
-            ))}
-          </div>
-        </section>
-
-        {/* Recently Visited */}
-        {recentTools.length > 0 && (
-          <section className="flex flex-col gap-8">
-            <div className="flex items-center gap-4">
-              <Clock className="w-5 h-5 text-muted" />
-              <h2 className="text-xl font-black tracking-tight text-muted uppercase">Recent Sessions</h2>
-              <div className="h-[2px] bg-gradient-to-r from-border to-transparent flex-1" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {recentTools.map((tool) => (
-                <ToolCard key={tool.slug} tool={tool} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Categorized Tools */}
-        {categories.map((category) => (
-          <section key={category} className="flex flex-col gap-8">
-            <div className="flex items-center gap-4">
-              <h2 className="text-sm font-black tracking-[0.4em] uppercase text-muted">
-                {category} Ecosystem
-              </h2>
-              <div className="h-[2px] bg-gradient-to-r from-border to-transparent flex-1" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {groupedTools[category].map((tool) => (
-                <ToolCard key={tool.slug} tool={tool} />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-
-      {/* 4. Unified Footer */}
-      <footer className="pt-20 border-t border-border flex flex-col items-center gap-8">
-        <div className="flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.4em] text-muted">
-          <Link href="/" className="hover:text-accent transition-colors">Home</Link>
-          <div className="w-1 h-1 rounded-full bg-border" />
-          <a href="https://github.com" className="hover:text-accent transition-colors">Source</a>
-          <div className="w-1 h-1 rounded-full bg-border" />
-          <a href="#" className="hover:text-accent transition-colors">Status</a>
+        <div className="relative z-10">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab + search}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+              className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3"
+            >
+              {filteredTools.length > 0 ? (
+                filteredTools.map((tool) => (
+                  <ToolCard key={tool.slug} tool={tool} categoryColor={activeCategory.color} />
+                ))
+              ) : (
+                <div className="col-span-full py-20 flex flex-col items-center gap-4 text-center">
+                  <div className="size-16 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
+                    <Search className="size-6 text-muted/30" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-muted">No modules found</h3>
+                    <p className="text-xs text-muted/50 font-bold uppercase tracking-tighter">Try a different query or category</p>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
-        <p className="text-[10px] font-black text-muted/40 uppercase tracking-tighter">
-          &copy; {new Date().getFullYear()} Toolsy Inc. &bull; Privacy First Developer Tools
-        </p>
+      </main>
+
+      {/* 4. OS-Style System Status Footer */}
+      <footer className="mt-12 pt-10 border-t border-white/5 flex flex-col items-center gap-8">
+        <div className="flex items-center gap-8 text-[9px] font-black uppercase tracking-[0.4em] text-muted/40">
+          <div className="flex items-center gap-2">
+            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Systems Nominal</span>
+          </div>
+          <div className="w-px h-3 bg-white/10" />
+          <div className="flex items-center gap-2">
+            <Cpu className="size-3" />
+            <span>Local Compute Only</span>
+          </div>
+          <div className="w-px h-3 bg-white/10" />
+          <div className="flex items-center gap-2 text-accent/60">
+            <Sparkles className="size-3" />
+            <span>Toolsy OS v2.0.5</span>
+          </div>
+        </div>
+        
+        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-[10px] font-black uppercase tracking-[0.3em] text-muted/60">
+          <Link href="/" className="hover:text-accent transition-colors">Home</Link>
+          <a href="https://github.com" className="hover:text-accent transition-colors">Repository</a>
+          <a href="#" className="hover:text-accent transition-colors">System Status</a>
+        </div>
       </footer>
     </div>
   );
