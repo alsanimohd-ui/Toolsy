@@ -83,25 +83,29 @@ export default function ThreatInspectorClient() {
     try {
       const buffer = await selectedFile.arrayBuffer();
       
-      // Hashing (SHA256 is the gold standard)
-      const sha256Buffer = await crypto.subtle.digest("SHA-256", buffer);
-      const sha256 = Array.from(new Uint8Array(sha256Buffer))
-        .map(b => b.toString(16).padStart(2, "0"))
-        .join("");
+      // Full Cryptographic Hashing
+      const hashBuffer = async (algo: string) => {
+        const b = await crypto.subtle.digest(algo, buffer);
+        return Array.from(new Uint8Array(b))
+          .map(b => b.toString(16).padStart(2, "0"))
+          .join("");
+      };
+
+      const sha256 = await hashBuffer("SHA-256");
+      const sha1 = await hashBuffer("SHA-1");
+      const md5 = await hashBuffer("MD5");
 
       // Entropy & IOCs
       const entropy = calculateEntropy(buffer);
       const textDecoder = new TextDecoder();
-      const text = textDecoder.decode(buffer.slice(0, 50000)); // Sample first 50KB for strings
+      const text = textDecoder.decode(buffer.slice(0, 100000)); // Sample 100KB
       const iocs = extractIOCs(text);
-      
-      // Filter strings (very basic heuristic)
-      const strings = extractPrintableStrings(text);
+      const strings = extractPrintableStrings(text).slice(0, 50);
 
       setLocalAnalysis({
         sha256,
-        sha1: "...", 
-        md5: "...",  
+        sha1,
+        md5,
         size: selectedFile.size,
         mimeType: selectedFile.type || "application/octet-stream",
         entropy,
@@ -124,8 +128,9 @@ export default function ThreatInspectorClient() {
       } else {
         setVtStatus("error");
       }
-    } catch {
-      // Forensic analysis failed
+    } catch (e) {
+      console.error("Forensic analysis failed:", e);
+      setVtStatus("error");
     } finally {
       setIsAnalyzing(false);
     }
@@ -146,8 +151,7 @@ export default function ThreatInspectorClient() {
       
       if (response.ok) {
         setVtStatus("polling");
-        // In a real app, we'd poll /api/threat/report/[id] here
-        // For this version, we'll notify that the upload was successful
+        // Integration note: Polling logic would go here
       }
     } catch {
       setVtStatus("error");
@@ -165,10 +169,12 @@ export default function ThreatInspectorClient() {
   };
 
   const threatVerdict = useMemo(() => {
-    if (!vtData) return { label: "Unknown", color: "text-muted", bg: "bg-muted/10", icon: InfoIcon };
+    if (!vtData) return { label: "PENDING", color: "text-muted", bg: "bg-muted/10", icon: InfoIcon };
     const malicious = vtData.last_analysis_stats.malicious;
-    if (malicious > 10) return { label: "MALICIOUS", color: "text-red-400", bg: "bg-red-500/10", icon: XCircle };
-    if (malicious > 0) return { label: "SUSPICIOUS", color: "text-amber-400", bg: "bg-amber-500/10", icon: AlertTriangle };
+    const suspicious = vtData.last_analysis_stats.suspicious;
+    
+    if (malicious > 5) return { label: "MALICIOUS", color: "text-red-400", bg: "bg-red-500/10", icon: XCircle };
+    if (malicious > 0 || suspicious > 2) return { label: "SUSPICIOUS", color: "text-amber-400", bg: "bg-amber-500/10", icon: AlertTriangle };
     return { label: "CLEAN", color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 };
   }, [vtData]);
 
@@ -176,7 +182,7 @@ export default function ThreatInspectorClient() {
     <ToolContainer categoryId="network-security">
       <ToolHeader
         title="Threat Inspector"
-        description="Local-first malware investigation and file reputation engine."
+        description="Local-first malware triage and global reputation engine. Perform deep forensic analysis on suspicious artifacts without data exposure."
         categoryId="network-security"
       />
 
@@ -208,8 +214,8 @@ export default function ThreatInspectorClient() {
                   <Shield className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 size-8 text-accent animate-pulse" />
                 </div>
                 <div className="flex flex-col items-center gap-2">
-                  <span className="text-sm font-black uppercase tracking-[0.3em] text-accent">Performing Local Triage</span>
-                  <span className="text-[10px] font-bold text-muted/60 uppercase tracking-widest">Calculating Hashes & Extracting IOCs...</span>
+                  <span className="text-sm font-black uppercase tracking-[0.3em] text-accent">Performing Triage</span>
+                  <span className="text-[10px] font-bold text-muted/60 uppercase tracking-widest">Calculated SHA-256... Analyzing Entropy...</span>
                 </div>
               </div>
             ) : (
@@ -221,7 +227,7 @@ export default function ThreatInspectorClient() {
                   <h3 className="text-xl font-black tracking-tight text-foreground">Initiate Investigation</h3>
                   <p className="text-sm text-muted/60 font-medium max-w-sm">
                     Drag and drop any binary, document, or script for forensic inspection. 
-                    <span className="block mt-2 text-[10px] uppercase font-black tracking-widest text-emerald-500/60">Analysis is performed locally first.</span>
+                    <span className="block mt-2 text-[10px] uppercase font-black tracking-widest text-emerald-500/60">Local Analysis first. No content exposure.</span>
                   </p>
                 </div>
                 <input 
@@ -259,11 +265,11 @@ export default function ThreatInspectorClient() {
                       </div>
                       <div className="flex flex-col gap-2">
                         <h2 className="text-2xl font-black tracking-tight text-foreground truncate max-w-md">
-                          {file.name}
+                          {vtData?.meaningful_name || file.name}
                         </h2>
                         <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest text-muted/60">
                           <span className="flex items-center gap-1.5"><Database className="size-3" /> {(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                          <span className="flex items-center gap-1.5"><Layers className="size-3" /> {localAnalysis.mimeType}</span>
+                          <span className="flex items-center gap-1.5"><Layers className="size-3" /> {vtData?.type_description || localAnalysis.mimeType}</span>
                         </div>
                       </div>
                     </div>
@@ -278,27 +284,42 @@ export default function ThreatInspectorClient() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-white/5">
-                    <div className="flex flex-col gap-3">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-muted/40 flex items-center gap-2">
-                        <Fingerprint className="size-3" /> SHA-256 Signature
-                      </span>
-                      <div className="toolsy-input bg-black/40 border-white/5 font-mono text-[10px] p-4 select-all">
-                        {localAnalysis.sha256}
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted/40 flex items-center gap-2">
+                          <Fingerprint className="size-3" /> SHA-256
+                        </span>
+                        <div className="toolsy-input bg-black/40 border-white/5 font-mono text-[9px] p-3 select-all truncate">
+                          {localAnalysis.sha256}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 opacity-50">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted/40">MD5 Hash</span>
+                        <div className="toolsy-input bg-black/40 border-white/5 font-mono text-[9px] p-3 select-all">
+                          {localAnalysis.md5}
+                        </div>
                       </div>
                     </div>
                     <div className="flex flex-col gap-3">
                       <span className="text-[10px] font-black uppercase tracking-widest text-muted/40 flex items-center gap-2">
-                        <Zap className="size-3" /> Entropy Score
+                        <Zap className="size-3" /> Entropy Analysis
                       </span>
-                      <div className="flex items-center gap-4">
-                        <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${(localAnalysis.entropy / 8) * 100}%` }}
-                            className={`h-full ${localAnalysis.entropy > 7 ? "bg-red-400" : "bg-accent"}`}
-                          />
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${(localAnalysis.entropy / 8) * 100}%` }}
+                              className={`h-full ${localAnalysis.entropy > 7.2 ? "bg-red-400" : localAnalysis.entropy > 6.5 ? "bg-amber-400" : "bg-emerald-400"}`}
+                            />
+                          </div>
+                          <span className="text-xs font-bold text-foreground">{localAnalysis.entropy.toFixed(3)}</span>
                         </div>
-                        <span className="text-xs font-bold text-foreground">{localAnalysis.entropy.toFixed(3)}</span>
+                        <p className="text-[9px] font-bold text-muted/40 uppercase leading-relaxed">
+                          {localAnalysis.entropy > 7.2 
+                            ? "CRITICAL: High entropy detected. Artifact likely packed or encrypted." 
+                            : "NORMAL: Standard code/data distribution detected."}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -312,48 +333,42 @@ export default function ThreatInspectorClient() {
                   
                   {vtData ? (
                     <div className="flex flex-col gap-6">
-                      <div className="flex flex-col items-center justify-center py-6 bg-black/40 rounded-3xl border border-white/5">
+                      <div className="flex flex-col items-center justify-center py-6 bg-black/40 rounded-3xl border border-white/5 shadow-2xl">
                         <span className="text-4xl font-black text-foreground">{vtData.last_analysis_stats.malicious}</span>
-                        <span className="text-[10px] font-black text-muted/60 uppercase tracking-[0.2em] mt-1">Detections</span>
+                        <span className="text-[10px] font-black text-muted/60 uppercase tracking-[0.2em] mt-1">Malicious Verdicts</span>
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-1 p-4 rounded-2xl bg-red-500/5 border border-red-500/10">
-                          <span className="text-[8px] font-black uppercase tracking-widest text-red-400/60">Malicious</span>
-                          <span className="text-lg font-black text-red-400">{vtData.last_analysis_stats.malicious}</span>
-                        </div>
-                        <div className="flex flex-col gap-1 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10">
-                          <span className="text-[8px] font-black uppercase tracking-widest text-amber-400/60">Suspicious</span>
-                          <span className="text-lg font-black text-amber-400">{vtData.last_analysis_stats.suspicious}</span>
-                        </div>
-                        <div className="flex flex-col gap-1 p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/10">
-                          <span className="text-[8px] font-black uppercase tracking-widest text-emerald-400/60">Harmless</span>
-                          <span className="text-lg font-black text-emerald-400">{vtData.last_analysis_stats.harmless}</span>
-                        </div>
-                        <div className="flex flex-col gap-1 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
-                          <span className="text-[8px] font-black uppercase tracking-widest text-blue-400/60">Total</span>
-                          <span className="text-lg font-black text-blue-400">
-                            {vtData.last_analysis_stats.malicious + vtData.last_analysis_stats.harmless + vtData.last_analysis_stats.undetected}
-                          </span>
-                        </div>
+                        <StatItem label="Malicious" count={vtData.last_analysis_stats.malicious} color="text-red-400" bg="bg-red-500/5" border="border-red-500/10" />
+                        <StatItem label="Suspicious" count={vtData.last_analysis_stats.suspicious} color="text-amber-400" bg="bg-amber-500/5" border="border-amber-500/10" />
+                        <StatItem label="Undetected" count={vtData.last_analysis_stats.undetected} color="text-muted" bg="bg-white/5" border="border-white/5" />
+                        <StatItem label="Harmless" count={vtData.last_analysis_stats.harmless} color="text-emerald-400" bg="bg-emerald-500/5" border="border-emerald-500/10" />
                       </div>
+
+                      {vtData.tags && vtData.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-4 border-t border-white/5">
+                          {vtData.tags.slice(0, 5).map(tag => (
+                            <span key={tag} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[8px] font-black uppercase tracking-widest text-muted/60">{tag}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-center gap-6">
                       <div className="size-12 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
                         {vtStatus === "not_found" ? <CloudUpload className="size-5 text-accent" /> : <Lock className="size-5 text-muted/40" />}
                       </div>
-                      <div className="flex flex-col gap-4 items-center">
+                      <div className="flex flex-col gap-4 items-center px-4">
                         <p className="text-[10px] font-bold text-muted/40 uppercase tracking-widest leading-relaxed">
                           {vtStatus === "not_found" 
-                            ? "Hash not found in global database." 
+                            ? "Hash not found in global database. File may be a new or unique artifact." 
                             : vtStatus === "not_configured"
-                            ? "VirusTotal reputation lookup is not configured."
+                            ? "VirusTotal API Key missing. Reputation lookup disabled."
                             : vtStatus === "error" 
-                            ? "VirusTotal API connection failed."
+                            ? "Forensic link to global database failed."
                             : vtStatus === "polling"
-                            ? "Analysis submitted. Check back shortly."
-                            : "Global reputation unavailable."}
+                            ? "Artifact uploaded. Analysis in progress."
+                            : "Reputation check pending local triage."}
                         </p>
                         
                         {vtStatus === "not_found" && (
@@ -362,13 +377,14 @@ export default function ThreatInspectorClient() {
                             size="sm" 
                             onClick={handleUpload}
                             disabled={isUploading}
+                            className="w-full"
                           >
                             {isUploading ? (
-                              <RefreshCw className="size-4 animate-spin mr-2" />
+                              <RefreshCw className="size-3 animate-spin mr-2" />
                             ) : (
-                              <CloudUpload className="size-4 mr-2" />
+                              <CloudUpload className="size-3 mr-2" />
                             )}
-                            {isUploading ? "Uploading..." : "Request Cloud Analysis"}
+                            {isUploading ? "Uploading..." : "Request Global Scan"}
                           </ToolButton>
                         )}
                       </div>
@@ -382,30 +398,40 @@ export default function ThreatInspectorClient() {
                 
                 {/* Network Artifacts (IOCs) */}
                 <GlassCard className="flex flex-col gap-6">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
                     <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted">
                       <Globe className="size-4 text-blue-400" />
-                      Network IOCs
+                      Network Indicators
                     </div>
-                    <span className="text-[9px] font-black text-muted/40">{localAnalysis.iocs.ips.length + localAnalysis.iocs.domains.length} Detected</span>
+                    <span className="text-[9px] font-black text-muted/40">{localAnalysis.iocs.ips.length + localAnalysis.iocs.domains.length} Extraction(s)</span>
                   </div>
                   
-                  <div className="flex flex-col gap-4">
-                    {localAnalysis.iocs.ips.length > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-muted/40">IP Addresses</span>
-                        <div className="flex flex-col gap-1.5">
-                          {localAnalysis.iocs.ips.map(ip => (
-                            <div key={ip} className="flex items-center justify-between p-2.5 rounded-lg bg-black/40 border border-white/5 group/ioc">
+                  <div className="flex flex-col gap-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {localAnalysis.iocs.ips.length > 0 || localAnalysis.iocs.domains.length > 0 ? (
+                      <>
+                        {localAnalysis.iocs.ips.map(ip => (
+                          <div key={ip} className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-accent/20 transition-all">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[8px] font-black text-muted/40 uppercase">IP Node</span>
                               <span className="font-mono text-[10px] text-foreground/80">{ip}</span>
-                              <ChevronRight className="size-3 text-muted/20 group-hover/ioc:text-accent group-hover/ioc:translate-x-0.5 transition-all" />
                             </div>
-                          ))}
-                        </div>
-                      </div>
+                            <ChevronRight className="size-3 text-muted/20 group-hover/ioc:text-accent group-hover/ioc:translate-x-0.5 transition-all" />
+                          </div>
+                        ))}
+                        {localAnalysis.iocs.domains.map(domain => (
+                          <div key={domain} className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-accent/20 transition-all">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[8px] font-black text-muted/40 uppercase">Domain Host</span>
+                              <span className="font-mono text-[10px] text-foreground/80">{domain}</span>
+                            </div>
+                            <ChevronRight className="size-3 text-muted/20 group-hover/ioc:text-accent group-hover/ioc:translate-x-0.5 transition-all" />
+                          </div>
+                        ))}
+                      </>
                     ) : (
-                      <div className="py-10 text-center border border-dashed border-white/5 rounded-2xl">
-                        <span className="text-[10px] font-bold text-muted/30 uppercase tracking-widest">No IP signals</span>
+                      <div className="py-20 text-center border border-dashed border-white/5 rounded-[32px] flex flex-col items-center gap-3">
+                        <Activity className="size-6 text-muted/10" />
+                        <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No Network Artifacts</span>
                       </div>
                     )}
                   </div>
@@ -413,59 +439,65 @@ export default function ThreatInspectorClient() {
 
                 {/* Behavioral Strings */}
                 <GlassCard className="flex flex-col gap-6">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
                     <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted">
                       <Terminal className="size-4 text-emerald-400" />
-                      Extracted Strings
+                      Memory Strings
                     </div>
-                    <span className="text-[9px] font-black text-muted/40">Top 20</span>
+                    <span className="text-[9px] font-black text-muted/40">Heuristic Sample</span>
                   </div>
                   <div className="flex flex-col gap-1.5 h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                    {localAnalysis.strings.map((str, idx) => (
-                      <div key={idx} className="p-2.5 rounded-lg bg-black/40 border border-white/5 font-mono text-[10px] text-foreground/60 hover:text-foreground hover:bg-black/60 transition-colors">
-                        {str}
+                    {localAnalysis.strings.length > 0 ? (
+                      localAnalysis.strings.map((str, idx) => (
+                        <div key={idx} className="p-3 rounded-xl bg-black/40 border border-white/5 font-mono text-[10px] text-foreground/60 hover:text-foreground hover:bg-black/60 transition-colors">
+                          {str.length > 100 ? str.substring(0, 100) + "..." : str}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center py-20 opacity-10 gap-3 grayscale">
+                        <Database className="size-8" />
+                        <span className="italic text-[10px] font-black uppercase tracking-widest">No printable sequences</span>
                       </div>
-                    ))}
-                    {localAnalysis.strings.length === 0 && (
-                      <div className="flex-1 flex items-center justify-center py-20 opacity-30 italic text-[10px]">No printable strings found</div>
                     )}
                   </div>
                 </GlassCard>
 
                 {/* Security Flags */}
                 <GlassCard className="flex flex-col gap-6">
-                  <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted">
+                  <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted border-b border-white/5 pb-4">
                     <Activity className="size-4 text-purple-400" />
-                    Heuristic Indicators
+                    Forensic Indicators
                   </div>
                   <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[10px] font-black text-foreground uppercase tracking-wider">High Entropy</span>
-                        <span className="text-[9px] font-bold text-muted uppercase">Potential Packing/Encryption</span>
-                      </div>
-                      {localAnalysis.entropy > 7.2 ? <AlertTriangle className="size-5 text-amber-500" /> : <CheckCircle2 className="size-5 text-emerald-500/40" />}
-                    </div>
-                    <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Network Calls</span>
-                        <span className="text-[9px] font-bold text-muted uppercase">Outbound Connection Strings</span>
-                      </div>
-                      {localAnalysis.iocs.urls.length > 0 ? <AlertTriangle className="size-5 text-amber-500" /> : <CheckCircle2 className="size-5 text-emerald-500/40" />}
-                    </div>
-                    <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Reputation</span>
-                        <span className="text-[9px] font-bold text-muted uppercase">Global Engine Status</span>
-                      </div>
-                      {vtData?.last_analysis_stats.malicious ? <XCircle className="size-5 text-red-400" /> : <CheckCircle2 className="size-5 text-emerald-500/40" />}
-                    </div>
+                    <IndicatorItem 
+                      title="Encryption Entropy" 
+                      subtitle="Packing or obfuscation detection" 
+                      active={localAnalysis.entropy > 7.1} 
+                    />
+                    <IndicatorItem 
+                      title="Outbound Calls" 
+                      subtitle="Presence of IP/Domain artifacts" 
+                      active={localAnalysis.iocs.ips.length > 0 || localAnalysis.iocs.domains.length > 0} 
+                    />
+                    <IndicatorItem 
+                      title="Reputation Link" 
+                      subtitle="Global malware database match" 
+                      active={!!(vtData && vtData.last_analysis_stats.malicious > 0)} 
+                    />
+                    <IndicatorItem 
+                      title="Suspicious API" 
+                      subtitle="Known malicious system calls" 
+                      active={localAnalysis.strings.some(s => s.toLowerCase().includes("wininet") || s.toLowerCase().includes("httpopen"))} 
+                    />
                   </div>
                   
-                  <div className="mt-auto pt-6 border-t border-white/5 flex flex-col gap-4">
-                    <ToolButton variant="secondary" size="sm" onClick={() => { setFile(null); setLocalAnalysis(null); }}>
+                  <div className="mt-auto pt-6 border-t border-white/5">
+                    <button 
+                      onClick={() => { setFile(null); setLocalAnalysis(null); setVtData(null); }}
+                      className="w-full py-3.5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] text-[10px] font-black uppercase tracking-[0.2em] transition-all"
+                    >
                       New Investigation
-                    </ToolButton>
+                    </button>
                   </div>
                 </GlassCard>
               </div>
@@ -474,36 +506,50 @@ export default function ThreatInspectorClient() {
           )}
         </AnimatePresence>
 
-        {/* Tactical Footer */}
-        <section className="mt-8 pt-12 border-t border-white/5 grid grid-cols-1 md:grid-cols-3 gap-12 select-text">
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-foreground">Forensic Protocol</h3>
-            <p className="text-xs text-muted/60 leading-relaxed font-medium">
-              Threat Inspector implements a multi-stage triage process. First, file entropy and internal strings are analyzed in the browser. Second, the SHA-256 hash is queried against global threat databases to determine historical reputation.
-            </p>
+        {/* Refined Documentation System */}
+        <section className="mt-16 pt-12 border-t border-white/5 flex flex-col gap-12">
+          <div className="flex flex-col gap-2 text-center md:text-left">
+            <h3 className="text-sm font-black uppercase tracking-[0.3em] text-foreground">Forensic Documentation</h3>
+            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Malware Triage & Investigation Protocol</p>
           </div>
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-foreground">Privacy Standards</h3>
-            <p className="text-xs text-muted/60 leading-relaxed font-medium">
-              Full file content never leaves your browser for initial triage. Only cryptographic hashes (SHA-256) are transmitted for global lookups. Your investigation remains confidential and secure.
-            </p>
-          </div>
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-foreground">Capabilities</h3>
-            <ul className="flex flex-col gap-2.5">
-              <li className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted/80">
-                <div className="size-1 rounded-full bg-accent" />
-                Binary Triage
-              </li>
-              <li className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted/80">
-                <div className="size-1 rounded-full bg-accent" />
-                IOC Extraction (IP/URL/Domain)
-              </li>
-              <li className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted/80">
-                <div className="size-1 rounded-full bg-accent" />
-                Malware Reputation Check
-              </li>
-            </ul>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <GlassCard className="flex flex-col gap-6 p-8 bg-white/[0.01]">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-lg bg-accent/10 flex items-center justify-center border border-accent/20">
+                  <Shield className="size-4 text-accent" />
+                </div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider">Triage Methodology</h4>
+              </div>
+              <div className="flex flex-col gap-4 text-[11px] font-medium text-muted/60 leading-relaxed">
+                <p>
+                  1. <span className="text-foreground">Local Static Analysis:</span> We calculate MD5, SHA-1, and SHA-256 hashes instantly. Our engine analyzes Shannon entropy to detect packed or encrypted malware samples.
+                </p>
+                <p>
+                  2. <span className="text-foreground">IOC Extraction:</span> High-speed regex engines extract potential Indicators of Compromise (IPs, URLs, Domains) from binary strings without executing the code.
+                </p>
+                <p>
+                  3. <span className="text-foreground">Global Reputation:</span> Your cryptographic hashes are queried against VirusTotal&apos;s 70+ security engines to provide a unified maliciousness verdict.
+                </p>
+              </div>
+            </GlassCard>
+
+            <GlassCard className="flex flex-col gap-6 p-8 bg-white/[0.01]">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+                  <Lock className="size-4 text-emerald-400" />
+                </div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider">Privacy & OPSEC Protocol</h4>
+              </div>
+              <div className="flex flex-col gap-4 text-[11px] font-medium text-muted/60 leading-relaxed">
+                <p>
+                  <span className="text-foreground font-black">HASH-ONLY LOOKUP:</span> By default, only the file&apos;s SHA-256 hash is transmitted to external reputation databases. Your raw file content remains strictly within the browser sandbox.
+                </p>
+                <p>
+                  <span className="text-foreground font-black">OPTIONAL UPLOAD:</span> Content is only uploaded if you explicitly request a &quot;Global Scan&quot; for an unknown artifact. This ensures maximum OPSEC during sensitive investigations.
+                </p>
+              </div>
+            </GlassCard>
           </div>
         </section>
       </div>
@@ -511,20 +557,38 @@ export default function ThreatInspectorClient() {
   );
 }
 
+/* ─────────────────────────────────────────────
+   Helper Components
+  ───────────────────────────────────────────── */
+
+function StatItem({ label, count, color, bg, border }: { label: string, count: number, color: string, bg: string, border: string }) {
+  return (
+    <div className={`flex flex-col gap-1 p-4 rounded-2xl ${bg} border ${border}`}>
+      <span className={`text-[8px] font-black uppercase tracking-widest ${color} opacity-60`}>{label}</span>
+      <span className={`text-lg font-black ${color}`}>{count}</span>
+    </div>
+  );
+}
+
+function IndicatorItem({ title, subtitle, active }: { title: string, subtitle: string, active: boolean }) {
+  return (
+    <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 group hover:border-white/10 transition-all">
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] font-black text-foreground uppercase tracking-wider">{title}</span>
+        <span className="text-[9px] font-bold text-muted uppercase">{subtitle}</span>
+      </div>
+      {active ? (
+        <AlertTriangle className="size-5 text-amber-500 animate-pulse" />
+      ) : (
+        <CheckCircle2 className="size-5 text-emerald-500/20" />
+      )}
+    </div>
+  );
+}
+
 function InfoIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10" />
       <path d="M12 16v-4" />
       <path d="M12 8h.01" />

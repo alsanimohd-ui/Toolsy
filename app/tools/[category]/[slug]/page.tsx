@@ -15,6 +15,7 @@ const implementedTools = {
 
   "log-analyzer": dynamic(() => import("../../log-analyzer/client-page")),
   "paste-to-code": dynamic(() => import("../../paste-to-code/client-page")),
+  "qr-generator": dynamic(() => import("../../qr-generator/client-page")),
   "ssl-toolkit": dynamic(() => import("../../ssl-toolkit/client-page")),
   "threat-inspector": dynamic(() => import("../../network-security/threat-inspector/client-page")),
 } as const;

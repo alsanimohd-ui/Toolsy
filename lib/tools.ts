@@ -110,6 +110,15 @@ export function getToolPath(categoryId: CategoryId, slug: string) {
 
 export const tools: Tool[] = [
   {
+    name: "QR Generator",
+    slug: "qr-generator",
+    route: getToolPath("data-analytics", "qr-generator"),
+    description: "Full-featured QR creation studio. Generate website, WiFi, vCard, and custom branded QR codes with live preview and advanced styling.",
+    category: toolCategories["data-analytics"].label,
+    categoryId: "data-analytics",
+    icon: "QR",
+  },
+  {
     name: "SSL Toolkit",
     slug: "ssl-toolkit",
     route: getToolPath("network-security", "ssl-toolkit"),

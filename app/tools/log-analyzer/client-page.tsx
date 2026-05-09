@@ -26,7 +26,9 @@ import {
   XCircle,
   FileCode,
   FileJson,
-  UploadCloud
+  UploadCloud,
+  ShieldCheck,
+  Globe
 } from "lucide-react";
 import { motion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
@@ -623,36 +625,91 @@ export default function LogAnalyzerClient() {
           </div>
         )}
 
-        {/* Tactical Documentation */}
-        <section className="mt-8 pt-12 border-t border-white/5 grid grid-cols-1 md:grid-cols-3 gap-12 select-text">
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-foreground">Forensic Engine</h3>
-            <p className="text-xs text-muted/60 leading-relaxed font-medium">
-              The analyzer uses heuristic pattern matching to detect severity even in unlabeled streams. It automatically identifies IPs, URLs, domains, and ports for rapid investigation.
-            </p>
+        {/* Refined Documentation System */}
+        <section className="mt-16 pt-12 border-t border-white/5 flex flex-col gap-12">
+          <div className="flex flex-col gap-2">
+            <h3 className="text-sm font-black uppercase tracking-[0.3em] text-foreground">Operational Documentation</h3>
+            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Mastering the Tactical Log Analyzer</p>
           </div>
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-foreground">Intelligence Layers</h3>
-            <ul className="flex flex-col gap-2.5">
-              <li className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted/80">
-                <div className="size-1 rounded-full bg-accent" />
-                Auto-Normalization
-              </li>
-              <li className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted/80">
-                <div className="size-1 rounded-full bg-accent" />
-                Duplicate Collapsing
-              </li>
-              <li className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted/80">
-                <div className="size-1 rounded-full bg-accent" />
-                Trace Classification
-              </li>
-            </ul>
-          </div>
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-foreground">Privacy Protocol</h3>
-            <p className="text-xs text-muted/60 leading-relaxed font-medium">
-              Processing occurs strictly in your browser&apos;s local sandbox. No log data is transmitted to external servers. Systems are offline-first by design.
-            </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <GlassCard className="flex flex-col gap-6 p-8 bg-white/[0.01]">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-lg bg-accent/10 flex items-center justify-center border border-accent/20">
+                  <Terminal className="size-4 text-accent" />
+                </div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider">Forensic Investigation Workflow</h4>
+              </div>
+              <div className="flex flex-col gap-4 text-[11px] font-medium text-muted/60 leading-relaxed">
+                <p>
+                  1. <span className="text-foreground">Ingestion:</span> Drag and drop raw text files (.log, .txt) or paste directly into the stream. The engine automatically identifies log patterns and severity markers.
+                </p>
+                <p>
+                  2. <span className="text-foreground">Normalization:</span> Use the &quot;Collapse Duplicates&quot; toggle to group repetitive events (e.g., heartbeat pings), allowing you to focus on unique anomalies.
+                </p>
+                <p>
+                  3. <span className="text-foreground">Triage:</span> Filter by severity levels (ERROR, WARN, DEBUG) to isolate critical failures. The tactical highlighter will automatically color-code IPs, timestamps, and URLs.
+                </p>
+              </div>
+            </GlassCard>
+
+            <GlassCard className="flex flex-col gap-6 p-8 bg-white/[0.01]">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                  <Globe className="size-4 text-blue-400" />
+                </div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider">Supported Data Formats</h4>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2 p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[9px] font-black text-foreground uppercase tracking-widest">Server Logs</span>
+                  <p className="text-[9px] text-muted/50 leading-tight font-medium">Nginx, Apache, Syslog, and CloudWatch exports.</p>
+                </div>
+                <div className="flex flex-col gap-2 p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[9px] font-black text-foreground uppercase tracking-widest">Stack Traces</span>
+                  <p className="text-[9px] text-muted/50 leading-tight font-medium">Java, Node.js, and Python exception dumps.</p>
+                </div>
+                <div className="flex flex-col gap-2 p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[9px] font-black text-foreground uppercase tracking-widest">Network Dumps</span>
+                  <p className="text-[9px] text-muted/50 leading-tight font-medium">Raw TCP/HTTP streams and proxy access logs.</p>
+                </div>
+                <div className="flex flex-col gap-2 p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[9px] font-black text-foreground uppercase tracking-widest">JSON Streams</span>
+                  <p className="text-[9px] text-muted/50 leading-tight font-medium">Structured application logs (flattened for analysis).</p>
+                </div>
+              </div>
+            </GlassCard>
+
+            <GlassCard className="flex flex-col gap-6 p-8 bg-white/[0.01]">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-lg bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                  <AlertCircle className="size-4 text-red-400" />
+                </div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider">Heuristic Severity Detection</h4>
+              </div>
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 text-[8px] font-black uppercase tracking-widest border border-red-500/20">Critical</div>
+                  <p className="text-[10px] text-muted/60 leading-normal font-medium">Triggered by keywords like: CRASH, FATAL, UNREACHABLE, or REFUSED.</p>
+                </div>
+                <div className="flex items-start gap-4">
+                  <div className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[8px] font-black uppercase tracking-widest border border-amber-500/20">Warning</div>
+                  <p className="text-[10px] text-muted/60 leading-normal font-medium">Triggered by: LATENCY, RETRY, SLOW, or DEPRECATED warnings.</p>
+                </div>
+              </div>
+            </GlassCard>
+
+            <GlassCard className="flex flex-col gap-6 p-8 bg-white/[0.01]">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+                  <ShieldCheck className="size-4 text-emerald-400" />
+                </div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider">Privacy & Sandbox Protocol</h4>
+              </div>
+              <p className="text-[11px] font-medium text-muted/60 leading-relaxed">
+                Log analysis is performed strictly on the <span className="text-foreground">client-side sandbox</span>. No log data is transmitted, cached, or stored on Toolsy servers. This allows for safe analysis of sensitive PII, internal IPs, and proprietary traces in a secure, air-gapped-style environment.
+              </p>
+            </GlassCard>
           </div>
         </section>
       </div>
