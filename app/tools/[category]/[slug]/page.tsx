@@ -12,7 +12,7 @@ interface ToolRouteParams {
 }
 
 const implementedTools = {
-  "json-formatter": dynamic(() => import("../../json-formatter/client-page")),
+
   "log-analyzer": dynamic(() => import("../../log-analyzer/client-page")),
   "paste-to-code": dynamic(() => import("../../paste-to-code/client-page")),
   "ssl-toolkit": dynamic(() => import("../../ssl-toolkit/client-page")),

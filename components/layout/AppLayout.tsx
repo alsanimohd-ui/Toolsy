@@ -2,10 +2,12 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import ThemeToggle from "@/components/home/ThemeToggle";
+import Atmosphere from "@/components/layout/Atmosphere";
 import { usePathname } from "next/navigation";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isHome = pathname === "/";
 
   return (
     <div className="relative min-h-[100dvh] bg-background transition-colors duration-500 mesh-gradient overflow-x-hidden">
@@ -13,10 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <ThemeToggle />
 
       {/* Global Cinematic Background Atmosphere */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-1/4 h-[100dvh] w-[100vw] rounded-full bg-accent/[0.03] blur-[clamp(80px,12vw,160px)]" />
-        <div className="absolute bottom-0 right-1/4 h-[100dvh] w-[100vw] rounded-full bg-purple-500/[0.03] blur-[clamp(70px,11vw,140px)]" />
-      </div>
+      {!isHome && <Atmosphere />}
 
       {/* Page Transitions & Content */}
       <AnimatePresence mode="popLayout" initial={false}>

@@ -140,10 +140,7 @@ body {
 
 @layer components {
   .toolsy-page-shell {
-    @apply min-h-[100dvh] bg-background;
-    background-image:
-      radial-gradient(circle at 18% 0%, var(--category-glow, transparent), transparent 30rem),
-      radial-gradient(circle at 88% 18%, color-mix(in srgb, var(--category-accent, var(--accent)) 8%, transparent), transparent 28rem);
+    @apply min-h-[100dvh] relative overflow-hidden;
   }
 
   .toolsy-content {
