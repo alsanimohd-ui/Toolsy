@@ -60,7 +60,6 @@ export default function ToolHeader({
             className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em]"
             style={{
               borderColor: "rgba(var(--accent-rgb), 0.24)", // Direct fallback
-              // @ts-ignore - color-mix support check
               borderImage: "none", 
               borderImageSource: "none",
               backgroundColor: "var(--category-glow, var(--accent-glow))",
