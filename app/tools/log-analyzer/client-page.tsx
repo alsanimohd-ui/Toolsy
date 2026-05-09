@@ -25,7 +25,13 @@ import {
   Globe,
   Zap,
   Activity,
-  ShieldCheck
+  ShieldCheck,
+  Upload,
+  FileText,
+  XCircle,
+  FileCode,
+  FileJson,
+  UploadCloud
 } from "lucide-react";
 import { motion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
@@ -69,6 +75,8 @@ export default function LogAnalyzerClient() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [collapseDuplicates, setCollapseDuplicates] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileMeta, setFileMeta] = useState<{ name: string; size: number } | null>(null);
   const searchParams = useSearchParams();
 
   // Load initial data
@@ -258,6 +266,44 @@ export default function LogAnalyzerClient() {
     setTimeout(() => setStatus(""), 2500);
   };
 
+  const processFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setLogs(content);
+      setFileMeta({ name: file.name, size: file.size });
+      setStatus(`Imported ${file.name}`);
+      setTimeout(() => setStatus(""), 3000);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const clearFile = () => {
+    setFileMeta(null);
+    setLogs("");
+  };
+
   return (
     <ToolContainer categoryId="data-analytics">
       <ToolHeader
@@ -268,42 +314,137 @@ export default function LogAnalyzerClient() {
 
       <div className="flex flex-col gap-8">
         
-        {/* Input Interface */}
-        <GlassCard className="flex flex-col gap-6">
-          <div className="flex items-center justify-between">
+        {/* Ingestion Control Bar */}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 px-1">
             <div className="flex items-center gap-3">
-              <Terminal className="size-5 text-accent" />
-              <h2 className="text-sm font-black uppercase tracking-[0.2em]">Input Stream</h2>
+              <div className="size-8 rounded-lg bg-accent/10 flex items-center justify-center border border-accent/20">
+                <Terminal className="size-4 text-accent" />
+              </div>
+              <div className="flex flex-col">
+                <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground">Ingestion Stream</h2>
+                <p className="text-[9px] font-bold text-muted/50 uppercase tracking-wider">Tactical log analysis & forensics</p>
+              </div>
             </div>
+            
             <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2 mr-2 px-3 py-1.5 rounded-md bg-white/[0.02] border border-white/5">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted/70">Local Compute Active</span>
+              </div>
+              
               <ToolButton variant="secondary" size="sm" onClick={loadSample}>
                 <Sparkles className="size-3 mr-2" />
-                Sample Trace
+                Load Sample
               </ToolButton>
-              <ToolButton variant="secondary" size="sm" onClick={handleClear} disabled={!logs}>
+              <ToolButton 
+                variant="secondary" 
+                size="sm" 
+                onClick={handleClear} 
+                disabled={!logs}
+                className="text-red-400/70 hover:text-red-400"
+              >
                 <Trash2 className="size-3 mr-2" />
-                Flush
+                Clear Session
               </ToolButton>
             </div>
           </div>
 
-          <ToolTextarea
-            placeholder="Paste raw server logs, cloud traces, or stack dumps here..."
-            value={logs}
-            onChange={(e) => setLogs(e.target.value)}
-            className="min-h-[220px] font-mono text-[13px] leading-relaxed bg-black/20 border-white/5 focus:border-accent/30"
-          />
+          <div 
+            className={`relative group transition-all duration-500 ${isDragging ? "scale-[0.99] brightness-110" : ""}`}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+          >
+            {/* Background Glow */}
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-accent/20 to-purple-500/20 rounded-[2rem] blur opacity-0 group-hover:opacity-100 transition duration-1000" />
+            
+            <GlassCard className="relative flex flex-col gap-0 p-0 overflow-hidden border-white/5 bg-black/40">
+              {/* Toolbar */}
+              <div className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-white/[0.02]">
+                <div className="flex items-center gap-6">
+                  <label className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20 hover:bg-accent/20 transition-colors cursor-pointer group/upload">
+                    <Upload className="size-3.5 text-accent" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-accent">Upload File</span>
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept=".log,.txt,.json,.gz" 
+                      onChange={handleFileUpload}
+                    />
+                  </label>
+                  
+                  <div className="hidden md:flex items-center gap-4 text-muted/40">
+                    <div className="flex items-center gap-1.5">
+                      <FileText className="size-3" />
+                      <span className="text-[9px] font-bold uppercase">.log</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <FileJson className="size-3" />
+                      <span className="text-[9px] font-bold uppercase">.json</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <FileCode className="size-3" />
+                      <span className="text-[9px] font-bold uppercase">.txt</span>
+                    </div>
+                  </div>
+                </div>
 
-          {status && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-[10px] font-black uppercase tracking-widest text-accent bg-accent/5 self-center px-4 py-2 rounded-full border border-accent/10"
-            >
-              {status}
-            </motion.div>
-          )}
-        </GlassCard>
+                <div className="flex items-center gap-4">
+                  {fileMeta && (
+                    <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10 animate-fadeIn">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">{fileMeta.name}</span>
+                        <span className="text-[8px] font-bold text-emerald-400/40 uppercase">{(fileMeta.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                      <button onClick={clearFile} className="hover:text-red-400 transition-colors">
+                        <XCircle className="size-4" />
+                      </button>
+                    </div>
+                  )}
+                  
+                  {!logs && (
+                    <div className="flex items-center gap-2 text-muted/30">
+                      <UploadCloud className="size-3.5" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Drop file to analyze</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="relative">
+                <ToolTextarea
+                  placeholder="Paste raw server logs, cloud traces, or drag and drop files here for forensic analysis..."
+                  value={logs}
+                  onChange={(e) => setLogs(e.target.value)}
+                  className="min-h-[300px] font-mono text-[13px] leading-relaxed bg-transparent border-none focus:ring-0 px-6 py-6"
+                />
+                
+                {isDragging && (
+                  <div className="absolute inset-0 bg-accent/10 backdrop-blur-sm flex flex-col items-center justify-center gap-4 border-2 border-dashed border-accent/40 m-2 rounded-2xl animate-fadeIn">
+                    <div className="size-16 rounded-full bg-accent/20 flex items-center justify-center">
+                      <Upload className="size-8 text-accent animate-bounce" />
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      <h3 className="text-sm font-black uppercase tracking-widest text-accent">Release to Import</h3>
+                      <p className="text-[10px] font-bold text-accent/60 uppercase tracking-tighter">Supporting .log, .txt, .json</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {status && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-black uppercase tracking-widest text-accent bg-black/80 backdrop-blur-xl px-4 py-2 rounded-full border border-accent/20 z-20 pointer-events-none"
+                >
+                  {status}
+                </motion.div>
+              )}
+            </GlassCard>
+          </div>
+        </div>
 
         {logs && (
           <div className="flex flex-col gap-8 animate-fadeIn">
@@ -404,38 +545,7 @@ export default function LogAnalyzerClient() {
               </GlassCard>
             </div>
 
-            {/* Error Normalization Engine View */}
-            {Object.keys(stats.groups).length > 0 && (
-              <GlassCard className="flex flex-col gap-6">
-                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
-                  <Layers className="size-3.5" />
-                  Intelligent Error Classification
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {Object.entries(stats.groups).map(([group, count]) => {
-                    const icons = {
-                      Database: Database,
-                      Parsing: Bug,
-                      Network: Globe,
-                      Auth: ShieldCheck,
-                      "General Ops": Zap
-                    };
-                    const Icon = icons[group as keyof typeof icons] || Zap;
-                    return (
-                      <div key={group} className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                        <div className="p-2 rounded-lg bg-white/5">
-                          <Icon className="size-4 text-accent/60" />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-foreground uppercase tracking-wider">{group}</span>
-                          <span className="text-[9px] font-bold text-muted uppercase">{count} occurrences</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </GlassCard>
-            )}
+
 
             {/* Forensic Output */}
             <GlassCard className="flex flex-col gap-6">
