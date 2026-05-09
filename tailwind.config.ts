@@ -33,7 +33,8 @@ const config: Config = {
     "border-white/5", "border-white/10", "border-accent/10", "border-accent/20",
     "animate-pulse", "animate-bounce", "animate-spin",
     "decoration-blue-500/30", "decoration-blue-400/30",
-    "text-emerald-400", "text-cyan-400", "text-blue-400", "text-blue-300", "text-amber-400/80"
+    "text-emerald-400", "text-cyan-400", "text-blue-400", "text-blue-300", "text-amber-400/80",
+    "light"
   ],
 };
 export default config;

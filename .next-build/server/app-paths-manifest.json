@@ -1,14 +1,14 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
+  "/api/threat/upload/route": "app/api/threat/upload/route.js",
   "/api/threat/report/[id]/route": "app/api/threat/report/[id]/route.js",
   "/tools/log-analyzer/page": "app/tools/log-analyzer/page.js",
   "/page": "app/page.js",
-  "/tools/ssl-toolkit/page": "app/tools/ssl-toolkit/page.js",
-  "/api/threat/upload/route": "app/api/threat/upload/route.js",
   "/tools/page": "app/tools/page.js",
-  "/tools/paste-to-code/page": "app/tools/paste-to-code/page.js",
   "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/tools/paste-to-code/page": "app/tools/paste-to-code/page.js",
   "/api/threat/hash/[hash]/route": "app/api/threat/hash/[hash]/route.js",
-  "/tools/[category]/[slug]/page": "app/tools/[category]/[slug]/page.js",
-  "/tools/[category]/page": "app/tools/[category]/page.js"
+  "/tools/ssl-toolkit/page": "app/tools/ssl-toolkit/page.js",
+  "/tools/[category]/page": "app/tools/[category]/page.js",
+  "/tools/[category]/[slug]/page": "app/tools/[category]/[slug]/page.js"
 }
