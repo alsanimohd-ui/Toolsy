@@ -85,6 +85,7 @@ export default function Atmosphere({ activeSegment = null }: { activeSegment?: s
           boxShadow: "0 0 20px rgba(124,106,255,0.15)",
           opacity: 0,
         }}
+        initial={{ x: "-18%", opacity: 0 }}
         animate={{ x: ["-18%", "18%"], opacity: [0, 0.45, 0] }}
         transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", repeatDelay: 3 }}
       />

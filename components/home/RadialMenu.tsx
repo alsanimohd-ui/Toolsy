@@ -488,6 +488,7 @@ export default function RadialMenu({
           stroke="rgba(255,255,255,0.07)"
           strokeWidth={0.6}
           strokeDasharray="1.5 10"
+          initial={{ rotate: 0 }}
           animate={{ rotate: 360 }}
           transition={{ duration: 100, repeat: Infinity, ease: "linear" }}
           style={{ transformOrigin: `${CX}px ${CY}px` }}
@@ -501,6 +502,7 @@ export default function RadialMenu({
           stroke="rgba(255,255,255,0.05)"
           strokeWidth={0.6}
           strokeDasharray="2 14"
+          initial={{ rotate: 0 }}
           animate={{ rotate: -360 }}
           transition={{ duration: 140, repeat: Infinity, ease: "linear" }}
           style={{ transformOrigin: `${CX}px ${CY}px` }}
@@ -619,6 +621,7 @@ export default function RadialMenu({
                 stroke={`url(#sweep-${s.id})`}
                 strokeLinecap="butt"
                 strokeDasharray={`${halfLen * 0.28} ${totalLen}`}
+                initial={{ strokeDashoffset: -totalLen, opacity: 0.16 }}
                 animate={{
                   strokeDashoffset: isActive ? [-totalLen, 0] : [-totalLen, -totalLen * 0.4],
                   opacity: isActive ? 0.65 : 0.16,

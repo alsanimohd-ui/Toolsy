@@ -59,10 +59,13 @@ export default function ToolHeader({
           <span
             className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em]"
             style={{
-              borderColor: "color-mix(in srgb, var(--category-accent, var(--accent)) 24%, transparent)",
+              borderColor: "rgba(var(--accent-rgb), 0.24)", // Direct fallback
+              // @ts-ignore - color-mix support check
+              borderImage: "none", 
+              borderImageSource: "none",
               backgroundColor: "var(--category-glow, var(--accent-glow))",
               color: "var(--category-accent, var(--accent-hover))",
-            }}
+            } as React.CSSProperties}
           >
             {Icon && <Icon className="h-3 w-3" />}
             {category?.label ?? badge}

@@ -171,6 +171,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
           <motion.div
             aria-hidden
             className="absolute inset-0 rounded-full pointer-events-none opacity-[0.07]"
+            initial={{ rotate: 0 }}
             animate={{ rotate: 360 }}
             transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
             style={{
@@ -370,6 +371,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
                 translateX: "-50%",
                 translateY: "-50%",
               }}
+              initial={{ opacity: 0, scale: 0.5 }}
               animate={{
                 opacity: [0, 0.7, 0],
                 scale: [0.5, 1.2, 0.5],
