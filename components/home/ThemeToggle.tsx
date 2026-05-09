@@ -12,7 +12,7 @@ export default function ThemeToggle() {
   useEffect(() => {
     setMounted(true);
     const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
-    const initialTheme = savedTheme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const initialTheme = savedTheme || "dark"; // Force dark by default to match cinematic brand
     setTheme(initialTheme);
     document.documentElement.classList.toggle("dark", initialTheme === "dark");
     document.documentElement.classList.toggle("light", initialTheme === "light");

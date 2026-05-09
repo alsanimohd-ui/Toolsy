@@ -29,6 +29,15 @@
   --space-card: clamp(1rem, 2.2vw, 1.75rem);
   --radius-card: clamp(1rem, 1.8vw, 1.5rem);
   --home-footer-block: clamp(3.5rem, 9svh, 5.25rem);
+
+  /* Component Tokens - Dark */
+  --card-bg: rgba(0, 0, 0, 0.45);
+  --card-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+  --card-hover-bg: rgba(0, 0, 0, 0.46);
+  --card-hover-shadow: 0 28px 80px rgba(124, 106, 255, 0.14);
+  --panel-shadow: 0 16px 45px rgba(0, 0, 0, 0.26);
+  --input-bg: rgba(0, 0, 0, 0.24);
+  --input-focus-bg: rgba(0, 0, 0, 0.34);
 }
 
 .light {
@@ -51,6 +60,15 @@
   --glass-border: rgba(15, 23, 42, 0.15);
   --glass-shadow: rgba(0, 0, 0, 0.08);
   --glass-blur: 20px;
+
+  /* Component Tokens - Light */
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  --card-hover-bg: rgba(255, 255, 255, 0.86);
+  --card-hover-shadow: 0 28px 80px rgba(37, 99, 235, 0.14);
+  --panel-shadow: 0 16px 45px rgba(15, 23, 42, 0.08);
+  --input-bg: rgba(255, 255, 255, 0.74);
+  --input-focus-bg: rgba(255, 255, 255, 0.90);
 }
 
 * {
@@ -178,26 +196,37 @@ body {
 
   .toolsy-card {
     border-radius: var(--radius-card);
-    @apply border border-border bg-white/[0.85] shadow-[0_24px_70px_rgba(15,23,42,0.12)] backdrop-blur-xl transition-all duration-300 dark:bg-black/[0.45] dark:shadow-[0_24px_70px_rgba(0,0,0,0.4)];
+    @apply border border-border backdrop-blur-xl transition-all duration-300;
+    background-color: var(--card-bg);
+    box-shadow: var(--card-shadow);
   }
 
   .toolsy-card-hover {
-    @apply hover:-translate-y-0.5 hover:bg-white/[0.86] hover:shadow-[0_28px_80px_rgba(37,99,235,0.14)] dark:hover:bg-black/[0.46] dark:hover:shadow-[0_28px_80px_rgba(124,106,255,0.14)];
+    @apply hover:-translate-y-0.5;
   }
 
   .toolsy-card-hover:hover {
+    background-color: var(--card-hover-bg);
+    box-shadow: var(--card-hover-shadow);
     border-color: rgba(var(--accent-rgb), 0.3);
     border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 40%, transparent);
   }
 
   .toolsy-panel {
     border-radius: var(--radius-card);
-    @apply border border-border-subtle bg-surface-raised shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:shadow-[0_16px_45px_rgba(0,0,0,0.26)];
+    @apply border border-border-subtle bg-surface-raised backdrop-blur-xl;
+    box-shadow: var(--panel-shadow);
   }
 
   .toolsy-input {
-    @apply w-full rounded-2xl border border-border-subtle bg-white/[0.74] px-4 py-3 text-sm font-medium text-foreground outline-none transition-all duration-200 focus:bg-white/90 focus:ring-4 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/[0.24] dark:focus:bg-black/[0.34];
+    @apply w-full rounded-2xl border border-border-subtle px-4 py-3 text-sm font-medium text-foreground outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
+    background-color: var(--input-bg);
     border-color: rgba(var(--accent-rgb), 0.15);
+  }
+  
+  .toolsy-input:focus {
+    background-color: var(--input-focus-bg);
+    @apply ring-4 ring-white/10 border-white/20;
   }
 
   /* ──────────────────────────────────────────────────────────── */
