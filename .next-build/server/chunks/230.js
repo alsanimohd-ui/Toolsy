@@ -1,1 +1,1 @@
-"use strict";exports.id=230,exports.ids=[230],exports.modules={230:(e,t,s)=>{s.r(t),s.d(t,{default:()=>o});let o=(0,s(8570).createProxy)(String.raw`C:\Users\USER\Desktop\Toolsy\app\tools\paste-to-code\client-page.tsx#default`)}};
+"use strict";exports.id=230,exports.ids=[230],exports.modules={50230:(e,t,s)=>{s.r(t),s.d(t,{default:()=>o});let o=(0,s(68570).createProxy)(String.raw`C:\Users\USER\Desktop\Toolsy\app\tools\paste-to-code\client-page.tsx#default`)}};

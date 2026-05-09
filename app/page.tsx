@@ -8,11 +8,6 @@ import { useState } from "react";
 import type { CategoryId } from "@/lib/tools";
 
 // ─────────────────────────────────────────────────────────────
-// EASING
-// ─────────────────────────────────────────────────────────────
-const EASE_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
-
-// ─────────────────────────────────────────────────────────────
 // AMBIENT PARTICLES — minimal, intentional
 // ─────────────────────────────────────────────────────────────
 const PARTICLES = [
