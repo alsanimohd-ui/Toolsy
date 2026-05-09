@@ -4,232 +4,257 @@ import Centerpiece from "@/components/home/Centerpiece";
 import RadialMenu from "@/components/home/RadialMenu";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useState } from "react";
+import type { CategoryId } from "@/lib/tools";
 
 // ─────────────────────────────────────────────────────────────
-// AMBIENT PARTICLES — subtle cinematic atmosphere
+// EASING
 // ─────────────────────────────────────────────────────────────
-const ambientParticles = [
-  { x: "8%", y: "18%", size: "2px", delay: 0, duration: 14 },
-  { x: "18%", y: "72%", size: "1.5px", delay: 1.2, duration: 12 },
-  { x: "27%", y: "34%", size: "1.5px", delay: 2.3, duration: 16 },
-  { x: "36%", y: "82%", size: "2px", delay: 0.5, duration: 13 },
-  { x: "44%", y: "14%", size: "1.5px", delay: 3.1, duration: 15 },
-  { x: "58%", y: "76%", size: "2px", delay: 1.7, duration: 14 },
-  { x: "66%", y: "24%", size: "1.5px", delay: 2.6, duration: 12 },
-  { x: "78%", y: "64%", size: "2px", delay: 0.9, duration: 17 },
-  { x: "88%", y: "30%", size: "1.5px", delay: 3.8, duration: 13 },
-  { x: "92%", y: "84%", size: "2px", delay: 1.4, duration: 11 },
+const EASE_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+// ─────────────────────────────────────────────────────────────
+// AMBIENT PARTICLES — minimal, intentional
+// ─────────────────────────────────────────────────────────────
+const PARTICLES = [
+  { x: "7%",  y: "16%", dur: 16, delay: 0,   drift: -1 },
+  { x: "17%", y: "71%", dur: 13, delay: 1.4, drift:  1 },
+  { x: "28%", y: "33%", dur: 18, delay: 2.8, drift: -1 },
+  { x: "38%", y: "84%", dur: 14, delay: 0.7, drift:  1 },
+  { x: "62%", y: "78%", dur: 15, delay: 1.9, drift: -1 },
+  { x: "72%", y: "22%", dur: 12, delay: 3.2, drift:  1 },
+  { x: "84%", y: "62%", dur: 17, delay: 0.4, drift: -1 },
+  { x: "91%", y: "29%", dur: 14, delay: 2.1, drift:  1 },
 ];
 
 export default function HomePage() {
+  const [activeSegment, setActiveSegment] = useState<CategoryId | null>(null);
+
   return (
-    <main className="toolsy-home-shell relative flex flex-col items-center bg-background text-foreground transition-colors duration-500">
+    <main className="toolsy-home-shell">
 
-      {/* ═══════════════════════════════════════════════════════ */}
-      {/* CINEMATIC ATMOSPHERIC LAYERS */}
-      {/* ═══════════════════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════════════ */}
+      {/* ATMOSPHERIC DEPTH LAYERS                           */}
+      {/* ═══════════════════════════════════════════════════ */}
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
 
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-
-        {/* Primary holographic gradient — multi-source */}
+        {/* ── BASE AMBIENT GRADIENT — central glow pool ── */}
         <div
           className="absolute inset-0"
           style={{
             background: `
-              radial-gradient(circle 60% 50% at 50% 48%, rgba(37,99,235,0.12) 0%, transparent 65%),
-              radial-gradient(circle 40% 35% at 20% 25%, rgba(14,165,233,0.08) 0%, transparent 60%),
-              radial-gradient(circle 40% 35% at 80% 28%, rgba(239,68,68,0.08) 0%, transparent 60%),
-              radial-gradient(circle 35% 30% at 15% 75%, rgba(168,85,247,0.06) 0%, transparent 55%),
-              radial-gradient(circle 35% 30% at 85% 72%, rgba(34,211,238,0.05) 0%, transparent 55%)
+              radial-gradient(ellipse 72% 60% at 50% 46%, rgba(124,106,255,0.14) 0%, transparent 62%),
+              radial-gradient(ellipse 45% 38% at 18% 22%, rgba(59,130,246,0.10) 0%, transparent 58%),
+              radial-gradient(ellipse 42% 36% at 82% 26%, rgba(239,68,68,0.08) 0%, transparent 55%),
+              radial-gradient(ellipse 38% 32% at 80% 78%, rgba(168,85,247,0.07) 0%, transparent 50%),
+              radial-gradient(ellipse 36% 30% at 14% 78%, rgba(34,211,238,0.05) 0%, transparent 48%)
             `,
           }}
         />
 
-        {/* Dark mode premium gradients */}
-        <div
-          className="absolute inset-0 dark:opacity-100 opacity-0 transition-opacity duration-1000"
-          style={{
-            background: `
-              radial-gradient(circle 55% 45% at 50% 48%, rgba(124,106,255,0.18) 0%, transparent 60%),
-              radial-gradient(circle 35% 30% at 22% 28%, rgba(59,130,246,0.12) 0%, transparent 55%),
-              radial-gradient(circle 35% 30% at 78% 30%, rgba(239,68,68,0.10) 0%, transparent 55%),
-              radial-gradient(circle 30% 25% at 80% 75%, rgba(168,85,247,0.08) 0%, transparent 50%),
-              radial-gradient(circle 30% 25% at 18% 72%, rgba(34,211,238,0.06) 0%, transparent 50%)
-            `,
+        {/* ── BREATHING CORE LIGHT — reacts to active state ── */}
+        <motion.div
+          className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ width: "48vmin", height: "48vmin" }}
+          animate={{
+            opacity: activeSegment ? [0.28, 0.42, 0.28] : [0.14, 0.22, 0.14],
+            scale: activeSegment ? [0.95, 1.06, 0.95] : [0.97, 1.03, 0.97],
           }}
+          transition={{ duration: activeSegment ? 3.2 : 5.5, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: "radial-gradient(circle at center, rgba(124,106,255,0.22) 0%, rgba(124,106,255,0.08) 45%, transparent 70%)",
+              filter: "blur(32px)",
+            }}
+          />
+        </motion.div>
+
+        {/* ── STRUCTURE RINGS — architectural frame ── */}
+
+        {/* Ring 1 — inner pulse */}
+        <motion.div
+          className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.04]"
+          style={{ width: "62vmin", height: "62vmin" }}
+          animate={{
+            opacity: [0.6, 1, 0.6],
+            scale: [0.98, 1.01, 0.98],
+            rotate: [0, 2, 0],
+          }}
+          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
         />
 
-        {/* Primary structural tech ring — breathing */}
+        {/* Ring 2 — mid orbit */}
         <motion.div
-          aria-hidden
-          initial={{ opacity: 0.06, scale: 0.99, rotate: 0 }}
+          className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.025]"
+          style={{ width: "85vmin", height: "85vmin" }}
           animate={{
-            opacity: [0.06, 0.12, 0.06],
-            scale: [0.99, 1.01, 0.99],
-            rotate: [0, 1.5, 0],
-          }}
-          transition={{
-            duration: 18,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-          className="absolute left-1/2 top-[48%] h-[1200px] w-[1200px] -translate-x-1/2 -translate-y-1/2 rounded-full
-            border border-accent/6 dark:border-white/4
-            shadow-[0_0_180px_rgba(37,99,235,0.06)] dark:shadow-[0_0_220px_rgba(124,106,255,0.08)]"
-        />
-
-        {/* Secondary structural ring */}
-        <motion.div
-          aria-hidden
-          initial={{ opacity: 0.04, scale: 1.01, rotate: 0 }}
-          animate={{
-            opacity: [0.04, 0.08, 0.04],
+            opacity: [0.5, 0.9, 0.5],
             scale: [1.01, 0.99, 1.01],
-            rotate: [0, -1, 0],
+            rotate: [0, -1.5, 0],
           }}
-          transition={{
-            duration: 24,
-            repeat: Infinity,
-            ease: "easeInOut",
+          transition={{ duration: 28, repeat: Infinity, ease: "easeInOut" }}
+        />
+
+        {/* Ring 3 — outer vast */}
+        <motion.div
+          className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.015]"
+          style={{ width: "115vmin", height: "115vmin" }}
+          animate={{
+            opacity: [0.4, 0.7, 0.4],
+            rotate: [0, 1, 0],
           }}
-          className="absolute left-1/2 top-[48%] h-[1600px] w-[1600px] -translate-x-1/2 -translate-y-1/2 rounded-full
-            border border-accent/3 dark:border-white/2"
+          transition={{ duration: 40, repeat: Infinity, ease: "easeInOut" }}
         />
 
-        {/* Micro-grid pattern — precision aesthetic */}
+        {/* ── DOT GRID — precision micro-texture ── */}
         <div
-          className="absolute inset-0 opacity-[0.06] dark:opacity-[0.03]
-            [background-image:radial-gradient(circle_at_center,currentColor_0.5px,transparent_0.5px)]
-            [background-size:28px_28px]
-            [background-position:0_0]"
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "radial-gradient(circle at center, rgba(255,255,255,0.35) 0.5px, transparent 0.5px)",
+            backgroundSize: "30px 30px",
+            opacity: 0.04,
+            maskImage: "radial-gradient(ellipse 80% 70% at 50% 46%, black 20%, transparent 80%)",
+            WebkitMaskImage: "radial-gradient(ellipse 80% 70% at 50% 46%, black 20%, transparent 80%)",
+          }}
         />
 
-        {/* Precision grid overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.03] dark:opacity-[0.015]
-            [background-image:linear-gradient(rgba(255,255,255,0.5)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.5)_1px,transparent_1px)]
-            [background-size:56px_56px]"
+        {/* ── LIGHT BEAMS — cinematic diagonal accents ── */}
+        <motion.div
+          className="absolute h-px"
+          style={{
+            left: "-10%",
+            width: "120%",
+            top: "16%",
+            rotate: "-14deg",
+            background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.22) 50%, rgba(124,106,255,0.14) 58%, transparent)",
+            boxShadow: "0 0 20px rgba(124,106,255,0.15)",
+            opacity: 0,
+          }}
+          animate={{ x: ["-18%", "18%"], opacity: [0, 0.45, 0] }}
+          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", repeatDelay: 3 }}
+        />
+        <motion.div
+          className="absolute h-px"
+          style={{
+            left: "-18%",
+            width: "120%",
+            bottom: "20%",
+            rotate: "11deg",
+            background: "linear-gradient(90deg, transparent, rgba(59,130,246,0.16) 44%, rgba(255,255,255,0.18) 52%, transparent)",
+            boxShadow: "0 0 16px rgba(59,130,246,0.12)",
+            opacity: 0,
+          }}
+          animate={{ x: ["20%", "-10%"], opacity: [0, 0.28, 0] }}
+          transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 3.5, repeatDelay: 4 }}
         />
 
-        {/* Vignette — cinematic framing */}
+        {/* ── CINEMATIC VIGNETTE ── */}
         <div
           className="absolute inset-0"
           style={{
             background: `
-              radial-gradient(ellipse 70% 60% at center, transparent 0%, transparent 40%, rgba(0,0,0,0.15) 100%),
-              radial-gradient(ellipse 100% 50% at center bottom, transparent 0%, transparent 60%, rgba(0,0,0,0.08) 100%)
+              radial-gradient(ellipse 75% 65% at center, transparent 0%, transparent 38%, rgba(0,0,0,0.18) 100%),
+              linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 12%, transparent 88%, rgba(0,0,0,0.12) 100%)
             `,
           }}
         />
 
-        {/* Bottom ambient glow */}
+        {/* Bottom fade to solid — grounds the page */}
         <div
-          className="absolute bottom-0 left-0 right-0 h-[35vh]
-            bg-gradient-to-t from-background via-background/50 to-transparent"
+          className="absolute bottom-0 left-0 right-0"
+          style={{
+            height: "28%",
+            background: "linear-gradient(to bottom, transparent, #020205)",
+          }}
         />
 
-        {/* Top edge darkening */}
-        <div
-          className="absolute top-0 left-0 right-0 h-[10vh]
-            bg-gradient-to-b from-black/5 via-transparent to-transparent"
-        />
-
-        {/* Floating particles */}
-        {ambientParticles.map((particle, index) => (
+        {/* ── AMBIENT PARTICLES — floating micro-dots ── */}
+        {PARTICLES.map((p, i) => (
           <motion.span
-            key={index}
+            key={i}
             className="absolute rounded-full"
             style={{
-              left: particle.x,
-              top: particle.y,
-              width: particle.size,
-              height: particle.size,
-              background: 'var(--accent)',
-              boxShadow: '0 0 6px var(--accent-glow)',
+              left: p.x,
+              top: p.y,
+              width: "2px",
+              height: "2px",
+              background: "var(--accent)",
+              boxShadow: "0 0 8px var(--accent-glow)",
             }}
             initial={{ opacity: 0, y: "0%", x: "0%" }}
             animate={{
-              opacity: [0, 0.35, 0],
-              y: ["0%", "-180%"],
-              x: ["0%", index % 2 === 0 ? "40%" : "-40%"],
+              opacity: [0, 0.3, 0],
+              y: ["0%", "-200%"],
+              x: ["0%", `${p.drift * 50}%`],
             }}
             transition={{
-              duration: particle.duration,
-              delay: particle.delay,
+              duration: p.dur,
+              delay: p.delay,
               repeat: Infinity,
               ease: "linear",
             }}
           />
         ))}
-
       </div>
 
-      {/* ═══════════════════════════════════════════════════════ */}
-      {/* MAIN STAGE */}
-      {/* ═══════════════════════════════════════════════════════ */}
-
-      <section className="toolsy-home-stage relative z-10 flex w-full min-h-0 flex-1 items-center justify-center">
+      {/* ═══════════════════════════════════════════════════ */}
+      {/* MAIN HERO STAGE                                     */}
+      {/* ═══════════════════════════════════════════════════ */}
+      <section className="toolsy-home-stage relative z-10">
         <div className="toolsy-radial-scale relative flex items-center justify-center">
 
-          {/* Radial category menu */}
-          <RadialMenu />
+          {/* Radial orbital category menu */}
+          <RadialMenu
+            activeSegment={activeSegment}
+            onActiveSegmentChange={setActiveSegment}
+          />
 
-          {/* Center core — living cybernetic sphere */}
+          {/* Living center core */}
           <div className="relative z-30 aspect-square w-[30%]">
-            <Centerpiece />
+            <Centerpiece activeSegment={activeSegment} />
           </div>
+
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════════════════ */}
-      {/* FOOTER — minimal portal footer */}
-      {/* ═══════════════════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════════════ */}
+      {/* PORTAL FOOTER — minimal glass bar                  */}
+      {/* ═══════════════════════════════════════════════════ */}
+      <footer className="toolsy-portal-footer relative z-10 w-full shrink-0">
+        <div className="mx-auto flex h-full w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-[var(--space-page-x)]">
 
-      <footer className="toolsy-portal-footer relative z-10 w-full shrink-0
-        border-t border-border/50 dark:border-white/8
-        bg-background/30 dark:bg-background/40
-        backdrop-blur-2xl">
-
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-wrap items-center justify-center gap-x-6 gap-y-2
-          px-[var(--space-page-x)] text-center md:justify-between md:text-left">
-
-          {/* Status indicator */}
-          <div className="flex items-center gap-3">
+          {/* System status */}
+          <div className="flex items-center gap-2.5">
             <motion.span
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 2, repeat: Infinity }}
+              animate={{ opacity: [0.45, 1, 0.45] }}
+              transition={{ duration: 2.2, repeat: Infinity }}
               className="h-1.5 w-1.5 rounded-full bg-accent"
-              style={{ boxShadow: '0 0 12px var(--accent-glow)' }}
+              style={{ boxShadow: "0 0 10px var(--accent-glow)" }}
             />
-            <span className="toolsy-meta text-foreground/60 dark:text-white/50">
-              Toolsy Portal
+            <span className="toolsy-meta text-white/45">
+              Toolsy&nbsp;
+              <span className="text-white/25">·</span>
+              &nbsp;OS v1.0
             </span>
           </div>
 
-          {/* Navigation */}
-          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2
-            text-[10px] font-black uppercase tracking-[0.24em] text-muted
-            sm:gap-6 sm:tracking-[0.32em]">
-            <Link
-              href="/tools"
-              className="transition-all duration-500 hover:text-accent
-                hover:drop-shadow-[0_0_12px_var(--accent-glow)]"
-            >
-              Enter
-            </Link>
-            <a
-              href="https://github.com"
-              className="hidden transition-colors hover:text-accent sm:inline"
-            >
-              Source
-            </a>
-            <a
-              href="#"
-              className="transition-colors hover:text-accent"
-            >
-              Docs
-            </a>
-          </div>
+          {/* Nav links */}
+          <nav className="flex items-center gap-5">
+            {[
+              { label: "Enter", href: "/tools" },
+              { label: "Source", href: "https://github.com", hidden: true },
+              { label: "Docs", href: "#" },
+            ].map(({ label, href, hidden }) => (
+              <Link
+                key={label}
+                href={href}
+                className={`toolsy-meta text-white/40 transition-all duration-300 hover:text-white/90 hover:drop-shadow-[0_0_12px_var(--accent-glow)] ${hidden ? "hidden sm:inline" : ""}`}
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
         </div>
       </footer>
     </main>

@@ -206,7 +206,10 @@ body {
   /* ──────────────────────────────────────────────────────────── */
 
   .toolsy-home-shell {
-    @apply bg-background overflow-hidden;
+    overflow: hidden;
+    /* Pure cinematic dark canvas — all colour comes from JS layers */
+    background: #020205;
+    color: #f8fafc;
     min-height: 100vh;
     min-height: 100dvh;
     height: 100vh;
@@ -218,14 +221,15 @@ body {
 
   .toolsy-home-stage {
     @apply relative z-10 flex w-full min-h-0 flex-1 items-center justify-center;
-    padding: clamp(0.5rem, 1.8svh, 1.5rem) clamp(0.75rem, 2vw, 1.5rem);
+    padding: clamp(0.25rem, 1.5svh, 1.25rem) clamp(0.5rem, 2vw, 1.5rem);
   }
 
-  /* Radial scale wrapper — responsive sizing */
+  /* Radial scale wrapper — fully square, bounded by viewport */
   .toolsy-radial-scale {
     @apply relative flex items-center justify-center;
-    width: min(88vw, calc(100dvh - var(--home-footer-block) - 3rem), 54rem);
-    height: min(88vw, calc(100dvh - var(--home-footer-block) - 3rem), 54rem);
+    /* Take the smaller of: 90vw, available vertical space, or 60rem */
+    width:  min(90vw, calc(100dvh - var(--home-footer-block) - 1.5rem), 60rem);
+    height: min(90vw, calc(100dvh - var(--home-footer-block) - 1.5rem), 60rem);
     aspect-ratio: 1 / 1;
     flex: 0 0 auto;
   }
@@ -242,8 +246,8 @@ body {
   /* Portal footer */
   .toolsy-portal-footer {
     @apply relative z-10 w-full shrink-0 border-t backdrop-blur-2xl;
-    background-color: color-mix(in srgb, var(--background) 30%, transparent);
-    border-color: color-mix(in srgb, var(--border) 50%, transparent);
+    background-color: #020205;
+    border-color: rgba(255, 255, 255, 0.09);
     height: auto;
     padding-block: 0;
   }
@@ -348,7 +352,8 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  /* Precise orbital animation timing */
+  /* ── KEYFRAMES ─────────────────────────────────────────── */
+
   @keyframes orbital-pulse {
     0%, 100% { transform: scale(1); opacity: 0.6; }
     50% { transform: scale(1.08); opacity: 0.3; }
@@ -379,25 +384,29 @@ body {
     to { opacity: 1; transform: translate(-50%, 0); }
   }
 
-  .animate-orbital {
-    animation: orbital-pulse 4s ease-in-out infinite;
+  /* Core breathing — ambient life pulse */
+  @keyframes core-breathe {
+    0%, 100% { transform: scale(0.97); opacity: 0.14; }
+    50%       { transform: scale(1.03); opacity: 0.28; }
   }
 
-  .animate-core-spin {
-    animation: core-rotate 60s linear infinite;
+  /* Slow drift — for large ambient light pools */
+  @keyframes ambient-drift {
+    0%   { transform: translate(0, 0); }
+    25%  { transform: translate(2%, 1.5%); }
+    75%  { transform: translate(-2%, -1%); }
+    100% { transform: translate(0, 0); }
   }
 
-  .animate-core-spin-reverse {
-    animation: core-rotate-reverse 90s linear infinite;
-  }
+  /* ── ANIMATION UTILITIES ─────────────────────────────── */
 
-  .animate-fadeIn {
-    animation: fadeIn 0.35s ease-out both;
-  }
-
-  .animate-slideUp {
-    animation: slideUp 0.25s ease-out both;
-  }
+  .animate-orbital       { animation: orbital-pulse   4s ease-in-out infinite; }
+  .animate-core-spin     { animation: core-rotate    60s linear infinite; }
+  .animate-core-spin-rev { animation: core-rotate-reverse 90s linear infinite; }
+  .animate-core-breathe  { animation: core-breathe    5s ease-in-out infinite; }
+  .animate-ambient-drift { animation: ambient-drift  18s ease-in-out infinite; }
+  .animate-fadeIn        { animation: fadeIn   0.35s ease-out both; }
+  .animate-slideUp       { animation: slideUp  0.25s ease-out both; }
 
   .hide-scrollbar {
     -ms-overflow-style: none;
@@ -414,12 +423,22 @@ body {
     }
 
     .toolsy-radial-scale {
-      width: min(74vw, calc(100dvh - var(--home-footer-block) - 2rem));
-      height: min(74vw, calc(100dvh - var(--home-footer-block) - 2rem));
+      width: min(92vw, calc(100dvh - var(--home-footer-block) - 1.5rem));
+      height: min(92vw, calc(100dvh - var(--home-footer-block) - 1.5rem));
     }
 
     .toolsy-portal-footer {
       font-size: 0.625rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toolsy-home-shell *,
+    .toolsy-home-shell *::before,
+    .toolsy-home-shell *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
     }
   }
 }

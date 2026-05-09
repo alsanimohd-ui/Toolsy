@@ -2,124 +2,426 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
-import { ShieldCheck, Terminal, FileCode } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ShieldCheck, Database, Code2 } from "lucide-react";
 import { categoryList, tools } from "@/lib/tools";
+import type { CategoryId } from "@/lib/tools";
+
+// ─────────────────────────────────────────────────────────────
+// TYPES & ICONS
+// ─────────────────────────────────────────────────────────────
 
 interface RadialMenuProps {
-  activeSegment?: string | null;
+  activeSegment?: CategoryId | null;
+  onActiveSegmentChange?: (segment: CategoryId | null) => void;
 }
 
-// ─────────────────────────────────────────────────────────────
-// CATEGORY SEGMENTS — premium thick arcs with integrated labels
-// ─────────────────────────────────────────────────────────────
-const toolIcons = {
+const toolIcons: Record<string, React.ElementType> = {
   "network-security": ShieldCheck,
-  "data-analytics": Terminal,
-  "dev-automation": FileCode,
+  "data-analytics": Database,
+  "dev-automation": Code2,
 };
 
-const segments = categoryList.map((category) => ({
-  id: category.id,
-  label: category.label.toUpperCase(),
-  shortLabel: category.shortLabel.toUpperCase(),
-  color: category.color,
-  glowColor: category.glowColor,
-  gradientStart: category.gradientStart,
-  gradientMid: category.gradientMid,
-  gradientEnd: category.gradientEnd,
-  startAngle: category.radialStartAngle,
-  endAngle: category.radialEndAngle,
-  tools: tools
-    .filter((tool) => tool.categoryId === category.id)
-    .map((tool) => ({
-      name: tool.name,
-      route: tool.route,
-      icon: toolIcons[tool.categoryId],
-    })),
-}));
+// ─────────────────────────────────────────────────────────────
+// SVG GEOMETRY — clean constants
+// ─────────────────────────────────────────────────────────────
+
+const CX = 500;
+const CY = 500;
+const ARC_R = 320;          // arc center-line radius
+const ARC_HALF = 18;        // half-width — Apple Watch ring proportions
+const ARC_INNER = ARC_R - ARC_HALF;
+const ARC_OUTER = ARC_R + ARC_HALF;
+const NODE_R = ARC_OUTER + 108;
+const LABEL_R = ARC_R;
+const GAP_DEG = 10;         // gap between segments
 
 // ─────────────────────────────────────────────────────────────
-// SVG CONSTANTS — cinematic proportions
+// SPRING & EASING
 // ─────────────────────────────────────────────────────────────
-const CX = 450;
-const CY = 450;
-const ARC_RADIUS = 296;      // centerline radius
-const ARC_WIDTH = 64;         // premium weight with clean segment breathing room
-const ARC_INNER = ARC_RADIUS - ARC_WIDTH / 2;
-const ARC_OUTER = ARC_RADIUS + ARC_WIDTH / 2;
-const NODE_RADIUS = ARC_OUTER + 64; // contextual tool node distance
-const LABEL_RADIUS = ARC_RADIUS - 4;     // label rides INSIDE arc
-const SEGMENT_CAP_GAP = 14;
+
+const SPRING: { type: "spring"; stiffness: number; damping: number; mass: number } = {
+  type: "spring",
+  stiffness: 380,
+  damping: 28,
+  mass: 0.7,
+};
+
+const EASE_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 // ─────────────────────────────────────────────────────────────
-// GEOMETRY HELPERS
+// MATH HELPERS
 // ─────────────────────────────────────────────────────────────
-function polarToCartesian(cx: number, cy: number, r: number, deg: number) {
+
+function polar(cx: number, cy: number, r: number, deg: number) {
   const rad = ((deg - 90) * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
-function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
-  const s = polarToCartesian(cx, cy, r, startDeg);
-  const e = polarToCartesian(cx, cy, r, endDeg);
-  const span = Math.abs(endDeg - startDeg);
-  const large = span > 180 ? 1 : 0;
-  return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
+function arc(cx: number, cy: number, r: number, start: number, end: number, sweep = 1) {
+  const s = polar(cx, cy, r, start);
+  const e = polar(cx, cy, r, end);
+  const large = Math.abs(end - start) > 180 ? 1 : 0;
+  return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} ${sweep} ${e.x} ${e.y}`;
 }
 
-function arcLength(r: number, spanDeg: number) {
-  return (spanDeg / 360) * 2 * Math.PI * r;
+// Closed donut-slice path with ROUNDED end caps (capsule-style).
+// Each end gets a semicircle whose radius = half the band width.
+function annularPath(
+  cx: number, cy: number,
+  innerR: number, outerR: number,
+  startDeg: number, endDeg: number
+) {
+  const large = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+  const capR = (outerR - innerR) / 2;
+
+  const so = polar(cx, cy, outerR, startDeg);
+  const eo = polar(cx, cy, outerR, endDeg);
+  const ei = polar(cx, cy, innerR, endDeg);
+  const si = polar(cx, cy, innerR, startDeg);
+
+  return [
+    // Start at outer-start corner
+    `M ${so.x} ${so.y}`,
+    // Outer arc → outer-end corner
+    `A ${outerR} ${outerR} 0 ${large} 1 ${eo.x} ${eo.y}`,
+    // End cap semicircle (outer-end → inner-end, clockwise around cap centre)
+    `A ${capR} ${capR} 0 0 1 ${ei.x} ${ei.y}`,
+    // Inner arc back (inner-end → inner-start, reverse sweep)
+    `A ${innerR} ${innerR} 0 ${large} 0 ${si.x} ${si.y}`,
+    // Start cap semicircle (inner-start → outer-start)
+    `A ${capR} ${capR} 0 0 1 ${so.x} ${so.y}`,
+    `Z`,
+  ].join(" ");
 }
 
-function insetSegment(startDeg: number, endDeg: number) {
+function arcLen(r: number, deg: number) {
+  return (deg / 360) * 2 * Math.PI * r;
+}
+
+function segBounds(startDeg: number, endDeg: number) {
+  return { s: startDeg + GAP_DEG, e: endDeg - GAP_DEG };
+}
+
+// ─────────────────────────────────────────────────────────────
+// BUILD SEGMENTS FROM DATA
+// ─────────────────────────────────────────────────────────────
+
+const segments = categoryList.map((cat) => {
+  const { s, e } = segBounds(cat.radialStartAngle, cat.radialEndAngle);
+  const midDeg = (s + e) / 2;
+  const labelFlip = midDeg > 90 && midDeg < 270;
+
+  const catTools = tools
+    .filter((t) => t.categoryId === cat.id)
+    .map((t) => ({ name: t.name, route: t.route, categoryId: t.categoryId }));
+
   return {
-    start: startDeg + SEGMENT_CAP_GAP,
-    end: endDeg - SEGMENT_CAP_GAP,
+    id: cat.id,
+    label: cat.label.toUpperCase(),
+    shortLabel: cat.shortLabel.toUpperCase(),
+    color: cat.color,
+    glowColor: cat.glowColor,
+    gradientStart: cat.gradientStart,
+    gradientMid: cat.gradientMid,
+    gradientEnd: cat.gradientEnd,
+    route: cat.route,
+    startDeg: cat.radialStartAngle,
+    endDeg: cat.radialEndAngle,
+    s, e,
+    midDeg,
+    labelFlip,
+    tools: catTools,
   };
+});
+
+// ─────────────────────────────────────────────────────────────
+// TOOL NODE COMPONENT — premium glass control
+// ─────────────────────────────────────────────────────────────
+
+function ToolNode({
+  tool,
+  color,
+  glowColor,
+  isVisible,
+  pos,
+  hiddenPos,
+  idx,
+  onKeepActive,
+}: {
+  tool: { name: string; route: string; categoryId: string };
+  color: string;
+  glowColor: string;
+  isVisible: boolean;
+  pos: { x: number; y: number };
+  hiddenPos: { x: number; y: number };
+  idx: number;
+  onKeepActive: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const ToolIcon = toolIcons[tool.categoryId] ?? Code2;
+
+  // ── Dynamic pill geometry ──────────────────────────────────────
+  // Character width estimate for ui-sans-serif 7.5px / weight-600 / letter-spacing 0.14em:
+  //   glyph ≈ 5.5px  +  spacing ≈ 7.5 × 0.14 ≈ 1.05px  →  ~6.4px per char
+  // Layout zones:  [padding-l: 8] [icon: 17] [divider gap: 5] [text] [padding-r: 12]
+  const CHAR_W   = 6.4;
+  const ICON_ZONE = 30;   // left padding + icon circle + gap to divider
+  const PAD_R    = 14;    // right padding after text
+  const label    = tool.name.toUpperCase();
+  const textW    = label.length * CHAR_W;
+  const pillW    = Math.max(88, Math.ceil(ICON_ZONE + textW + PAD_R));
+  const pillH    = 34;
+  const iconR    = 13;
+
+  return (
+    <motion.g
+      role="button"
+      aria-label={`Open ${tool.name}`}
+      onMouseEnter={() => {
+        onKeepActive();
+        setHovered(true);
+      }}
+      onMouseLeave={() => setHovered(false)}
+      initial={false}
+      animate={{
+        opacity: isVisible ? 1 : 0,
+        x: isVisible ? 0 : (hiddenPos.x - pos.x) * 0.6,
+        y: isVisible ? 0 : (hiddenPos.y - pos.y) * 0.6,
+        scale: isVisible ? 1 : 0.6,
+      }}
+      transition={{
+        ...SPRING,
+        delay: isVisible ? idx * 0.07 : idx * 0.02,
+        opacity: { duration: isVisible ? 0.35 : 0.15 },
+      }}
+      style={{
+        pointerEvents: isVisible ? "auto" : "none",
+        cursor: "pointer",
+      }}
+    >
+      <Link href={tool.route} aria-label={`Open ${tool.name}`} tabIndex={isVisible ? 0 : -1}>
+
+        {/* ── Connecting accent line arc → node ── */}
+        <motion.line
+          x1={hiddenPos.x}
+          y1={hiddenPos.y}
+          x2={pos.x - pillW / 2}
+          y2={pos.y}
+          stroke={color}
+          strokeLinecap="round"
+          strokeDasharray="2 5"
+          animate={{
+            opacity: isVisible ? (hovered ? 0.5 : 0.15) : 0,
+            strokeWidth: hovered ? 1.0 : 0.5,
+          }}
+          transition={{ duration: 0.3 }}
+        />
+
+        {/* ── Ambient glow bloom behind pill ── */}
+        <motion.ellipse
+          cx={pos.x}
+          cy={pos.y}
+          rx={pillW * 0.6}
+          ry={pillH * 0.9}
+          fill={color}
+          animate={{ opacity: hovered ? 0.14 : 0 }}
+          transition={SPRING}
+          style={{ filter: "blur(10px)" }}
+        />
+
+        {/* ── Pill base: always-dark glass body ── */}
+        <rect
+          x={pos.x - pillW / 2}
+          y={pos.y - pillH / 2}
+          width={pillW}
+          height={pillH}
+          rx={pillH / 2}
+          fill="rgba(6,8,22,0.88)"
+        />
+
+        {/* ── Pill border: animated opacity ── */}
+        <motion.rect
+          x={pos.x - pillW / 2}
+          y={pos.y - pillH / 2}
+          width={pillW}
+          height={pillH}
+          rx={pillH / 2}
+          fill="none"
+          stroke={color}
+          strokeWidth={1}
+          animate={{ opacity: hovered ? 0.9 : 0.38 }}
+          transition={SPRING}
+          style={{
+            filter: hovered
+              ? `drop-shadow(0 0 8px ${glowColor}) drop-shadow(0 0 18px ${glowColor}50)`
+              : undefined,
+          }}
+        />
+
+        {/* ── Top specular edge ── */}
+        <rect
+          x={pos.x - pillW / 2 + 10}
+          y={pos.y - pillH / 2 + 1}
+          width={pillW - 20}
+          height={0.8}
+          rx={0.4}
+          fill="rgba(255,255,255,0.16)"
+        />
+
+        {/* ── Icon zone fill ── */}
+        <motion.circle
+          cx={pos.x - pillW / 2 + 17}
+          cy={pos.y}
+          r={iconR}
+          fill={color}
+          animate={{ opacity: hovered ? 0.26 : 0.14 }}
+          transition={SPRING}
+        />
+
+        {/* ── Icon ── */}
+        <foreignObject
+          x={pos.x - pillW / 2 + 17 - 8}
+          y={pos.y - 8}
+          width={16}
+          height={16}
+          className="overflow-visible pointer-events-none"
+        >
+          <div className="flex h-full w-full items-center justify-center">
+            <ToolIcon
+              size={12}
+              strokeWidth={2.2}
+              style={{
+                color: hovered ? "#fff" : color,
+                filter: hovered ? `drop-shadow(0 0 5px ${glowColor})` : undefined,
+                transition: "color 0.2s, filter 0.2s",
+              }}
+            />
+          </div>
+        </foreignObject>
+
+        {/* ── Divider between icon and text ── */}
+        <line
+          x1={pos.x - pillW / 2 + 30}
+          y1={pos.y - pillH / 2 + 7}
+          x2={pos.x - pillW / 2 + 30}
+          y2={pos.y + pillH / 2 - 7}
+          stroke="rgba(255,255,255,0.1)"
+          strokeWidth={0.6}
+        />
+
+        {/* ── Name label ── */}
+        <motion.text
+          x={pos.x - pillW / 2 + 39}
+          y={pos.y + 0.5}
+          dominantBaseline="middle"
+          style={{
+            fontSize: "7.5px",
+            fontWeight: 600,
+            letterSpacing: "0.14em",
+            fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+          }}
+          animate={{ fill: hovered ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)" }}
+          transition={{ duration: 0.2 }}
+        >
+          {label}
+        </motion.text>
+
+        {/* ── Invisible hit target ── */}
+        <rect
+          x={pos.x - pillW / 2 - 8}
+          y={pos.y - pillH / 2 - 8}
+          width={pillW + 16}
+          height={pillH + 16}
+          rx={(pillH + 16) / 2}
+          fill="transparent"
+        />
+      </Link>
+    </motion.g>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
-// EASING FUNCTIONS — premium motion feel
+// RADIAL MENU — main export
 // ─────────────────────────────────────────────────────────────
-const PREMIUM_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];     // expo out
-const SNAPPY_EASE: [number, number, number, number] = [0.68, -0.55, 0.27, 1.55]; // magnetic snap
 
-// ─────────────────────────────────────────────────────────────
-// MAIN COMPONENT
-// ─────────────────────────────────────────────────────────────
-export default function RadialMenu({ activeSegment: propActiveSegment }: RadialMenuProps) {
+export default function RadialMenu({
+  activeSegment: propActive,
+  onActiveSegmentChange,
+}: RadialMenuProps) {
   const [mounted, setMounted] = useState(false);
-  const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
-  const [hoveredTool, setHoveredTool] = useState<string | null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [hovered, setHovered] = useState<CategoryId | null>(null);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
-  if (!mounted) return <div className="absolute inset-0" />;
+  const active = propActive ?? hovered;
 
-  const active = propActiveSegment ?? hoveredSegment;
+  // Debounced setter — clears any pending leave timer
+  const keepActive = (seg: CategoryId) => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+    setHovered(seg);
+    onActiveSegmentChange?.(seg);
+  };
+
+  const setActive = (seg: CategoryId | null) => {
+    if (seg !== null) {
+      keepActive(seg);
+    } else {
+      // Delay clearing so mouse can travel from arc → nodes
+      leaveTimerRef.current = setTimeout(() => {
+        setHovered(null);
+        onActiveSegmentChange?.(null);
+        leaveTimerRef.current = null;
+      }, 260);
+    }
+  };
+
+  useEffect(() => () => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+  }, []);
+
+  // Pre-compute particle ring positions
+  const particles = useMemo(
+    () =>
+      Array.from({ length: 40 }).map((_, i) => ({
+        angle: i * 9,
+        r: ARC_INNER - 32 + (i % 3) * 16,
+        size: 0.7 + (i % 4) * 0.22,
+        dur: 3.5 + (i % 7) * 0.4,
+        delay: i * 0.045,
+      })),
+    []
+  );
+
+  if (!mounted) return <div className="absolute inset-0" />;
 
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.88 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 2, ease: PREMIUM_EASE }}
-      className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden"
+      transition={{ duration: 1.5, ease: EASE_EXPO }}
+      className="absolute inset-0 flex items-center justify-center overflow-visible pointer-events-none"
     >
       <svg
-        ref={svgRef}
-        viewBox="0 0 900 900"
-        className="h-full w-full pointer-events-auto"
+        viewBox="0 0 1000 1000"
+        className="h-full w-full pointer-events-auto overflow-visible"
         preserveAspectRatio="xMidYMid meet"
+        aria-label="Toolsy category orbital menu"
       >
         <defs>
-          {/* ── Per-segment premium gradients ── */}
+          {/* Per-segment gradient fills */}
           {segments.map((s) => (
             <linearGradient
-              key={`grad-${s.id}`}
-              id={`grad-${s.id}`}
-              x1="0%" y1="0%" x2="100%" y2="100%"
+              key={`fill-${s.id}`}
+              id={`fill-${s.id}`}
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
               gradientUnits="userSpaceOnUse"
             >
               <stop offset="0%" stopColor={s.gradientStart} />
@@ -128,44 +430,30 @@ export default function RadialMenu({ activeSegment: propActiveSegment }: RadialM
             </linearGradient>
           ))}
 
-          {/* ── Deep inner glow gradient ── */}
+          {/* Light sweep shimmer */}
           {segments.map((s) => (
-            <linearGradient
-              key={`grad-inner-${s.id}`}
-              id={`grad-inner-${s.id}`}
-              x1="0%" y1="100%" x2="100%" y2="0%"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop offset="0%" stopColor={s.gradientEnd} stopOpacity="0.9" />
-              <stop offset="100%" stopColor={s.gradientStart} stopOpacity="0.3" />
+            <linearGradient key={`sweep-${s.id}`} id={`sweep-${s.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0)" />
+              <stop offset="40%" stopColor="rgba(255,255,255,0.9)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0)" />
             </linearGradient>
           ))}
 
-          {/* ── Label path (arc centerline for text) ── */}
-          {segments.map((s) => (
-            <path
-              key={`label-path-${s.id}`}
-              id={`label-path-${s.id}`}
-              d={arcPath(CX, CY, LABEL_RADIUS, insetSegment(s.startAngle, s.endAngle).start + 8, insetSegment(s.startAngle, s.endAngle).end - 8)}
-              fill="none"
-            />
-          ))}
+          {/* Label arc paths */}
+          {segments.map((s) => {
+            const lPath = s.labelFlip
+              ? arc(CX, CY, LABEL_R, s.e - 10, s.s + 10, 0)
+              : arc(CX, CY, LABEL_R, s.s + 10, s.e - 10);
+            return (
+              <path key={`lp-${s.id}`} id={`lp-${s.id}`} d={lPath} fill="none" />
+            );
+          })}
 
-          {/* ── Outer edge highlight path ── */}
+          {/* Soft glow filter */}
           {segments.map((s) => (
-            <path
-              key={`edge-path-${s.id}`}
-              id={`edge-path-${s.id}`}
-              d={arcPath(CX, CY, ARC_OUTER - 2, insetSegment(s.startAngle, s.endAngle).start, insetSegment(s.startAngle, s.endAngle).end)}
-              fill="none"
-            />
-          ))}
-
-          {/* ── Deep glow filter ── */}
-          {segments.map((s) => (
-            <filter key={`glow-deep-${s.id}`} id={`glow-deep-${s.id}`} x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="blur1" />
-              <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur2" />
+            <filter key={`gf-${s.id}`} id={`gf-${s.id}`} x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur1" />
+              <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur2" />
               <feMerge>
                 <feMergeNode in="blur1" />
                 <feMergeNode in="blur2" />
@@ -174,181 +462,228 @@ export default function RadialMenu({ activeSegment: propActiveSegment }: RadialM
             </filter>
           ))}
 
-          {/* ── Soft ambient glow ── */}
-          {segments.map((s) => (
-            <filter key={`glow-soft-${s.id}`} id={`glow-soft-${s.id}`} x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          ))}
-
-          {/* ── Atmospheric radial glow ── */}
-          <radialGradient id="core-atmosphere" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
-            <stop offset="100%" stopColor="transparent" />
+          {/* Soft portal depth */}
+          <radialGradient id="portal-bg" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.035)" />
+            <stop offset="70%" stopColor="rgba(255,255,255,0.01)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
           </radialGradient>
 
-          {/* ── Glassmorphism ambient ── */}
-          <radialGradient id="ambient-pulse" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.03)" />
-            <stop offset="60%" stopColor="rgba(255,255,255,0.01)" />
-            <stop offset="100%" stopColor="transparent" />
-          </radialGradient>
+          {/* Clip to ring band for connector dots */}
+          <clipPath id="ring-band">
+            <circle cx={CX} cy={CY} r={ARC_OUTER + 16} />
+          </clipPath>
         </defs>
 
-        {/* ── Deep space atmosphere ───────────────────────────── */}
-        <circle cx={CX} cy={CY} r={ARC_RADIUS * 1.9} fill="url(#ambient-pulse)" />
+        {/* Subtle portal background glow disc */}
+        <circle cx={CX} cy={CY} r={440} fill="url(#portal-bg)" />
 
-        {/* ── Structural precision rings ──────────────────────── */}
-        <circle
-          cx={CX} cy={CY}
-          r={ARC_INNER - 12}
+        {/* ── BACKGROUND STRUCTURE RINGS ── */}
+        {/* Inner boundary */}
+        <motion.circle
+          cx={CX}
+          cy={CY}
+          r={ARC_INNER - 20}
           fill="none"
-          stroke="currentColor"
-          strokeWidth="0.5"
-          strokeDasharray="2 12"
-          className="opacity-[0.05] dark:opacity-[0.06]"
+          stroke="rgba(255,255,255,0.07)"
+          strokeWidth={0.6}
+          strokeDasharray="1.5 10"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 100, repeat: Infinity, ease: "linear" }}
+          style={{ transformOrigin: `${CX}px ${CY}px` }}
         />
-        <circle
-          cx={CX} cy={CY}
-          r={ARC_OUTER + 12}
+        {/* Outer boundary */}
+        <motion.circle
+          cx={CX}
+          cy={CY}
+          r={ARC_OUTER + 20}
           fill="none"
-          stroke="currentColor"
-          strokeWidth="0.5"
-          strokeDasharray="2 12"
-          className="opacity-[0.04] dark:opacity-[0.05]"
+          stroke="rgba(255,255,255,0.05)"
+          strokeWidth={0.6}
+          strokeDasharray="2 14"
+          animate={{ rotate: -360 }}
+          transition={{ duration: 140, repeat: Infinity, ease: "linear" }}
+          style={{ transformOrigin: `${CX}px ${CY}px` }}
+        />
+        {/* Node orbit ring */}
+        <circle
+          cx={CX}
+          cy={CY}
+          r={NODE_R}
+          fill="none"
+          stroke="rgba(255,255,255,0.04)"
+          strokeWidth={0.5}
+          strokeDasharray="1 20"
         />
 
-        {/* ── Segment Arcs ────────────────────────────────────── */}
+        {/* ── AMBIENT PARTICLE RING ── */}
+        {particles.map((p, i) => {
+          const pos = polar(CX, CY, p.r, p.angle);
+          return (
+            <motion.circle
+              key={i}
+              cx={pos.x}
+              cy={pos.y}
+              r={p.size}
+              fill="rgba(255,255,255,0.5)"
+              animate={{
+                opacity: active
+                  ? [0.07, 0.28, 0.07]
+                  : [0.03, 0.12, 0.03],
+                scale: active ? [1, 1.7, 1] : [1, 1.2, 1],
+              }}
+              transition={{
+                duration: p.dur,
+                delay: p.delay,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+            />
+          );
+        })}
+
+        {/* ── SEGMENTS ── */}
         {segments.map((s, sIdx) => {
           const isActive = active === s.id;
-          const segment = insetSegment(s.startAngle, s.endAngle);
-          const spanDeg = segment.end - segment.start;
-          const totalLen = arcLength(ARC_RADIUS, spanDeg);
-          const d = arcPath(CX, CY, ARC_RADIUS, segment.start, segment.end);
+          const spanDeg = s.e - s.s;
+          const totalLen = arcLen(ARC_R, spanDeg);
+          const dInnerEdge = arc(CX, CY, ARC_INNER + 4, s.s + 2, s.e - 2);
+          const dOuterEdge = arc(CX, CY, ARC_OUTER - 4, s.s + 2, s.e - 2);
+          const dSweep = arc(CX, CY, ARC_R, s.s + 6, s.e - 6);
+          const halfLen = arcLen(ARC_R, (spanDeg) / 2);
+
+          // Filled donut-slice shapes for crisp rendering
+          const dFill    = annularPath(CX, CY, ARC_INNER, ARC_OUTER, s.s, s.e);
+          const dFillHit = annularPath(CX, CY, ARC_INNER - 32, ARC_OUTER + 32, s.s - 4, s.e + 4);
 
           return (
             <g
               key={s.id}
-              onMouseEnter={() => setHoveredSegment(s.id)}
-              onMouseLeave={() => setHoveredSegment(null)}
+              onMouseEnter={() => setActive(s.id as CategoryId)}
+              onMouseLeave={() => setActive(null)}
             >
-              {/* ── Thick invisible hit zone ── */}
+              {/* Large invisible hit area — filled shape */}
+              <Link href={s.route} aria-label={`Open ${s.label} tools`}>
+                <path
+                  d={dFillHit}
+                  fill="transparent"
+                  stroke="none"
+                  className="cursor-pointer"
+                />
+              </Link>
+
+              {/* ── GLOW HALO — filled shape matching rounded arc, blurred outward ── */}
+              <motion.path
+                d={annularPath(CX, CY, ARC_INNER - ARC_HALF * 0.6, ARC_OUTER + ARC_HALF * 0.6, s.s, s.e)}
+                fill={s.color}
+                stroke="none"
+                initial={{ opacity: 0 }}
+                animate={{
+                  opacity: isActive ? 0.45 : 0.06,
+                }}
+                transition={{ duration: 0.5, ease: EASE_EXPO }}
+                style={{
+                  filter: isActive ? `blur(${ARC_HALF * 1.2}px)` : `blur(${ARC_HALF * 0.8}px)`,
+                }}
+              />
+
+              {/* ── BASE TRACK — dark frosted substrate ── */}
               <path
-                d={d}
-                fill="none"
-                stroke="transparent"
-                strokeWidth={ARC_WIDTH + 80}
-                className="cursor-pointer"
+                d={dFill}
+                fill="rgba(255,255,255,0.04)"
+                stroke="rgba(255,255,255,0.06)"
+                strokeWidth={0.8}
               />
 
-              {/* ── Deep shadow layer ── */}
+              {/* ── MAIN FILL — filled annular shape with gradient ── */}
               <motion.path
-                d={d}
-                fill="none"
-                stroke={s.color}
-                strokeWidth={ARC_WIDTH + 8}
-                strokeLinecap="round"
-                initial={{ opacity: 0.04, strokeWidth: ARC_WIDTH + 5 }}
+                d={dFill}
+                fill={`url(#fill-${s.id})`}
+                stroke="none"
+                initial={{ opacity: 0 }}
                 animate={{
-                  opacity: isActive ? 0.15 : 0.04,
-                  strokeWidth: isActive ? ARC_WIDTH + 10 : ARC_WIDTH + 5,
-                }}
-                transition={{ duration: 0.9, ease: PREMIUM_EASE }}
-              />
-
-              {/* ── Track (dim base) ── */}
-              <motion.path
-                d={d}
-                fill="none"
-                stroke={s.color}
-                strokeWidth={ARC_WIDTH}
-                strokeLinecap="round"
-                initial={{ opacity: 0.05 }}
-                animate={{ opacity: isActive ? 0.12 : 0.05 }}
-                transition={{ duration: 0.8 }}
-              />
-
-              {/* ── MAIN ARC — cinematic reveal animation ── */}
-              <motion.path
-                id={`arc-${s.id}`}
-                d={d}
-                fill="none"
-                stroke={`url(#grad-${s.id})`}
-                strokeWidth={ARC_WIDTH}
-                strokeLinecap="round"
-                initial={{
-                  strokeDasharray: `${totalLen} 0`,
-                  strokeDashoffset: 0,
-                  opacity: 0,
-                  rotate: -20,
-                }}
-                animate={{
-                  strokeDashoffset: 0,
-                  opacity: isActive ? 1 : 0.88,
-                  strokeWidth: isActive ? ARC_WIDTH + 3 : ARC_WIDTH,
-                  rotate: 0,
+                  opacity: isActive ? 1 : 0.84,
+                  scale: isActive ? 1.012 : 1,
                 }}
                 transition={{
-                  strokeDashoffset: { duration: 1.4 + sIdx * 0.15, ease: [0.22, 1, 0.36, 1] },
-                  opacity: { duration: 0.6, delay: 0.2 },
-                  strokeWidth: { duration: 0.8, ease: PREMIUM_EASE },
-                  rotate: { duration: 2, ease: [0.16, 1, 0.3, 1] },
+                  opacity: { delay: sIdx * 0.12, duration: 1.2, ease: EASE_EXPO },
+                  scale: SPRING,
                 }}
                 style={{ transformOrigin: `${CX}px ${CY}px` }}
-                filter={isActive ? `url(#glow-deep-${s.id})` : undefined}
               />
 
-              {/* ── Inner depth highlight ── */}
+              {/* ── LIGHT SWEEP — shimmer stroke on center line ── */}
               <motion.path
-                d={arcPath(CX, CY, ARC_INNER + 6, segment.start + 2, segment.end - 2)}
+                d={dSweep}
                 fill="none"
-                stroke="rgba(255,255,255,0.25)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                initial={{ opacity: 0.08 }}
-                animate={{ opacity: isActive ? 0.3 : 0.08 }}
-                transition={{ duration: 0.7 }}
+                stroke={`url(#sweep-${s.id})`}
+                strokeLinecap="butt"
+                strokeDasharray={`${halfLen * 0.28} ${totalLen}`}
+                animate={{
+                  strokeDashoffset: isActive ? [-totalLen, 0] : [-totalLen, -totalLen * 0.4],
+                  opacity: isActive ? 0.65 : 0.16,
+                  strokeWidth: isActive ? ARC_HALF * 2 - 4 : ARC_HALF * 2 - 8,
+                }}
+                transition={{
+                  strokeDashoffset: {
+                    duration: isActive ? 2.8 : 6,
+                    repeat: Infinity,
+                    ease: "linear",
+                  },
+                  opacity: { duration: 0.35 },
+                  strokeWidth: { duration: 0.35 },
+                }}
               />
 
-              {/* ── Outer glow edge ── */}
+              {/* ── EDGE LINES — precision inner/outer borders ── */}
+              {/* Inner edge */}
               <motion.path
-                d={arcPath(CX, CY, ARC_OUTER - 5, segment.start + 2, segment.end - 2)}
+                d={dInnerEdge}
                 fill="none"
-                stroke={s.color}
-                strokeWidth="1.5"
+                stroke="rgba(255,255,255,0.5)"
                 strokeLinecap="round"
-                initial={{ opacity: 0.12 }}
-                animate={{ opacity: isActive ? 0.5 : 0.12 }}
-                transition={{ duration: 0.7 }}
+                animate={{
+                  strokeWidth: isActive ? 1.8 : 0.8,
+                  opacity: isActive ? 0.4 : 0.14,
+                }}
+                transition={{ duration: 0.3 }}
+              />
+              {/* Outer edge — accent tinted */}
+              <motion.path
+                d={dOuterEdge}
+                fill="none"
+                stroke={s.gradientStart}
+                strokeLinecap="round"
+                animate={{
+                  strokeWidth: isActive ? 2 : 0.8,
+                  opacity: isActive ? 0.55 : 0.18,
+                }}
+                transition={{ duration: 0.3 }}
               />
 
-              {/* ── Label text INSIDE arc ── */}
+              {/* ── LABEL SYSTEM ── */}
               <motion.g
-                initial={{ opacity: 0.72 }}
-                animate={{ opacity: isActive ? 1 : 0.72 }}
-                transition={{ duration: 0.7 }}
+                animate={{ opacity: isActive ? 1 : 0.92 }}
+                transition={{ duration: 0.25 }}
               >
-                {/* Text shadow layer for depth */}
+
+                {/* Label text — crisp shadow for legibility (aria-hidden) */}
                 <text
+                  aria-hidden="true"
                   style={{
-                    userSelect: "none",
-                    fontSize: "12px",
-                    fontWeight: 900,
-                    letterSpacing: "0.24em",
+                    fontSize: "13.5px",
+                    fontWeight: 600,
+                    letterSpacing: "0.22em",
+                    fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
                     fill: "none",
                     paintOrder: "stroke",
-                    stroke: "rgba(0,0,0,0.72)",
-                    strokeWidth: "6px",
+                    stroke: "rgba(0,0,0,0.75)",
+                    strokeWidth: "3.5px",
                     strokeLinejoin: "round",
-                    filter: `blur(2px)`,
                   }}
                 >
                   <textPath
-                    href={`#label-path-${s.id}`}
+                    href={`#lp-${s.id}`}
                     startOffset="50%"
                     textAnchor="middle"
                     dominantBaseline="middle"
@@ -356,223 +691,78 @@ export default function RadialMenu({ activeSegment: propActiveSegment }: RadialM
                     {s.label}
                   </textPath>
                 </text>
-                {/* Soft text shadow */}
-                <text
+
+                {/* Label text — main, premium refined style */}
+                <motion.text
                   style={{
-                    userSelect: "none",
-                    fontSize: "11px",
-                    fontWeight: 900,
-                    letterSpacing: "0.24em",
-                    fill: "rgba(255,255,255,0.82)",
-                    textTransform: "uppercase",
-                    filter: `drop-shadow(0 0 6px ${s.glowColor})`,
+                    fontSize: "13.5px",
+                    fontWeight: 600,
+                    letterSpacing: "0.22em",
+                    fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
                   }}
+                  animate={{
+                    fill: isActive ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)",
+                  }}
+                  transition={{ duration: 0.3 }}
                 >
                   <textPath
-                    href={`#label-path-${s.id}`}
+                    href={`#lp-${s.id}`}
                     startOffset="50%"
                     textAnchor="middle"
                     dominantBaseline="middle"
+                    style={{
+                      filter: isActive
+                        ? `drop-shadow(0 0 8px ${s.glowColor}) drop-shadow(0 0 16px ${s.glowColor})`
+                        : `drop-shadow(0 0 3px ${s.glowColor})`,
+                    }}
                   >
                     {s.label}
                   </textPath>
-                </text>
+                </motion.text>
               </motion.g>
 
-              {/* ── Tool Nodes ─────────────────────────────────── */}
+              {/* ── CONNECTOR DOTS — mid-point accent ── */}
+              {[s.s, s.e].map((deg, di) => {
+                const dotPos = polar(CX, CY, ARC_R, deg + (di === 0 ? GAP_DEG * 0.4 : -GAP_DEG * 0.4));
+                return (
+                  <motion.circle
+                    key={di}
+                    cx={dotPos.x}
+                    cy={dotPos.y}
+                    r={2.5}
+                    fill={s.color}
+                    animate={{
+                      opacity: isActive ? 0.9 : 0.3,
+                      r: isActive ? 3.5 : 2,
+                    }}
+                    transition={{ duration: 0.3 }}
+                    style={{ filter: isActive ? `drop-shadow(0 0 6px ${s.glowColor})` : undefined }}
+                  />
+                );
+              })}
+
+              {/* ── TOOL NODES ── */}
               {s.tools.map((tool, idx) => {
-                const mid = s.startAngle + (s.endAngle - s.startAngle) / (s.tools.length + 1) * (idx + 1);
-                const hiddenPos = polarToCartesian(CX, CY, ARC_OUTER + 16, mid);
-                const pos = polarToCartesian(CX, CY, NODE_RADIUS, mid);
-                const ToolIcon = tool.icon;
-                const isHovered = hoveredTool === tool.name;
-                const shouldReveal = isActive;
+                const frac = (idx + 1) / (s.tools.length + 1);
+                const toolDeg = s.startDeg + (s.endDeg - s.startDeg) * frac;
+                const nodePos = polar(CX, CY, NODE_R, toolDeg);
+                const hiddenPos = polar(CX, CY, ARC_OUTER + 14, toolDeg);
 
                 return (
-                  <Link key={tool.name} href={tool.route}>
-                    <motion.g
-                      onMouseEnter={() => setHoveredTool(tool.name)}
-                      onMouseLeave={() => setHoveredTool(null)}
-                      initial={false}
-                      animate={{
-                        opacity: shouldReveal ? 1 : 0,
-                        scale: shouldReveal ? 1 : 0.82,
-                        x: shouldReveal ? 0 : hiddenPos.x - pos.x,
-                        y: shouldReveal ? 0 : hiddenPos.y - pos.y,
-                      }}
-                      transition={{ duration: 0.45, ease: PREMIUM_EASE }}
-                      style={{
-                        pointerEvents: shouldReveal ? "auto" : "none",
-                        transformOrigin: `${pos.x}px ${pos.y}px`,
-                      }}
-                    >
-                      {/* ── Magnetic field pulse ── */}
-                      <motion.circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={isActive ? 32 : 28}
-                        fill="none"
-                        stroke={s.color}
-                        strokeWidth="0.5"
-                        initial={{ opacity: 0.08, rotate: 0 }}
-                        animate={{
-                          opacity: isHovered ? [0.16, 0.34, 0.16] : 0.08,
-                          rotate: isHovered ? 360 : 0,
-                        }}
-                        transition={{
-                          opacity: { duration: 2, repeat: Infinity },
-                          rotate: { duration: 8, repeat: Infinity, ease: "linear" },
-                        }}
-                      />
-
-                      {/* ── Node outer glow ── */}
-                      <motion.circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={20}
-                        fill={s.color}
-                        initial={{ opacity: 0.07, scale: 1 }}
-                        animate={{
-                          opacity: isHovered ? 0.12 : 0.07,
-                          scale: isHovered ? 1.3 : 1,
-                        }}
-                        transition={{ duration: 0.5, ease: PREMIUM_EASE }}
-                        style={{ transformOrigin: `${pos.x}px ${pos.y}px` }}
-                      />
-
-                      {/* ── Node shell ── */}
-                      <motion.circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={18}
-                        fill="rgba(8,10,18,0.9)"
-                        stroke={s.color}
-                        strokeWidth="2"
-                        initial={{ opacity: 1, scale: 1, strokeWidth: 1.5 }}
-                        animate={{
-                          opacity: 1,
-                          scale: isHovered ? 1.1 : 1,
-                          strokeWidth: isHovered ? 2.5 : 1.5,
-                        }}
-                        transition={{ duration: 0.4, ease: SNAPPY_EASE }}
-                        style={{ transformOrigin: `${pos.x}px ${pos.y}px` }}
-                        filter={isHovered ? `url(#glow-soft-${s.id})` : undefined}
-                      />
-                      {/* Inner highlight ring */}
-                      <motion.circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={12}
-                        fill="none"
-                        stroke="rgba(255,255,255,0.15)"
-                        strokeWidth="0.75"
-                        initial={{ opacity: 0.1 }}
-                        animate={{ opacity: isHovered ? 0.4 : 0.1 }}
-                        transition={{ duration: 0.4 }}
-                        style={{ transformOrigin: `${pos.x}px ${pos.y}px` }}
-                      />
-
-                      {/* ── Icon ── */}
-                      <motion.g
-                        initial={{ scale: 1, rotate: 0 }}
-                        animate={{
-                          scale: isHovered ? 1.15 : 1,
-                          rotate: isHovered ? [0, 5, -5, 0] : 0,
-                        }}
-                        transition={{
-                          scale: { duration: 0.4, ease: SNAPPY_EASE },
-                          rotate: { duration: 0.6, ease: PREMIUM_EASE },
-                        }}
-                        style={{ transformOrigin: `${pos.x}px ${pos.y}px` }}
-                      >
-                        <foreignObject
-                          x={pos.x - 9}
-                          y={pos.y - 9}
-                          width={18}
-                          height={18}
-                          className="overflow-visible"
-                        >
-                          <div className="flex items-center justify-center w-full h-full">
-                            <ToolIcon
-                              size={14}
-                              strokeWidth={2}
-                              style={{ color: s.color }}
-                              className="drop-shadow-[0_0_4px_rgba(255,255,255,0.3)]"
-                            />
-                          </div>
-                        </foreignObject>
-                      </motion.g>
-
-                      {/* ── Premium tooltip ── */}
-                      <motion.g
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{
-                          opacity: isHovered ? 1 : 0,
-                          y: isHovered ? 0 : 4,
-                          scale: isHovered ? 1 : 0.95,
-                        }}
-                        transition={{ duration: 0.35, ease: PREMIUM_EASE }}
-                        style={{ pointerEvents: "none" }}
-                      >
-                        {/* Tooltip background */}
-                        <rect
-                          x={pos.x - 42}
-                          y={pos.y - 42}
-                          width={84}
-                          height={24}
-                          rx={6}
-                          fill="rgba(10,12,20,0.92)"
-                          stroke={s.color}
-                          strokeWidth="0.75"
-                        />
-                        {/* Tooltip text */}
-                        <text
-                          x={pos.x}
-                          y={pos.y - 31}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          style={{
-                            fontSize: "8px",
-                            fontWeight: 700,
-                            letterSpacing: "0.2em",
-                            fill: "rgba(255,255,255,0.9)",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {tool.name}
-                        </text>
-                      </motion.g>
-                    </motion.g>
-                  </Link>
+                  <ToolNode
+                    key={tool.name}
+                    tool={tool}
+                    color={s.color}
+                    glowColor={s.glowColor}
+                    isVisible={isActive}
+                    pos={nodePos}
+                    hiddenPos={hiddenPos}
+                    idx={idx}
+                    onKeepActive={() => keepActive(s.id as CategoryId)}
+                  />
                 );
               })}
             </g>
-          );
-        })}
-
-        {/* ── Orbital guide dots ──────────────────────────────── */}
-        {Array.from({ length: 36 }).map((_, i) => {
-          const angle = i * 10;
-          const pos = polarToCartesian(CX, CY, ARC_RADIUS, angle);
-          return (
-              <motion.circle
-                key={i}
-                cx={pos.x}
-                cy={pos.y}
-                r={0.8}
-                fill="currentColor"
-                initial={{ opacity: 0.1 }}
-                animate={{
-                  opacity: [0.1, 0.3, 0.1],
-                }}
-                transition={{
-                  duration: 3 + (i % 5) * 0.5,
-                  delay: i * 0.08,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-                className="opacity-[0.08] dark:opacity-[0.1]"
-              />
           );
         })}
       </svg>

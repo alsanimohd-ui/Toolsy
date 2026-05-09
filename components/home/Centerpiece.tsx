@@ -1,352 +1,389 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useSpring, useTransform, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import type { CategoryId } from "@/lib/tools";
+import { toolCategories } from "@/lib/tools";
+import { ShieldCheck, Database, Code2, Sparkles } from "lucide-react";
 
-export default function Centerpiece() {
+interface CenterpieceProps {
+  activeSegment?: CategoryId | null;
+}
+
+// Apple-inspired spring physics
+const SPRING_CRISP = { type: "spring" as const, stiffness: 340, damping: 28, mass: 0.6 };
+const SPRING_SOFT = { type: "spring" as const, stiffness: 180, damping: 22, mass: 0.8 };
+const EASE_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+const categoryIcons: Record<CategoryId, React.ElementType> = {
+  "network-security": ShieldCheck,
+  "data-analytics": Database,
+  "dev-automation": Code2,
+};
+
+// Orbital ring definitions — layered depth
+const ORBITAL_RINGS = [
+  { inset: "-52%", duration: 38, reverse: false, dashArray: "2 7", opacity: 0.18 },
+  { inset: "-38%", duration: 52, reverse: true, dashArray: "1 14", opacity: 0.12 },
+  { inset: "-24%", duration: 29, reverse: false, dashArray: "3 5", opacity: 0.22 },
+  { inset: "-14%", duration: 18, reverse: true, dashArray: "2 9", opacity: 0.16 },
+];
+
+export default function Centerpiece({ activeSegment }: CenterpieceProps) {
+  const activeCategory = activeSegment ? toolCategories[activeSegment] : null;
+  const activeColor = activeCategory?.color ?? "#7c6aff";
+  const activeGlow = activeCategory?.glowColor ?? "rgba(124,106,255,0.5)";
+  const CategoryIcon = activeSegment ? categoryIcons[activeSegment] : Sparkles;
+
+  // Mouse parallax for depth effect
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  const springX = useSpring(mouseX, { stiffness: 60, damping: 18 });
+  const springY = useSpring(mouseY, { stiffness: 60, damping: 18 });
+  const innerX = useTransform(springX, (v) => v * 0.4);
+  const innerY = useTransform(springY, (v) => v * 0.4);
+
   return (
-    <Link href="/tools" className="group/core">
-      <div className="relative flex items-center justify-center w-full h-full cursor-pointer select-none">
+    <Link
+      href="/tools"
+      aria-label="Enter Toolsy — the AI tools operating system"
+      className="group/core block h-full w-full rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-4 focus-visible:ring-offset-transparent"
+      onMouseMove={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        mouseX.set(((e.clientX - rect.left) / rect.width - 0.5) * 28);
+        mouseY.set(((e.clientY - rect.top) / rect.height - 0.5) * 28);
+      }}
+      onMouseLeave={() => {
+        mouseX.set(0);
+        mouseY.set(0);
+      }}
+    >
+      <motion.div
+        className="relative flex h-full w-full items-center justify-center"
+        whileHover="hover"
+        initial="rest"
+        animate={activeSegment ? "active" : "rest"}
+      >
 
-        {/* ═══════════════════════════════════════════════════ */}
-        {/* ATMOSPHERIC DEPTH LAYERS */}
-        {/* ═══════════════════════════════════════════════════ */}
-
-        {/* Deep ambient pulse */}
+        {/* ── ATMOSPHERIC OUTER GLOW — ambient light bloom ── */}
         <motion.div
-          initial={{ scale: 1, opacity: 0.12 }}
-          animate={{
-            scale: [1, 1.08, 1],
-            opacity: [0.12, 0.22, 0.12],
+          aria-hidden
+          className="absolute rounded-full pointer-events-none"
+          style={{ inset: "-45%" }}
+          variants={{
+            rest:   { opacity: 0.18, scale: 0.97 },
+            active: { opacity: 0.42, scale: 1.06 },
+            hover:  { opacity: 0.55, scale: 1.12 },
           }}
-          transition={{
-            duration: 5,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-          className="absolute inset-[-15%] rounded-full bg-accent/20 blur-[min(10vw,80px)] pointer-events-none"
-        />
-
-        {/* Secondary atmospheric ring */}
-        <motion.div
-          initial={{ scale: 1.02, opacity: 0.08 }}
-          animate={{
-            scale: [1.02, 1, 1.02],
-            opacity: [0.08, 0.14, 0.08],
-          }}
-          transition={{
-            duration: 7,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-          className="absolute inset-[-25%] rounded-full border border-accent/8 pointer-events-none"
-        />
-
-        {/* ═══════════════════════════════════════════════════ */}
-        {/* CORE SPHERE — premium glass shell */}
-        {/* ═══════════════════════════════════════════════════ */}
-        <motion.div
-          initial={{ scale: 0.85, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          whileHover={{ scale: 1.04 }}
-          transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-          className="relative z-10 w-full h-full rounded-full flex items-center justify-center overflow-hidden
-            bg-gradient-to-br from-white/90 via-white/70 to-white/40
-            dark:from-white/12 dark:via-white/6 dark:to-transparent
-            backdrop-blur-[clamp(16px,3vw,40px)]
-            border border-white/30 dark:border-white/15
-            shadow-[0_0_0_1px_rgba(255,255,255,0.1),0_40px_100px_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.4)]
-            dark:shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_40px_100px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]
-            group-hover/core:border-accent/25 dark:group-hover/core:border-accent/20
-            transition-all duration-700"
+          transition={SPRING_SOFT}
         >
-
-          {/* ═══════════════════════════════════════════════════ */}
-          {/* LIVING CYBERNETIC CORE — premium layered orbital system */}
-          {/* ═══════════════════════════════════════════════════ */}
-
-          {/* Layer 0: Ambient depth — slow breathing */}
-          <motion.div
-            initial={{ scale: 1, opacity: 0.5 }}
-            animate={{
-              scale: [1, 1.08, 1],
-              opacity: [0.5, 0.8, 0.5],
-            }}
-            transition={{
-              duration: 6,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-            className="absolute inset-[-30%] rounded-full bg-accent/5 dark:bg-accent/10 pointer-events-none"
-          />
-
-          {/* Layer 1: Deep digital mesh — slow CW rotation */}
-          <motion.div
-            initial={{ rotate: 0 }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 80, repeat: Infinity, ease: "linear" }}
-            className="absolute inset-[-100%] opacity-[0.04] dark:opacity-[0.1] pointer-events-none"
-            style={{
-              backgroundImage: `
-                radial-gradient(circle at center, var(--accent) 1px, transparent 1px),
-                radial-gradient(circle at 30% 30%, var(--accent) 0.5px, transparent 0.5px)
-              `,
-              backgroundSize: '32px 32px, 16px 16px',
-            }}
-          />
-
-          {/* Layer 2: Rotating hex pattern — CCW */}
-          <motion.div
-            initial={{ rotate: 0 }}
-            animate={{ rotate: -360 }}
-            transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
-            className="absolute inset-[-150%] opacity-[0.025] dark:opacity-[0.06] pointer-events-none"
-            style={{
-              backgroundImage: `
-                repeating-linear-gradient(
-                  60deg,
-                  transparent 0,
-                  transparent 20px,
-                  var(--accent) 20px,
-                  var(--accent) 20.5px
-                ),
-                repeating-linear-gradient(
-                  -60deg,
-                  transparent 0,
-                  transparent 20px,
-                  var(--accent) 20px,
-                  var(--accent) 20.5px
-                )
-              `,
-            }}
-          />
-
-          {/* Layer 3: Orbital rings — elliptical motion */}
-          <motion.div
-            initial={{ rotate: 0 }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-            className="absolute inset-[18%] rounded-full border border-accent/20 dark:border-accent/35 pointer-events-none"
-          />
-          <motion.div
-            initial={{ rotate: 0 }}
-            animate={{ rotate: -360 }}
-            transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
-            className="absolute inset-[12%] rounded-full border border-accent/12 dark:border-accent/20 pointer-events-none"
-            style={{ borderStyle: 'dashed', strokeDasharray: '6 10' }}
-          />
-          <motion.div
-            initial={{ rotateX: 0, rotateZ: 0 }}
-            animate={{ rotateX: 360, rotateZ: 360 }}
-            transition={{ duration: 45, repeat: Infinity, ease: "linear" }}
-            className="absolute inset-[8%] rounded-full border border-accent/8 dark:border-accent/15 pointer-events-none"
-            style={{ borderStyle: 'dotted', strokeDasharray: '2 6' }}
-          />
-
-          {/* Layer 4: Pulsing energy core */}
-          <motion.div
-            initial={{ opacity: 0.35, scale: 0.7, rotate: 0 }}
-            animate={{
-              opacity: [0.35, 0.65, 0.35],
-              scale: [0.7, 1.05, 0.7],
-              rotate: [0, 180, 360],
-            }}
-            transition={{
-              duration: 4,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-            className="absolute inset-[28%] rounded-full pointer-events-none"
-            style={{
-              background: `radial-gradient(circle, rgba(var(--accent-rgb),0.5) 0%, rgba(var(--accent-rgb),0.15) 40%, transparent 70%)`,
-              filter: 'blur(12px)',
-              transformOrigin: 'center',
-            }}
-          />
-
-          {/* Layer 5: Inner grid glow */}
-          <motion.div
-            initial={{ opacity: 0.1, scale: 0.98 }}
-            animate={{
-              opacity: [0.1, 0.2, 0.1],
-              scale: [0.98, 1.02, 0.98],
-            }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-            className="absolute inset-[30%] pointer-events-none"
-            style={{
-              backgroundImage: `radial-gradient(circle at center, var(--accent) 0.5px, transparent 0.5px)`,
-              backgroundSize: '10px 10px',
-              opacity: 0.3,
-            }}
-          />
-
-          {/* ═══════════════════════════════════════════════════ */}
-          {/* GLASS REFLECTION & LIGHT */}
-          {/* ═══════════════════════════════════════════════════ */}
-
-          {/* Primary specular highlight */}
           <div
-            className="absolute inset-0 rounded-full pointer-events-none"
+            className="absolute inset-0 rounded-full"
             style={{
-              background: 'radial-gradient(ellipse 60% 40% at 35% 25%, rgba(255,255,255,0.6) 0%, transparent 60%)',
+              background: `radial-gradient(circle at 50% 50%, ${activeColor}44 0%, ${activeColor}18 40%, transparent 70%)`,
+              filter: "blur(40px)",
             }}
-          />
-
-          {/* Secondary subtle rim light */}
-          <div
-            className="absolute inset-0 rounded-full pointer-events-none"
-            style={{
-              background: 'radial-gradient(ellipse 30% 20% at 70% 75%, rgba(255,255,255,0.15) 0%, transparent 50%)',
-            }}
-          />
-
-          {/* Bottom ambient bounce */}
-          <div
-            className="absolute inset-0 rounded-full pointer-events-none"
-            style={{
-              background: 'radial-gradient(ellipse 80% 30% at 50% 90%, rgba(var(--accent-rgb),0.08) 0%, transparent 60%)',
-            }}
-          />
-
-          {/* ═══════════════════════════════════════════════════ */}
-          {/* NUCLEUS CONTENT */}
-          {/* ═══════════════════════════════════════════════════ */}
-          <div className="relative z-20 flex w-full flex-col items-center px-[8%] text-center">
-
-            {/* Status indicator */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.8 }}
-              className="flex items-center gap-2 mb-2"
-            >
-              <motion.span
-                animate={{ opacity: [0.5, 1, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="w-1.5 h-1.5 rounded-full bg-accent"
-                style={{
-                  boxShadow: '0 0 8px var(--accent-glow), 0 0 16px var(--accent-glow)',
-                }}
-              />
-              <span className="text-[clamp(6px,0.7vw,9px)] font-black uppercase tracking-[0.7em] text-accent/80">
-                Core Active
-              </span>
-            </motion.div>
-
-            {/* Main brand */}
-            <motion.h1
-              initial={{ opacity: 0, y: 12, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              whileHover={{ scale: 1.03 }}
-              transition={{ delay: 0.2, duration: 1, ease: [0.16, 1, 0.3, 1] }}
-              className="text-[clamp(1.6rem,4.5vw,3rem)] font-black leading-none tracking-[-0.04em]
-                text-slate-950 dark:text-white
-                drop-shadow-[0_2px_8px_rgba(0,0,0,0.15)]
-                dark:drop-shadow-[0_0_20px_rgba(var(--accent-rgb),0.3)]
-                group-hover/core:drop-shadow-[0_4px_16px_rgba(0,0,0,0.2)]
-                dark:group-hover/core:drop-shadow-[0_0_30px_rgba(var(--accent-rgb),0.4)]
-                transition-all duration-500"
-            >
-              Toolsy
-            </motion.h1>
-
-            {/* Divider line */}
-            <motion.div
-              initial={{ scaleX: 0, opacity: 0 }}
-              animate={{ scaleX: 1, opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-              className="mt-4 flex w-full items-center justify-center gap-2"
-            >
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-accent/40 to-transparent" />
-              <motion.div
-                initial={{ rotate: 0 }}
-                animate={{ rotate: [0, 180, 360] }}
-                transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-                className="w-1.5 h-1.5 rounded-full bg-accent/50"
-                style={{ boxShadow: '0 0 6px var(--accent-glow)' }}
-              />
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-accent/40 to-transparent" />
-            </motion.div>
-
-            {/* CTA text */}
-            <motion.p
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7 }}
-              className="mt-3 text-[clamp(6px,0.65vw,8px)] font-bold uppercase tracking-[0.5em]
-                text-slate-600/70 dark:text-white/50
-                group-hover/core:text-accent/70 dark:group-hover/core:text-accent/60
-                transition-colors duration-500"
-            >
-              Enter Portal
-            </motion.p>
-          </div>
-
-          {/* ═══════════════════════════════════════════════════ */}
-          {/* INTERACTION RIPPLE */}
-          {/* ═══════════════════════════════════════════════════ */}
-          <motion.div
-            className="absolute inset-0 rounded-full pointer-events-none"
-            whileHover={{
-              boxShadow: 'inset 0 0 60px rgba(var(--accent-rgb),0.08)',
-            }}
-            transition={{ duration: 0.6 }}
           />
         </motion.div>
 
-        {/* ═══════════════════════════════════════════════════ */}
-        {/* OUTER ORBITAL RING — subtle structure */}
-        {/* ═══════════════════════════════════════════════════ */}
-        <motion.div
-          initial={{ rotate: 0 }}
-          animate={{ rotate: 360 }}
-          transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
-          className="absolute inset-[-8%] rounded-full border border-accent/5 dark:border-white/5 pointer-events-none"
-          style={{ borderStyle: 'dashed', strokeDasharray: '3 15' }}
-        />
-        <motion.div
-          initial={{ rotate: 0 }}
-          animate={{ rotate: -360 }}
-          transition={{ duration: 90, repeat: Infinity, ease: "linear" }}
-          className="absolute inset-[-12%] rounded-full border border-accent/3 dark:border-white/3 pointer-events-none"
-          style={{ borderStyle: 'dotted' }}
-        />
-
-        {/* Corner accents */}
-        {[
-          { top: "8%", left: "8%", rotate: "0deg" },
-          { top: "8%", right: "8%", rotate: "90deg" },
-          { bottom: "8%", right: "8%", rotate: "180deg" },
-          { bottom: "8%", left: "8%", rotate: "270deg" },
-        ].map((style, i) => (
+        {/* ── ORBITAL RINGS — planetary depth system ── */}
+        {ORBITAL_RINGS.map((ring, i) => (
           <motion.div
             key={i}
-            className="absolute w-3 h-3 pointer-events-none"
-            style={style as React.CSSProperties}
-            initial={{ opacity: 0.2 }}
-            animate={{ opacity: [0.2, 0.5, 0.2] }}
-            transition={{
-              duration: 3 + i * 0.5,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: i * 0.3,
-            }}
+            aria-hidden
+            className="absolute rounded-full pointer-events-none"
+            style={{ inset: ring.inset }}
+            animate={{ rotate: ring.reverse ? -360 : 360 }}
+            transition={{ duration: ring.duration, repeat: Infinity, ease: "linear" }}
           >
-            <svg viewBox="0 0 12 12" fill="none" className="w-full h-full">
-              <path
-                d="M1 6 L1 1 L6 1"
-                stroke="currentColor"
-                strokeWidth="1"
-                className="text-accent/40 dark:text-white/30"
+            <svg
+              className="absolute inset-0 h-full w-full"
+              viewBox="0 0 100 100"
+              fill="none"
+            >
+              <circle
+                cx="50"
+                cy="50"
+                r="48"
+                stroke={i === 0 ? activeColor : "white"}
+                strokeWidth={i === 0 ? "0.4" : "0.25"}
+                strokeDasharray={ring.dashArray}
+                strokeOpacity={ring.opacity}
               />
             </svg>
           </motion.div>
         ))}
-      </div>
+
+        {/* ── CONIC SWEEP RING — active state accent ── */}
+        <motion.div
+          aria-hidden
+          className="absolute rounded-full pointer-events-none"
+          style={{ inset: "-28%" }}
+          animate={{ rotate: 360 }}
+          transition={{ duration: 24, repeat: Infinity, ease: "linear" }}
+        >
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: `conic-gradient(from 0deg, transparent 0deg, ${activeColor}28 45deg, transparent 90deg, transparent 360deg)`,
+            }}
+          />
+        </motion.div>
+
+        {/* ── GLASS SPHERE — the main body ── */}
+        <motion.div
+          className="relative z-10 flex h-full w-full items-center justify-center overflow-hidden rounded-full cursor-pointer"
+          style={{
+            background: "linear-gradient(145deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 50%, rgba(0,0,0,0.15) 100%)",
+            backdropFilter: "blur(32px) saturate(180%)",
+            WebkitBackdropFilter: "blur(32px) saturate(180%)",
+            boxShadow: `
+              0 40px 120px rgba(0,0,0,0.5),
+              0 0 0 1px rgba(255,255,255,0.12),
+              0 0 0 2px rgba(255,255,255,0.04),
+              inset 0 1px 0 rgba(255,255,255,0.20),
+              inset 0 -1px 0 rgba(0,0,0,0.30),
+              inset 0 0 60px rgba(0,0,0,0.20)
+            `,
+          }}
+          variants={{
+            rest:   { scale: 1 },
+            active: { scale: 1.025 },
+            hover:  { scale: 1.04 },
+          }}
+          transition={SPRING_CRISP}
+        >
+
+          {/* Interior glass refraction — premium depth fill */}
+          <div
+            aria-hidden
+            className="absolute inset-0 rounded-full pointer-events-none"
+            style={{
+              background: `
+                radial-gradient(ellipse 75% 50% at 38% 22%, rgba(255,255,255,0.22) 0%, transparent 60%),
+                radial-gradient(ellipse 55% 40% at 68% 78%, ${activeColor}14 0%, transparent 55%),
+                radial-gradient(circle at 50% 50%, ${activeColor}18 0%, transparent 50%)
+              `,
+            }}
+          />
+
+          {/* Rotating mesh interior — subtle sci-fi texture */}
+          <motion.div
+            aria-hidden
+            className="absolute inset-0 rounded-full pointer-events-none opacity-[0.07]"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
+            style={{
+              backgroundImage: `
+                linear-gradient(rgba(255,255,255,0.8) 0.5px, transparent 0.5px),
+                linear-gradient(90deg, rgba(255,255,255,0.8) 0.5px, transparent 0.5px)
+              `,
+              backgroundSize: "22px 22px",
+              maskImage: "radial-gradient(circle, black 0%, transparent 72%)",
+              WebkitMaskImage: "radial-gradient(circle, black 0%, transparent 72%)",
+            }}
+          />
+
+          {/* Parallax inner sanctum — reacts to mouse */}
+          <motion.div
+            aria-hidden
+            className="absolute inset-[22%] rounded-full pointer-events-none"
+            style={{ x: innerX, y: innerY }}
+          >
+            {/* Inner glow pulse — the "heart" */}
+            <motion.div
+              className="absolute inset-0 rounded-full"
+              style={{ background: `radial-gradient(circle, ${activeColor}55 0%, transparent 65%)` }}
+              animate={{
+                scale: activeSegment ? [0.85, 1.1, 0.85] : [0.9, 1.05, 0.9],
+                opacity: activeSegment ? [0.5, 0.85, 0.5] : [0.3, 0.55, 0.3],
+              }}
+              transition={{ duration: activeSegment ? 2.8 : 4.2, repeat: Infinity, ease: "easeInOut" }}
+            />
+
+            {/* Inner ring */}
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{
+                border: `1px solid ${activeColor}40`,
+                boxShadow: `inset 0 0 20px ${activeColor}20`,
+              }}
+            />
+          </motion.div>
+
+          {/* ── CENTER CONTENT — hero typography ── */}
+          <motion.div
+            className="relative z-20 flex w-full flex-col items-center justify-center px-[10%] text-center select-none"
+            style={{ x: springX, y: springY }}
+          >
+
+            {/* Status chip — Dynamic Island inspired */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeSegment ?? "default"}
+                initial={{ opacity: 0, scale: 0.85, y: 6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.85, y: -4 }}
+                transition={{ ...SPRING_CRISP, delay: 0.05 }}
+                className="mb-[0.6em] flex items-center gap-[0.4em] rounded-full px-[0.8em] py-[0.25em]"
+                style={{
+                  background: "rgba(255,255,255,0.07)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  backdropFilter: "blur(12px)",
+                }}
+              >
+                <motion.span
+                  className="flex-shrink-0 rounded-full"
+                  style={{
+                    width: "0.5em",
+                    height: "0.5em",
+                    background: activeColor,
+                    boxShadow: `0 0 8px ${activeGlow}`,
+                  }}
+                  animate={{ opacity: [0.6, 1, 0.6], scale: [1, 1.3, 1] }}
+                  transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+                />
+                <span
+                  className="font-black uppercase tracking-[0.36em] text-white/75"
+                  style={{ fontSize: "clamp(4.5px, 0.6vw, 7.5px)" }}
+                >
+                  {activeCategory ? activeCategory.shortLabel : "AI Core"}
+                </span>
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Main wordmark */}
+            <motion.h1
+              className="font-black tracking-[-0.02em] text-white"
+              style={{
+                fontSize: "clamp(1.65rem, 4.4vw, 3.2rem)",
+                lineHeight: 0.95,
+                textShadow: `0 0 30px ${activeGlow}`,
+                letterSpacing: "-0.025em",
+              }}
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 0.1, duration: 0.9, ease: EASE_EXPO }}
+            >
+              Toolsy
+            </motion.h1>
+
+            {/* Hairline separator */}
+            <motion.div
+              className="my-[0.55em] flex w-[72%] items-center gap-[0.4em]"
+              initial={{ opacity: 0, scaleX: 0.6 }}
+              animate={{ opacity: 1, scaleX: 1 }}
+              transition={{ delay: 0.3, duration: 0.7, ease: EASE_EXPO }}
+            >
+              <div
+                className="h-px flex-1"
+                style={{ background: `linear-gradient(90deg, transparent, ${activeColor}88, transparent)` }}
+              />
+              <motion.div
+                className="rounded-full flex-shrink-0"
+                style={{
+                  width: "0.32em",
+                  height: "0.32em",
+                  background: `${activeColor}`,
+                  boxShadow: `0 0 8px ${activeGlow}`,
+                }}
+                animate={{ rotate: 360 }}
+                transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+              />
+              <div
+                className="h-px flex-1"
+                style={{ background: `linear-gradient(90deg, transparent, ${activeColor}88, transparent)` }}
+              />
+            </motion.div>
+
+            {/* Active category icon + CTA */}
+            <AnimatePresence mode="wait">
+              {activeCategory ? (
+                <motion.div
+                  key={`icon-${activeSegment}`}
+                  className="flex flex-col items-center gap-[0.3em]"
+                  initial={{ opacity: 0, y: 8, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.92 }}
+                  transition={SPRING_CRISP}
+                >
+                  <CategoryIcon
+                    strokeWidth={1.8}
+                    style={{
+                      color: activeColor,
+                      width: "clamp(14px, 1.8vw, 22px)",
+                      height: "clamp(14px, 1.8vw, 22px)",
+                      filter: `drop-shadow(0 0 10px ${activeGlow})`,
+                    }}
+                  />
+                  <span
+                    className="font-black uppercase tracking-[0.22em] text-white/55"
+                    style={{ fontSize: "clamp(4px, 0.52vw, 6.5px)" }}
+                  >
+                    Explore
+                  </span>
+                </motion.div>
+              ) : (
+                <motion.p
+                  key="cta"
+                  className="font-black uppercase tracking-[0.3em] text-white/50 transition-colors group-hover/core:text-white/80"
+                  style={{ fontSize: "clamp(4.5px, 0.6vw, 7.5px)" }}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ delay: 0.45, duration: 0.7, ease: EASE_EXPO }}
+                >
+                  Enter Portal
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </motion.div>
+
+          {/* Bottom specular highlight */}
+          <div
+            aria-hidden
+            className="absolute bottom-0 left-[15%] right-[15%] h-px pointer-events-none"
+            style={{
+              background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)",
+            }}
+          />
+        </motion.div>
+
+        {/* ── ENERGY PARTICLES — orbiting micro-dots ── */}
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+          const angle = (i / 8) * 360;
+          const orbitRadius = 54; // % of container
+          const x = Math.cos(((angle - 90) * Math.PI) / 180) * orbitRadius;
+          const y = Math.sin(((angle - 90) * Math.PI) / 180) * orbitRadius;
+          return (
+            <motion.div
+              key={i}
+              aria-hidden
+              className="absolute rounded-full pointer-events-none"
+              style={{
+                width: "clamp(1.5px, 0.22vw, 3px)",
+                height: "clamp(1.5px, 0.22vw, 3px)",
+                left: `calc(50% + ${x}%)`,
+                top: `calc(50% + ${y}%)`,
+                background: i % 3 === 0 ? activeColor : "white",
+                boxShadow: `0 0 8px ${i % 3 === 0 ? activeGlow : "rgba(255,255,255,0.6)"}`,
+                translateX: "-50%",
+                translateY: "-50%",
+              }}
+              animate={{
+                opacity: [0, 0.7, 0],
+                scale: [0.5, 1.2, 0.5],
+              }}
+              transition={{
+                duration: 3.2 + i * 0.38,
+                delay: i * 0.42,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+            />
+          );
+        })}
+      </motion.div>
     </Link>
   );
 }
