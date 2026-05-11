@@ -36,7 +36,7 @@ export default function Atmosphere({ activeSegment = null }: { activeSegment?: s
         className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{ width: "48vmin", height: "48vmin" }}
         animate={{
-          opacity: activeSegment ? [0.28, 0.42, 0.28] : [0.14, 0.22, 0.14],
+          opacity: activeSegment ? [0.4, 0.6, 0.4] : [0.2, 0.35, 0.2],
           scale: activeSegment ? [0.95, 1.06, 0.95] : [0.97, 1.03, 0.97],
         }}
         transition={{ duration: activeSegment ? 3.2 : 5.5, repeat: Infinity, ease: "easeInOut" }}
@@ -44,7 +44,7 @@ export default function Atmosphere({ activeSegment = null }: { activeSegment?: s
         <div
           className="absolute inset-0 rounded-full"
           style={{
-            background: "radial-gradient(circle at center, rgba(124,106,255,0.22) 0%, rgba(124,106,255,0.08) 45%, transparent 70%)",
+            background: "radial-gradient(circle at center, var(--atmos-core-glow) 0%, var(--atmos-core-fade) 45%, transparent 70%)",
             filter: "blur(32px)",
           }}
         />
@@ -52,15 +52,15 @@ export default function Atmosphere({ activeSegment = null }: { activeSegment?: s
 
       {/* ── STRUCTURE RINGS ── */}
       <motion.div
-        className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.04]"
-        style={{ width: "62vmin", height: "62vmin" }}
+        className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border"
+        style={{ width: "62vmin", height: "62vmin", borderColor: "var(--atmos-ring)" }}
         animate={{ opacity: [0.6, 1, 0.6], scale: [0.98, 1.01, 0.98], rotate: [0, 2, 0] }}
         transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.div
-        className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.025]"
-        style={{ width: "85vmin", height: "85vmin" }}
-        animate={{ opacity: [0.5, 0.9, 0.5], scale: [1.01, 0.99, 1.01], rotate: [0, -1.5, 0] }}
+        className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full border"
+        style={{ width: "85vmin", height: "85vmin", borderColor: "var(--atmos-ring)", opacity: 0.6 }}
+        animate={{ opacity: [0.3, 0.7, 0.3], scale: [1.01, 0.99, 1.01], rotate: [0, -1.5, 0] }}
         transition={{ duration: 28, repeat: Infinity, ease: "easeInOut" }}
       />
 
@@ -68,9 +68,8 @@ export default function Atmosphere({ activeSegment = null }: { activeSegment?: s
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: "radial-gradient(circle at center, rgba(255,255,255,0.35) 0.5px, transparent 0.5px)",
+          backgroundImage: "radial-gradient(circle at center, var(--atmos-dot) 0.5px, transparent 0.5px)",
           backgroundSize: "30px 30px",
-          opacity: 0.04,
           maskImage: "radial-gradient(ellipse 80% 70% at 50% 46%, black 20%, transparent 80%)",
           WebkitMaskImage: "radial-gradient(ellipse 80% 70% at 50% 46%, black 20%, transparent 80%)",
         }}
@@ -81,12 +80,12 @@ export default function Atmosphere({ activeSegment = null }: { activeSegment?: s
         className="absolute h-px"
         style={{
           left: "-10%", width: "120%", top: "16%", rotate: "-14deg",
-          background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0.22) 50%, rgba(124,106,255,0.14) 58%, transparent)",
-          boxShadow: "0 0 20px rgba(124,106,255,0.15)",
+          background: "linear-gradient(90deg, transparent, var(--atmos-beam-fade) 30%, var(--atmos-beam) 50%, var(--atmos-core-glow) 58%, transparent)",
+          boxShadow: "0 0 20px var(--atmos-core-fade)",
           opacity: 0,
         }}
         initial={{ x: "-18%", opacity: 0 }}
-        animate={{ x: ["-18%", "18%"], opacity: [0, 0.45, 0] }}
+        animate={{ x: ["-18%", "18%"], opacity: [0, 1, 0] }}
         transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", repeatDelay: 3 }}
       />
 
@@ -95,8 +94,8 @@ export default function Atmosphere({ activeSegment = null }: { activeSegment?: s
         className="absolute inset-0"
         style={{
           background: `
-            radial-gradient(ellipse 75% 65% at center, transparent 0%, transparent 38%, rgba(0,0,0,0.18) 100%),
-            linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 12%, transparent 88%, rgba(0,0,0,0.12) 100%)
+            radial-gradient(ellipse 75% 65% at center, transparent 0%, transparent 38%, var(--atmos-vignette-edge) 100%),
+            linear-gradient(to bottom, transparent 0%, transparent 12%, transparent 88%, var(--atmos-vignette-shadow) 100%)
           `,
         }}
       />

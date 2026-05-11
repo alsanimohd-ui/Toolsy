@@ -237,7 +237,7 @@ function ToolNode({
           width={pillW}
           height={pillH}
           rx={pillH / 2}
-          fill="rgba(6,8,22,0.88)"
+          fill="var(--surface-raised)"
         />
 
         {/* ── Pill border: animated opacity ── */}
@@ -266,7 +266,7 @@ function ToolNode({
           width={pillW - 20}
           height={0.8}
           rx={0.4}
-          fill="rgba(255,255,255,0.16)"
+          fill="var(--glass-border)"
         />
 
         {/* ── Icon zone fill ── */}
@@ -292,7 +292,7 @@ function ToolNode({
               size={12}
               strokeWidth={2.2}
               style={{
-                color: hovered ? "#fff" : color,
+                color: hovered ? "var(--foreground)" : color,
                 filter: hovered ? `drop-shadow(0 0 5px ${glowColor})` : undefined,
                 transition: "color 0.2s, filter 0.2s",
               }}
@@ -306,7 +306,7 @@ function ToolNode({
           y1={pos.y - pillH / 2 + 7}
           x2={pos.x - pillW / 2 + 30}
           y2={pos.y + pillH / 2 - 7}
-          stroke="rgba(255,255,255,0.1)"
+          stroke="var(--border)"
           strokeWidth={0.6}
         />
 
@@ -320,9 +320,9 @@ function ToolNode({
             fontWeight: 600,
             letterSpacing: "0.14em",
             fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+            fill: hovered ? "var(--foreground)" : "var(--muted)",
+            transition: "fill 0.2s ease-in-out",
           }}
-          animate={{ fill: hovered ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)" }}
-          transition={{ duration: 0.2 }}
         >
           {label}
         </motion.text>
@@ -464,9 +464,9 @@ export default function RadialMenu({
 
           {/* Soft portal depth */}
           <radialGradient id="portal-bg" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.035)" />
-            <stop offset="70%" stopColor="rgba(255,255,255,0.01)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+            <stop offset="0%" stopColor="var(--rm-edge)" stopOpacity={0.1} />
+            <stop offset="70%" stopColor="var(--rm-edge)" stopOpacity={0.05} />
+            <stop offset="100%" stopColor="var(--rm-edge)" stopOpacity={0} />
           </radialGradient>
 
           {/* Clip to ring band for connector dots */}
@@ -485,7 +485,7 @@ export default function RadialMenu({
           cy={CY}
           r={ARC_INNER - 20}
           fill="none"
-          stroke="rgba(255,255,255,0.07)"
+          stroke="var(--rm-track-border)"
           strokeWidth={0.6}
           strokeDasharray="1.5 10"
           initial={{ rotate: 0 }}
@@ -499,7 +499,7 @@ export default function RadialMenu({
           cy={CY}
           r={ARC_OUTER + 20}
           fill="none"
-          stroke="rgba(255,255,255,0.05)"
+          stroke="var(--rm-track-border)"
           strokeWidth={0.6}
           strokeDasharray="2 14"
           initial={{ rotate: 0 }}
@@ -513,7 +513,7 @@ export default function RadialMenu({
           cy={CY}
           r={NODE_R}
           fill="none"
-          stroke="rgba(255,255,255,0.04)"
+          stroke="var(--rm-track-border)"
           strokeWidth={0.5}
           strokeDasharray="1 20"
         />
@@ -527,7 +527,7 @@ export default function RadialMenu({
               cx={pos.x}
               cy={pos.y}
               r={p.size}
-              fill="rgba(255,255,255,0.5)"
+              fill="var(--rm-edge)"
               animate={{
                 opacity: active
                   ? [0.07, 0.28, 0.07]
@@ -592,8 +592,8 @@ export default function RadialMenu({
               {/* ── BASE TRACK — dark frosted substrate ── */}
               <path
                 d={dFill}
-                fill="rgba(255,255,255,0.04)"
-                stroke="rgba(255,255,255,0.06)"
+                fill="var(--rm-track-bg)"
+                stroke="var(--rm-track-border)"
                 strokeWidth={0.8}
               />
 
@@ -643,7 +643,7 @@ export default function RadialMenu({
               <motion.path
                 d={dInnerEdge}
                 fill="none"
-                stroke="rgba(255,255,255,0.5)"
+                stroke="var(--rm-edge)"
                 strokeLinecap="round"
                 animate={{
                   strokeWidth: isActive ? 1.8 : 0.8,
@@ -655,7 +655,7 @@ export default function RadialMenu({
               <motion.path
                 d={dOuterEdge}
                 fill="none"
-                stroke={s.gradientStart}
+                stroke="var(--rm-edge)"
                 strokeLinecap="round"
                 animate={{
                   strokeWidth: isActive ? 2 : 0.8,
@@ -680,7 +680,7 @@ export default function RadialMenu({
                     fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
                     fill: "none",
                     paintOrder: "stroke",
-                    stroke: "rgba(0,0,0,0.75)",
+                    stroke: "var(--rm-label-shadow)",
                     strokeWidth: "3.5px",
                     strokeLinejoin: "round",
                   }}
@@ -704,7 +704,7 @@ export default function RadialMenu({
                     fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
                   }}
                   animate={{
-                    fill: isActive ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.72)",
+                    fill: isActive ? "var(--foreground)" : "var(--muted)",
                   }}
                   transition={{ duration: 0.3 }}
                 >

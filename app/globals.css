@@ -3,7 +3,70 @@
 @tailwind utilities;
 
 :root {
-  /* Premium Dark Mode - Default State */
+  /* Clean Bright Surfaces - Day Mode */
+  --background: #f8fafc;
+  --foreground: #020617;
+  --surface: #ffffff;
+  --surface-raised: #f1f5f9;
+  --muted: #334155;
+  --border: #cbd5e1;
+  --border-subtle: #94a3b8;
+  
+  --accent: #2563eb;
+  --accent-rgb: 37, 99, 235;
+  --accent-hover: #1d4ed8;
+  --accent-glow: rgba(37, 99, 235, 0.12);
+
+  /* Semantic Glass Tokens - Light */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(15, 23, 42, 0.15);
+  --glass-shadow: rgba(0, 0, 0, 0.08);
+  --glass-blur: 20px;
+
+  --space-page-x: clamp(1rem, 3vw, 2.5rem);
+  --space-page-y: clamp(1.25rem, 4svh, 5rem);
+  --space-section: clamp(1rem, 2.5vw, 2rem);
+  --space-card: clamp(1rem, 2.2vw, 1.75rem);
+  --radius-card: clamp(1rem, 1.8vw, 1.5rem);
+  --home-footer-block: clamp(3.5rem, 9svh, 5.25rem);
+
+  /* Component Tokens - Light */
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  --card-hover-bg: rgba(255, 255, 255, 0.95);
+  --card-hover-shadow: 0 28px 80px rgba(37, 99, 235, 0.14);
+  --panel-shadow: 0 16px 45px rgba(15, 23, 42, 0.08);
+  --input-bg: rgba(255, 255, 255, 0.74);
+  --input-focus-bg: rgba(255, 255, 255, 0.90);
+  
+  /* Atmospheric Tokens - Light */
+  --atmos-core-glow: rgba(37, 99, 235, 0.08);
+  --atmos-core-fade: rgba(37, 99, 235, 0.02);
+  --atmos-ring: rgba(15, 23, 42, 0.05);
+  --atmos-dot: rgba(15, 23, 42, 0.1);
+  --atmos-beam: rgba(37, 99, 235, 0.1);
+  --atmos-beam-fade: rgba(15, 23, 42, 0.02);
+  --atmos-vignette-edge: rgba(255, 255, 255, 0.4);
+  --atmos-vignette-shadow: rgba(15, 23, 42, 0.03);
+
+  /* Centerpiece Glass - Light */
+  --cp-glass-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.60) 0%, rgba(255, 255, 255, 0.20) 50%, rgba(0, 0, 0, 0.02) 100%);
+  --cp-glass-shadow: 0 40px 120px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.6), 0 0 0 2px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.80), inset 0 -1px 0 rgba(15, 23, 42, 0.05), inset 0 0 60px rgba(255, 255, 255, 0.40);
+  --cp-glass-refract: radial-gradient(ellipse 75% 50% at 38% 22%, rgba(255, 255, 255, 0.7) 0%, transparent 60%);
+  --cp-mesh-color: rgba(15, 23, 42, 0.15);
+  --cp-ring-base: rgba(15, 23, 42, 0.8);
+  
+  /* Radial Menu Tokens - Light */
+  --rm-track-bg: rgba(15, 23, 42, 0.04);
+  --rm-track-border: rgba(15, 23, 42, 0.08);
+  --rm-edge: rgba(15, 23, 42, 0.25);
+  --rm-node-bg: rgba(255, 255, 255, 0.85);
+  --rm-node-border: rgba(15, 23, 42, 0.1);
+  --rm-node-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
+}
+
+.dark {
+  /* Cinematic Dark - Night Mode */
   --background: #020205;
   --foreground: #f8fafc;
   --surface: #0a0a0f;
@@ -23,13 +86,6 @@
   --glass-shadow: rgba(0, 0, 0, 0.4);
   --glass-blur: 40px;
 
-  --space-page-x: clamp(1rem, 3vw, 2.5rem);
-  --space-page-y: clamp(1.25rem, 4svh, 5rem);
-  --space-section: clamp(1rem, 2.5vw, 2rem);
-  --space-card: clamp(1rem, 2.2vw, 1.75rem);
-  --radius-card: clamp(1rem, 1.8vw, 1.5rem);
-  --home-footer-block: clamp(3.5rem, 9svh, 5.25rem);
-
   /* Component Tokens - Dark */
   --card-bg: rgba(0, 0, 0, 0.45);
   --card-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
@@ -38,37 +94,31 @@
   --panel-shadow: 0 16px 45px rgba(0, 0, 0, 0.26);
   --input-bg: rgba(0, 0, 0, 0.24);
   --input-focus-bg: rgba(0, 0, 0, 0.34);
-}
-
-.light {
-  /* High-Contrast Light Mode - Opt-in */
-  --background: #f8fafc;
-  --foreground: #020617; /* Deepest Navy for maximum contrast */
-  --surface: #ffffff;
-  --surface-raised: #f1f5f9;
-  --muted: #334155; /* Even darker for better accessibility */
-  --border: #cbd5e1; /* Stronger border */
-  --border-subtle: #94a3b8;
   
-  --accent: #2563eb; /* Stronger Blue */
-  --accent-rgb: 37, 99, 235;
-  --accent-hover: #1d4ed8;
-  --accent-glow: rgba(37, 99, 235, 0.12);
+  /* Atmospheric Tokens - Dark */
+  --atmos-core-glow: rgba(124, 106, 255, 0.22);
+  --atmos-core-fade: rgba(124, 106, 255, 0.08);
+  --atmos-ring: rgba(255, 255, 255, 0.04);
+  --atmos-dot: rgba(255, 255, 255, 0.35);
+  --atmos-beam: rgba(124, 106, 255, 0.14);
+  --atmos-beam-fade: rgba(255, 255, 255, 0.03);
+  --atmos-vignette-edge: rgba(0, 0, 0, 0.18);
+  --atmos-vignette-shadow: rgba(0, 0, 0, 0.12);
 
-  /* Semantic Glass Tokens - Light */
-  --glass-bg: rgba(255, 255, 255, 0.7); /* More opaque for better contrast */
-  --glass-border: rgba(15, 23, 42, 0.15);
-  --glass-shadow: rgba(0, 0, 0, 0.08);
-  --glass-blur: 20px;
+  /* Centerpiece Glass - Dark */
+  --cp-glass-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.04) 50%, rgba(0, 0, 0, 0.15) 100%);
+  --cp-glass-shadow: 0 40px 120px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 0 2px rgba(255, 255, 255, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.20), inset 0 -1px 0 rgba(0, 0, 0, 0.30), inset 0 0 60px rgba(0, 0, 0, 0.20);
+  --cp-glass-refract: radial-gradient(ellipse 75% 50% at 38% 22%, rgba(255, 255, 255, 0.22) 0%, transparent 60%);
+  --cp-mesh-color: rgba(255, 255, 255, 0.8);
+  --cp-ring-base: white;
 
-  /* Component Tokens - Light */
-  --card-bg: rgba(255, 255, 255, 0.85);
-  --card-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
-  --card-hover-bg: rgba(255, 255, 255, 0.86);
-  --card-hover-shadow: 0 28px 80px rgba(37, 99, 235, 0.14);
-  --panel-shadow: 0 16px 45px rgba(15, 23, 42, 0.08);
-  --input-bg: rgba(255, 255, 255, 0.74);
-  --input-focus-bg: rgba(255, 255, 255, 0.90);
+  /* Radial Menu Tokens - Dark */
+  --rm-track-bg: rgba(255, 255, 255, 0.04);
+  --rm-track-border: rgba(255, 255, 255, 0.06);
+  --rm-edge: rgba(255, 255, 255, 0.5);
+  --rm-node-bg: var(--glass-bg);
+  --rm-node-border: rgba(255, 255, 255, 0.08);
+  --rm-node-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 * {

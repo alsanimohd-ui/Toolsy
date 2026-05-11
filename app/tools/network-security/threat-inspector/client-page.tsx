@@ -17,7 +17,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  ChevronRight,
   Fingerprint,
   Layers,
   Terminal,
@@ -28,7 +27,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
-import { calculateEntropy, extractIOCs, extractPrintableStrings } from "@/lib/threat-analysis";
+import { calculateEntropy, extractIOCs, extractPrintableStrings, detectMimeTypeFromMagic } from "@/lib/threat-analysis";
 
 /* ─────────────────────────────────────────────
    Types & Interfaces
@@ -44,8 +43,12 @@ interface LocalAnalysis {
     ips: string[];
     domains: string[];
     urls: string[];
+    emails: string[];
+    hashes: string[];
+    suspiciousCommands: string[];
   };
   strings: string[];
+  magicDesc: string;
 }
 
 interface VTData {
@@ -102,15 +105,18 @@ export default function ThreatInspectorClient() {
       const iocs = extractIOCs(text);
       const strings = extractPrintableStrings(text).slice(0, 50);
 
+      const magic = detectMimeTypeFromMagic(buffer);
+
       setLocalAnalysis({
         sha256,
         sha1,
         md5,
         size: selectedFile.size,
-        mimeType: selectedFile.type || "application/octet-stream",
+        mimeType: magic.mime || selectedFile.type || "application/octet-stream",
         entropy,
         iocs,
-        strings
+        strings,
+        magicDesc: magic.desc,
       });
 
       // VirusTotal Integration - Hash Lookup
@@ -269,7 +275,7 @@ export default function ThreatInspectorClient() {
                         </h2>
                         <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest text-muted/60">
                           <span className="flex items-center gap-1.5"><Database className="size-3" /> {(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                          <span className="flex items-center gap-1.5"><Layers className="size-3" /> {vtData?.type_description || localAnalysis.mimeType}</span>
+                          <span className="flex items-center gap-1.5"><Layers className="size-3" /> {localAnalysis.magicDesc || vtData?.type_description || localAnalysis.mimeType}</span>
                         </div>
                       </div>
                     </div>
@@ -397,34 +403,48 @@ export default function ThreatInspectorClient() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 
                 {/* Network Artifacts (IOCs) */}
-                <GlassCard className="flex flex-col gap-6">
+                <GlassCard className="flex flex-col gap-6 lg:col-span-1">
                   <div className="flex items-center justify-between border-b border-white/5 pb-4">
                     <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted">
                       <Globe className="size-4 text-blue-400" />
                       Network Indicators
                     </div>
-                    <span className="text-[9px] font-black text-muted/40">{localAnalysis.iocs.ips.length + localAnalysis.iocs.domains.length} Extraction(s)</span>
+                    <span className="text-[9px] font-black text-muted/40">{localAnalysis.iocs.ips.length + localAnalysis.iocs.domains.length + localAnalysis.iocs.urls.length + localAnalysis.iocs.emails.length} Extraction(s)</span>
                   </div>
                   
                   <div className="flex flex-col gap-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                    {localAnalysis.iocs.ips.length > 0 || localAnalysis.iocs.domains.length > 0 ? (
+                    {localAnalysis.iocs.ips.length > 0 || localAnalysis.iocs.domains.length > 0 || localAnalysis.iocs.urls.length > 0 || localAnalysis.iocs.emails.length > 0 ? (
                       <>
                         {localAnalysis.iocs.ips.map(ip => (
                           <div key={ip} className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-accent/20 transition-all">
                             <div className="flex flex-col gap-0.5">
                               <span className="text-[8px] font-black text-muted/40 uppercase">IP Node</span>
-                              <span className="font-mono text-[10px] text-foreground/80">{ip}</span>
+                              <span className="font-mono text-[10px] text-foreground/80 break-all">{ip}</span>
                             </div>
-                            <ChevronRight className="size-3 text-muted/20 group-hover/ioc:text-accent group-hover/ioc:translate-x-0.5 transition-all" />
                           </div>
                         ))}
                         {localAnalysis.iocs.domains.map(domain => (
                           <div key={domain} className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-accent/20 transition-all">
                             <div className="flex flex-col gap-0.5">
                               <span className="text-[8px] font-black text-muted/40 uppercase">Domain Host</span>
-                              <span className="font-mono text-[10px] text-foreground/80">{domain}</span>
+                              <span className="font-mono text-[10px] text-foreground/80 break-all">{domain}</span>
                             </div>
-                            <ChevronRight className="size-3 text-muted/20 group-hover/ioc:text-accent group-hover/ioc:translate-x-0.5 transition-all" />
+                          </div>
+                        ))}
+                        {localAnalysis.iocs.urls.map(url => (
+                          <div key={url} className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-accent/20 transition-all">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[8px] font-black text-muted/40 uppercase">Extracted URL</span>
+                              <span className="font-mono text-[10px] text-foreground/80 break-all">{url}</span>
+                            </div>
+                          </div>
+                        ))}
+                        {localAnalysis.iocs.emails.map(email => (
+                          <div key={email} className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-accent/20 transition-all">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[8px] font-black text-muted/40 uppercase">Email Address</span>
+                              <span className="font-mono text-[10px] text-foreground/80 break-all">{email}</span>
+                            </div>
                           </div>
                         ))}
                       </>
@@ -437,8 +457,70 @@ export default function ThreatInspectorClient() {
                   </div>
                 </GlassCard>
 
+                {/* MITRE & Suspicious Commands */}
+                <GlassCard className="flex flex-col gap-6 lg:col-span-1">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted">
+                      <Terminal className="size-4 text-red-400" />
+                      Suspicious Activity
+                    </div>
+                    <span className="text-[9px] font-black text-muted/40">{localAnalysis.iocs.suspiciousCommands.length} Found</span>
+                  </div>
+                  
+                  <div className="flex flex-col gap-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {localAnalysis.iocs.suspiciousCommands.length > 0 ? (
+                      localAnalysis.iocs.suspiciousCommands.map(cmd => (
+                        <div key={cmd} className="flex flex-col gap-2 p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-red-500/20 transition-all">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-[11px] text-red-400 font-bold">{cmd}</span>
+                            <span className="text-[8px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 font-bold uppercase tracking-wider">MITRE Hint</span>
+                          </div>
+                          <p className="text-[9px] text-muted/60 leading-relaxed">
+                            {cmd.includes("powershell") || cmd.includes("iex") ? "T1059.001 - PowerShell Execution" : 
+                             cmd.includes("base64") ? "T1140 - Deobfuscate/Decode Files or Information" :
+                             cmd.includes("wscript") ? "T1059.005 - Visual Basic" :
+                             "Suspicious execution artifact detected."}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-20 text-center border border-dashed border-white/5 rounded-[32px] flex flex-col items-center gap-3">
+                        <Shield className="size-6 text-emerald-400/20" />
+                        <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No Suspicious Commands</span>
+                      </div>
+                    )}
+                  </div>
+                </GlassCard>
+
+                {/* Embedded Hashes */}
+                <GlassCard className="flex flex-col gap-6 lg:col-span-1">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted">
+                      <Fingerprint className="size-4 text-purple-400" />
+                      Embedded Hashes
+                    </div>
+                    <span className="text-[9px] font-black text-muted/40">{localAnalysis.iocs.hashes.length} Found</span>
+                  </div>
+                  
+                  <div className="flex flex-col gap-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {localAnalysis.iocs.hashes.length > 0 ? (
+                      localAnalysis.iocs.hashes.map(hash => (
+                        <div key={hash} className="flex flex-col gap-0.5 p-3 rounded-xl bg-black/40 border border-white/5 group/ioc hover:border-purple-500/20 transition-all">
+                          <span className="text-[8px] font-black text-muted/40 uppercase">Hash Artifact</span>
+                          <span className="font-mono text-[10px] text-foreground/80 break-all">{hash}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-20 text-center border border-dashed border-white/5 rounded-[32px] flex flex-col items-center gap-3">
+                        <Lock className="size-6 text-purple-400/20" />
+                        <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No Embedded Hashes</span>
+                      </div>
+                    )}
+                  </div>
+                </GlassCard>
+
                 {/* Behavioral Strings */}
-                <GlassCard className="flex flex-col gap-6">
+                <GlassCard className="flex flex-col gap-6 lg:col-span-2">
                   <div className="flex items-center justify-between border-b border-white/5 pb-4">
                     <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted">
                       <Terminal className="size-4 text-emerald-400" />
@@ -463,7 +545,7 @@ export default function ThreatInspectorClient() {
                 </GlassCard>
 
                 {/* Security Flags */}
-                <GlassCard className="flex flex-col gap-6">
+                <GlassCard className="flex flex-col gap-6 lg:col-span-1">
                   <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-muted border-b border-white/5 pb-4">
                     <Activity className="size-4 text-purple-400" />
                     Forensic Indicators
@@ -476,8 +558,8 @@ export default function ThreatInspectorClient() {
                     />
                     <IndicatorItem 
                       title="Outbound Calls" 
-                      subtitle="Presence of IP/Domain artifacts" 
-                      active={localAnalysis.iocs.ips.length > 0 || localAnalysis.iocs.domains.length > 0} 
+                      subtitle="Presence of Network artifacts" 
+                      active={localAnalysis.iocs.ips.length > 0 || localAnalysis.iocs.domains.length > 0 || localAnalysis.iocs.urls.length > 0} 
                     />
                     <IndicatorItem 
                       title="Reputation Link" 
@@ -485,21 +567,22 @@ export default function ThreatInspectorClient() {
                       active={!!(vtData && vtData.last_analysis_stats.malicious > 0)} 
                     />
                     <IndicatorItem 
-                      title="Suspicious API" 
-                      subtitle="Known malicious system calls" 
-                      active={localAnalysis.strings.some(s => s.toLowerCase().includes("wininet") || s.toLowerCase().includes("httpopen"))} 
+                      title="Suspicious Activity" 
+                      subtitle="Known malicious commands/API calls" 
+                      active={localAnalysis.iocs.suspiciousCommands.length > 0} 
                     />
                   </div>
-                  
-                  <div className="mt-auto pt-6 border-t border-white/5">
-                    <button 
-                      onClick={() => { setFile(null); setLocalAnalysis(null); setVtData(null); }}
-                      className="w-full py-3.5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] text-[10px] font-black uppercase tracking-[0.2em] transition-all"
-                    >
-                      New Investigation
-                    </button>
-                  </div>
                 </GlassCard>
+              </div>
+
+              {/* Action Bar */}
+              <div className="flex justify-end pt-4">
+                <button 
+                  onClick={() => { setFile(null); setLocalAnalysis(null); setVtData(null); }}
+                  className="px-8 py-3.5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] text-[10px] font-black uppercase tracking-[0.2em] transition-all"
+                >
+                  New Investigation
+                </button>
               </div>
 
             </motion.div>

@@ -138,6 +138,15 @@ export const tools: Tool[] = [
     icon: "BIO",
   },
   {
+    name: "Port Checker",
+    slug: "port-checker",
+    route: getToolPath("network-security", "port-checker"),
+    description: "Instantly check the connectivity status, latency, and service of any port on any host.",
+    category: toolCategories["network-security"].label,
+    categoryId: "network-security",
+    icon: "PRT",
+  },
+  {
     name: "JsonLego",
     slug: "jsonlego",
     route: "https://jsonlego.app",
@@ -167,6 +176,15 @@ export const tools: Tool[] = [
     category: toolCategories["dev-automation"].label,
     categoryId: "dev-automation",
     icon: "DEV",
+  },
+  {
+    name: "Regex Studio",
+    slug: "regex-studio",
+    route: getToolPath("dev-automation", "regex-studio"),
+    description: "World-class regex debugging and pattern analysis workstation. Write, test, and debug regular expressions in real-time.",
+    category: toolCategories["dev-automation"].label,
+    categoryId: "dev-automation",
+    icon: "RGX",
   },
 ];
 

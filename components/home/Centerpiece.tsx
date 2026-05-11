@@ -105,7 +105,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
                 cx="50"
                 cy="50"
                 r="48"
-                stroke={i === 0 ? activeColor : "white"}
+                stroke={i === 0 ? activeColor : "var(--cp-ring-base)"}
                 strokeWidth={i === 0 ? "0.4" : "0.25"}
                 strokeDasharray={ring.dashArray}
                 strokeOpacity={ring.opacity}
@@ -134,17 +134,10 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
         <motion.div
           className="relative z-10 flex h-full w-full items-center justify-center overflow-hidden rounded-full cursor-pointer"
           style={{
-            background: "linear-gradient(145deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 50%, rgba(0,0,0,0.15) 100%)",
+            background: "var(--cp-glass-bg)",
             backdropFilter: "blur(32px) saturate(180%)",
             WebkitBackdropFilter: "blur(32px) saturate(180%)",
-            boxShadow: `
-              0 40px 120px rgba(0,0,0,0.5),
-              0 0 0 1px rgba(255,255,255,0.12),
-              0 0 0 2px rgba(255,255,255,0.04),
-              inset 0 1px 0 rgba(255,255,255,0.20),
-              inset 0 -1px 0 rgba(0,0,0,0.30),
-              inset 0 0 60px rgba(0,0,0,0.20)
-            `,
+            boxShadow: "var(--cp-glass-shadow)",
           }}
           variants={{
             rest:   { scale: 1 },
@@ -160,7 +153,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
             className="absolute inset-0 rounded-full pointer-events-none"
             style={{
               background: `
-                radial-gradient(ellipse 75% 50% at 38% 22%, rgba(255,255,255,0.22) 0%, transparent 60%),
+                var(--cp-glass-refract),
                 radial-gradient(ellipse 55% 40% at 68% 78%, ${activeColor}14 0%, transparent 55%),
                 radial-gradient(circle at 50% 50%, ${activeColor}18 0%, transparent 50%)
               `,
@@ -176,8 +169,8 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
             transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
             style={{
               backgroundImage: `
-                linear-gradient(rgba(255,255,255,0.8) 0.5px, transparent 0.5px),
-                linear-gradient(90deg, rgba(255,255,255,0.8) 0.5px, transparent 0.5px)
+                linear-gradient(var(--cp-mesh-color) 0.5px, transparent 0.5px),
+                linear-gradient(90deg, var(--cp-mesh-color) 0.5px, transparent 0.5px)
               `,
               backgroundSize: "22px 22px",
               maskImage: "radial-gradient(circle, black 0%, transparent 72%)",
