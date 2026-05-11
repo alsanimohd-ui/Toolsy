@@ -12,12 +12,15 @@ interface ToolRouteParams {
 }
 
 const implementedTools = {
-
-  "log-analyzer": dynamic(() => import("../../log-analyzer/client-page")),
+  "log-analyzer": dynamic(() => import("../../data-analytics/log-analyzer/client-page")),
   "paste-to-code": dynamic(() => import("../../paste-to-code/client-page")),
   "qr-generator": dynamic(() => import("../../qr-generator/client-page")),
   "ssl-toolkit": dynamic(() => import("../../ssl-toolkit/client-page")),
   "threat-inspector": dynamic(() => import("../../network-security/threat-inspector/client-page")),
+  "pcap-analyzer": dynamic(() => import("../../network-security/pcap-analyzer/client-page")),
+  "port-checker": dynamic(() => import("../../network-security/port-checker/client-page")),
+  "regex-studio": dynamic(() => import("../../dev-automation/regex-studio/client-page")),
+  "api-request-lab": dynamic(() => import("../../dev-automation/api-request-lab/client-page")),
 } as const;
 
 export function generateStaticParams() {

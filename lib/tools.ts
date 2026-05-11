@@ -147,6 +147,15 @@ export const tools: Tool[] = [
     icon: "PRT",
   },
   {
+    name: "PCAP Analyzer",
+    slug: "pcap-analyzer",
+    route: getToolPath("network-security", "pcap-analyzer"),
+    description: "High-performance forensic workstation with virtualized stream analysis and local packet triage.",
+    category: toolCategories["network-security"].label,
+    categoryId: "network-security",
+    icon: "PCP",
+  },
+  {
     name: "JsonLego",
     slug: "jsonlego",
     route: "https://jsonlego.app",
@@ -185,6 +194,15 @@ export const tools: Tool[] = [
     category: toolCategories["dev-automation"].label,
     categoryId: "dev-automation",
     icon: "RGX",
+  },
+  {
+    name: "API Request Lab",
+    slug: "api-request-lab",
+    route: getToolPath("dev-automation", "api-request-lab"),
+    description: "Cinematic next-generation API engineering workstation. Test, debug, and analyze RESTful and GraphQL endpoints.",
+    category: toolCategories["dev-automation"].label,
+    categoryId: "dev-automation",
+    icon: "API",
   },
 ];
 

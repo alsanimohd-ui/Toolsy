@@ -1,0 +1,1 @@
+"use strict";exports.id=483,exports.ids=[483],exports.modules={66483:(e,t,s)=>{s.r(t),s.d(t,{default:()=>o});let o=(0,s(68570).createProxy)(String.raw`C:\Users\USER\Desktop\Toolsy\app\tools\dev-automation\regex-studio\client-page.tsx#default`)}};

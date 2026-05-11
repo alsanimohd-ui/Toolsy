@@ -1,0 +1,1 @@
+"use strict";exports.id=835,exports.ids=[835],exports.modules={23835:(t,e,s)=>{s.r(e),s.d(e,{default:()=>a});let a=(0,s(68570).createProxy)(String.raw`C:\Users\USER\Desktop\Toolsy\app\tools\data-analytics\log-analyzer\client-page.tsx#default`)}};
