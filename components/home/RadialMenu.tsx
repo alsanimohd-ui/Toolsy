@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Database, Code2, QrCode, Lock, Globe, ScanSearch, Activity, FileJson, Braces, Terminal, Wrench, Fingerprint } from "lucide-react";

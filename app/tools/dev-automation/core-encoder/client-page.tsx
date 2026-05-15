@@ -10,7 +10,6 @@ import {
   CheckCircle2, 
   Hash, 
   RefreshCcw,
-  ListTree,
   Sparkles,
   Fingerprint,
   ChevronRight,
@@ -22,8 +21,6 @@ import {
   Workflow,
   Globe,
   Binary,
-  Braces,
-  ShieldAlert,
   ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -50,7 +47,7 @@ interface Suggestion {
   type: OpType;
   label: string;
   category: Category;
-  icon: any;
+  icon: React.ElementType;
   priority: number;
   check: (data: string) => boolean;
 }
@@ -151,7 +148,7 @@ export default function CoreEncoderClient() {
             current = `Network Triage: Routing investigation for ${current}...`;
             break;
         }
-      } catch (e) {
+      } catch {
         error = `Error in ${step.label}: Invalid format`;
         break;
       }
@@ -170,10 +167,11 @@ export default function CoreEncoderClient() {
     const visible = showMore ? sorted : sorted.slice(0, 5);
     
     // Group by category
-    const groups: Record<Category, Suggestion[]> = {} as any;
+    const groups: Partial<Record<Category, Suggestion[]>> = {};
     visible.forEach(op => {
-      if (!groups[op.category]) groups[op.category] = [];
-      groups[op.category].push(op);
+      const cat = op.category;
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat]!.push(op);
     });
 
     return Object.entries(groups).map(([cat, ops]) => ({

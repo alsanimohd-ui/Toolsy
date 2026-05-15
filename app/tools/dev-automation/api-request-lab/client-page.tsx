@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState } from "react";
 import { ToolContainer, ToolHeader } from "@/components/tools";
 import { 
   Send,
@@ -9,9 +9,6 @@ import {
   Lock,
   Braces,
   Globe,
-  Clock,
-  HardDrive,
-  AlertTriangle,
   Copy,
   CheckCircle2,
   ChevronDown,
