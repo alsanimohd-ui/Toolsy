@@ -21,6 +21,7 @@ const implementedTools = {
   "port-checker": dynamic(() => import("../../network-security/port-checker/client-page")),
   "regex-studio": dynamic(() => import("../../dev-automation/regex-studio/client-page")),
   "api-request-lab": dynamic(() => import("../../dev-automation/api-request-lab/client-page")),
+  "core-encoder": dynamic(() => import("../../dev-automation/core-encoder/client-page")),
 } as const;
 
 export function generateStaticParams() {

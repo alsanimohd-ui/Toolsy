@@ -2,7 +2,6 @@
 
 import Centerpiece from "@/components/home/Centerpiece";
 import RadialMenu from "@/components/home/RadialMenu";
-import Atmosphere from "@/components/layout/Atmosphere";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useState } from "react";
@@ -15,9 +14,6 @@ export default function HomePage() {
 
   return (
     <main className="toolsy-home-shell">
-
-      <Atmosphere activeSegment={activeSegment} />
-
       {/* ═══════════════════════════════════════════════════ */}
       {/* MAIN HERO STAGE                                     */}
       {/* ═══════════════════════════════════════════════════ */}

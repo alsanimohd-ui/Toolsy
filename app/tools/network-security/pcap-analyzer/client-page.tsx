@@ -389,7 +389,7 @@ export default function PcapAnalyzerClient() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [selectedPacket, setSelectedPacket] = useState<Packet | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
-  const [activeProtoFilter, setActiveProtoFilter] = useState<string>("ALL");
+  const [activeProtoFilters, setActiveProtoFilters] = useState<Set<string>>(new Set(["ALL"]));
   const [isDragging, setIsDragging] = useState(false);
   const [view, setView] = useState<"FEED" | "CONV" | "IOCS">("FEED");
 
@@ -413,17 +413,31 @@ export default function PcapAnalyzerClient() {
     }
   };
 
+  const toggleProtoFilter = (p: string) => {
+    const next = new Set(activeProtoFilters);
+    if (p === "ALL") {
+      next.clear();
+      next.add("ALL");
+    } else {
+      next.delete("ALL");
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      if (next.size === 0) next.add("ALL");
+    }
+    setActiveProtoFilters(next);
+  };
+
   const filteredPackets = useMemo(() => {
     if (!result) return [];
     
     const query = filterQuery.toLowerCase().trim();
-    if (!query && activeProtoFilter === "ALL") return result.packets;
+    if (!query && activeProtoFilters.has("ALL")) return result.packets;
 
     const terms = query.split(/\s+/).filter(Boolean);
     
     return result.packets.filter(p => {
-      // Protocol Sidebar Filter (OR with terms, but here we treat as a base filter)
-      if (activeProtoFilter !== "ALL" && p.protocol !== activeProtoFilter) return false;
+      // Protocol Multi-select Filter
+      if (!activeProtoFilters.has("ALL") && !activeProtoFilters.has(p.protocol)) return false;
       if (terms.length === 0) return true;
 
       // Every term must match (AND logic)
@@ -450,7 +464,38 @@ export default function PcapAnalyzerClient() {
         );
       });
     });
-  }, [result, activeProtoFilter, filterQuery]);
+  }, [result, activeProtoFilters, filterQuery]);
+
+  const highlight = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1 && !t.includes(":"));
+    if (terms.length === 0) return text;
+
+    let result: (string | React.ReactNode)[] = [text];
+    
+    terms.forEach(term => {
+      const nextResult: (string | React.ReactNode)[] = [];
+      result.forEach(part => {
+        if (typeof part !== "string") {
+          nextResult.push(part);
+          return;
+        }
+        
+        const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, "gi");
+        const splits = part.split(regex);
+        splits.forEach((split, idx) => {
+          if (split.toLowerCase() === term.toLowerCase()) {
+            nextResult.push(<mark key={`${term}-${idx}`} className="bg-accent/40 text-white rounded-sm px-0.5">{split}</mark>);
+          } else if (split) {
+            nextResult.push(split);
+          }
+        });
+      });
+      result = nextResult;
+    });
+    
+    return result;
+  };
 
   const handleSelectPacket = (p: Packet) => {
     if (!p.layers) {
@@ -626,11 +671,12 @@ export default function PcapAnalyzerClient() {
                       {["ALL", ...protoDistribution.map(p => p[0])].map((p, i) => {
                         const count = p === "ALL" ? result.stats.totalPackets : result.stats.protocols[p];
                         const pct = (count / result.stats.totalPackets) * 100;
+                        const isActive = activeProtoFilters.has(p);
                         return (
                           <button 
                             key={i}
-                            onClick={() => setActiveProtoFilter(p)}
-                            className={`flex flex-col gap-1 group w-full text-left transition-all ${activeProtoFilter === p ? "opacity-100" : "opacity-40 hover:opacity-70"}`}
+                            onClick={() => toggleProtoFilter(p)}
+                            className={`flex flex-col gap-1 group w-full text-left transition-all ${isActive ? "opacity-100" : "opacity-40 hover:opacity-70"}`}
                           >
                             <div className="flex items-center justify-between text-[10px] font-bold uppercase">
                               <span>{p}</span>
@@ -747,13 +793,13 @@ export default function PcapAnalyzerClient() {
                         </div>
 
                         <div className="flex-1 flex items-center gap-4 overflow-hidden">
-                          <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[140px]">{p.source}</span>
+                          <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[140px]">{highlight(p.source, filterQuery)}</span>
                           <ArrowRight className="size-3 text-muted/10 shrink-0" />
-                          <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[140px]">{p.dest}</span>
+                          <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[140px]">{highlight(p.dest, filterQuery)}</span>
                         </div>
 
                         <div className="flex items-center justify-end gap-4 min-w-[180px]">
-                          <span className="text-[10px] font-bold text-accent/60 font-mono truncate max-w-[120px]">{p.summary}</span>
+                          <span className="text-[10px] font-bold text-accent/60 font-mono truncate max-w-[120px]">{highlight(p.summary, filterQuery)}</span>
                           <span className="text-[9px] font-black text-muted/20 tabular-nums w-8 text-right">{p.len}B</span>
                         </div>
                       </div>

@@ -204,6 +204,15 @@ export const tools: Tool[] = [
     categoryId: "dev-automation",
     icon: "API",
   },
+  {
+    name: "Core Encoder",
+    slug: "core-encoder",
+    route: getToolPath("dev-automation", "core-encoder"),
+    description: "Unified intelligent workstation for real-time encoding, decoding, and forensic hashing. Smart detection and instant processing.",
+    category: toolCategories["dev-automation"].label,
+    categoryId: "dev-automation",
+    icon: "ENC",
+  },
 ];
 
 export function findTool(categoryId: CategoryId, slug: string) {

@@ -53,9 +53,17 @@ function ToolCard({ tool, categoryColor }: { tool: Tool; categoryColor: string }
         </div>
 
         <div className="flex flex-col gap-4 flex-1">
-          <h2 className="text-xl font-black tracking-tight text-foreground group-hover:text-accent transition-colors duration-300">
-            {tool.name}
-          </h2>
+          <div className="flex flex-col gap-1">
+            <span 
+              className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40"
+              style={{ color: categoryColor }}
+            >
+              {categoryList.find(c => c.id === tool.categoryId)?.label}
+            </span>
+            <h2 className="text-xl font-black tracking-tight text-foreground group-hover:text-accent transition-colors duration-300">
+              {tool.name}
+            </h2>
+          </div>
           <p className="text-sm text-muted/80 leading-relaxed font-medium line-clamp-3">
             {tool.description}
           </p>
@@ -85,25 +93,31 @@ function CategoryTabs({
   activeTab, 
   setActiveTab 
 }: { 
-  activeTab: CategoryId; 
-  setActiveTab: (id: CategoryId) => void 
+  activeTab: CategoryId | "all"; 
+  setActiveTab: (id: CategoryId | "all") => void 
 }) {
   const icons = {
+    "all": Sparkles,
     "network-security": ShieldCheck,
     "data-analytics": Braces,
     "dev-automation": Workflow
   };
 
+  const tabs: { id: CategoryId | "all"; label: string; color: string }[] = [
+    { id: "all", label: "All Modules", color: "var(--accent)" },
+    ...categoryList.map(c => ({ id: c.id, label: c.shortLabel, color: c.color }))
+  ];
+
   return (
-    <div className="relative mx-auto flex w-full max-w-3xl items-center justify-center p-1.5 rounded-2xl bg-white/40 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 backdrop-blur-2xl shadow-2xl overflow-hidden">
-      {categoryList.map((cat) => {
-        const isActive = activeTab === cat.id;
-        const Icon = icons[cat.id];
+    <div className="relative mx-auto flex w-full max-w-4xl items-center justify-center p-1.5 rounded-2xl bg-white/40 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 backdrop-blur-2xl shadow-2xl overflow-hidden">
+      {tabs.map((tab) => {
+        const isActive = activeTab === tab.id;
+        const Icon = icons[tab.id];
 
         return (
           <button
-            key={cat.id}
-            onClick={() => setActiveTab(cat.id)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             className={`relative flex flex-1 items-center justify-center gap-3 py-3.5 px-4 rounded-xl transition-all duration-500 z-10 ${
               isActive 
                 ? "text-slate-900 dark:text-white" 
@@ -118,16 +132,16 @@ function CategoryTabs({
               />
             )}
             
-            <Icon className={`size-4.5 transition-colors duration-500 ${isActive ? "text-accent" : "text-muted/60"}`} />
-            <span className="text-[11px] font-black uppercase tracking-[0.18em] whitespace-nowrap">
-              {cat.shortLabel}
+            <Icon className={`size-4 transition-colors duration-500 ${isActive ? "text-accent" : "text-muted/60"}`} />
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] whitespace-nowrap">
+              {tab.label}
             </span>
 
             {isActive && (
               <motion.div
                 layoutId="active-tab-glow"
                 className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 blur-md opacity-60"
-                style={{ backgroundColor: cat.color }}
+                style={{ backgroundColor: tab.color }}
               />
             )}
           </button>
@@ -141,13 +155,12 @@ function CategoryTabs({
    Main Page Component
   ───────────────────────────────────────────── */
 export default function ToolsIndexPage() {
-  const [activeTab, setActiveTab] = useState<CategoryId>("network-security");
+  const [activeTab, setActiveTab] = useState<CategoryId | "all">("all");
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Stability: Ensure keyboard shortcuts and search behavior are initialized
   useEffect(() => {
-    
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
@@ -158,17 +171,30 @@ export default function ToolsIndexPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Clear search when switching tabs to prevent "stuck" no-results state
-  useEffect(() => {
-    setSearch("");
-  }, [activeTab]);
+  // Stability: Global search logic
+  const filteredTools = tools.filter((t) => {
+    const s = search.toLowerCase().trim();
+    
+    // Tab filter (only if search is empty)
+    if (s === "") {
+      if (activeTab === "all") return true;
+      return t.categoryId === activeTab;
+    }
+    
+    // Global search logic (always global)
+    const matchesQuery = t.name.toLowerCase().includes(s) || 
+                         t.description.toLowerCase().includes(s) ||
+                         t.categoryId.toLowerCase().includes(s);
+    
+    // If search is NOT empty, we filter the results further by active tab if it's not "all"
+    if (activeTab !== "all") {
+      return matchesQuery && t.categoryId === activeTab;
+    }
+    
+    return matchesQuery;
+  });
 
-  const activeCategory = categoryList.find(c => c.id === activeTab)!;
-  
-  const filteredTools = tools.filter((t) =>
-    t.categoryId === activeTab &&
-    t.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const activeCategory = activeTab === "all" ? { color: "var(--accent)" } : categoryList.find(c => c.id === activeTab)!;
 
   return (
     <div className="toolsy-content relative z-10 flex flex-col gap-[clamp(1.5rem,5svh,3rem)]">
@@ -194,21 +220,34 @@ export default function ToolsIndexPage() {
         </div>
         
         {/* Integrated Search & Navigation Container */}
-        <div className="w-full flex flex-col gap-8 items-center">
-          <div className="w-full max-w-lg relative group">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-accent transition-colors" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Query modules... (Ctrl+K)"
-              className="toolsy-input h-14 pl-14 pr-6 rounded-2xl border-white/5 bg-white/[0.02] backdrop-blur-md font-semibold text-sm tracking-wide shadow-2xl focus:bg-white/[0.04]"
-            />
+          <div className="w-full flex flex-col md:flex-row gap-4 items-center justify-center">
+            <Link 
+              href="/"
+              className="flex items-center gap-2 px-4 h-14 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 transition-all group shrink-0"
+            >
+              <motion.div
+                whileHover={{ x: -2 }}
+                className="text-muted group-hover:text-white"
+              >
+                <ArrowRight className="size-4 rotate-180" />
+              </motion.div>
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted group-hover:text-white">Portal</span>
+            </Link>
+
+            <div className="w-full max-w-lg relative group">
+              <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-accent transition-colors" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Query modules... (Ctrl+K)"
+                className="toolsy-input h-14 pl-14 pr-6 rounded-2xl border-white/5 bg-white/[0.02] backdrop-blur-md font-semibold text-sm tracking-wide shadow-2xl focus:bg-white/[0.04]"
+              />
+            </div>
           </div>
 
           <CategoryTabs activeTab={activeTab} setActiveTab={setActiveTab} />
-        </div>
       </header>
 
 

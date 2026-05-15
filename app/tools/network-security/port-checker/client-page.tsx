@@ -135,13 +135,13 @@ export default function PortCheckerClient() {
         categoryId="network-security"
       />
 
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-10 max-w-5xl mx-auto w-full">
         
         {/* Main Interface */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="flex flex-col gap-8">
           
           {/* Controls */}
-          <GlassCard className="lg:col-span-7 flex flex-col gap-8 p-10">
+          <GlassCard className="flex flex-col gap-8 p-10">
             <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-accent border-b border-white/5 pb-4">
               <Crosshair className="size-4" /> Targeting Parameters
             </div>
@@ -230,7 +230,7 @@ export default function PortCheckerClient() {
                           step="500" 
                           value={timeoutMs}
                           onChange={(e) => setTimeoutMs(Number(e.target.value))}
-                          className="accent-accent"
+                          className="accent-accent w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer"
                         />
                       </div>
                     </div>
@@ -263,8 +263,8 @@ export default function PortCheckerClient() {
           </GlassCard>
 
           {/* Visualization & Results */}
-          <div className="lg:col-span-5 flex flex-col gap-8">
-            <GlassCard className="relative overflow-hidden flex flex-col items-center justify-center p-8 group min-h-[400px]">
+          <div className="flex flex-col gap-8">
+            <GlassCard className="relative overflow-hidden flex flex-col items-center justify-center p-8 group min-h-[300px]">
               
               {/* Background Atmosphere */}
               <div className="absolute inset-0 pointer-events-none">
@@ -323,7 +323,7 @@ export default function PortCheckerClient() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 w-full pt-6 border-t border-white/5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full pt-6 border-t border-white/5">
                       <div className="flex flex-col gap-1 p-4 rounded-2xl bg-black/40 border border-white/5">
                         <span className="text-[8px] font-black uppercase tracking-widest text-muted/60">Latency</span>
                         <span className="text-lg font-mono text-foreground flex items-center gap-2">
