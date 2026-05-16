@@ -1,5 +1,5 @@
 {
   "headers": {
-    "x-next-cache-tags": "_N_T_/layout,_N_T_/tools/layout,_N_T_/tools/[category]/layout,_N_T_/tools/[category]/[slug]/layout,_N_T_/tools/[category]/[slug]/page,_N_T_/tools/data-analytics/log-analyzer"
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/tools/layout,_N_T_/tools/data-analytics/layout,_N_T_/tools/data-analytics/log-analyzer/layout,_N_T_/tools/data-analytics/log-analyzer/page,_N_T_/tools/data-analytics/log-analyzer"
   }
 }

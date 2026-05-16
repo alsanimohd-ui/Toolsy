@@ -1,1 +1,86 @@
-{}
+{
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/data-analytics/log-analyzer/client-page": {
+    "id": 7761,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/7761-18a4cfc1d7358123.js",
+      "static/chunks/2788.fa2e0e1e4661d184.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/dev-automation/api-request-lab/client-page": {
+    "id": 2067,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/2067-dd9eef39534a03ac.js",
+      "static/chunks/9302.fe1e026a942239ab.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/dev-automation/core-encoder/client-page": {
+    "id": 8650,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/9212-048863308e788232.js",
+      "static/chunks/9373-05efda48dac83519.js",
+      "static/chunks/4854.67b87b2dfdae988d.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/dev-automation/regex-studio/client-page": {
+    "id": 8477,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/8477-02c4d31ea3dee643.js",
+      "static/chunks/3795.41543f2a0445e5f4.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/network-security/pcap-analyzer/client-page": {
+    "id": 3818,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/3818-725ae84c694111f2.js",
+      "static/chunks/6535.50de6efaa01ff23c.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/network-security/port-checker/client-page": {
+    "id": 970,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/970-35b7177673807ba0.js",
+      "static/chunks/4799.f70889a4615ca638.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/network-security/threat-inspector/client-page": {
+    "id": 7313,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/7313-62c2d3a90acab511.js",
+      "static/chunks/7316.020a0391df94660c.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/paste-to-code/client-page": {
+    "id": 2546,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/2546-650f6a075ac0ce00.js",
+      "static/chunks/5553.dc002de7688c7bf6.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/qr-generator/client-page": {
+    "id": 1460,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/8911-d659b2c469da32be.js",
+      "static/chunks/1460-44552a4df3835ae9.js",
+      "static/chunks/1874.5528e9f927b29e19.js"
+    ]
+  },
+  "components\\workspace\\WorkspacePanel.tsx -> @/app/tools/ssl-toolkit/client-page": {
+    "id": 939,
+    "files": [
+      "static/chunks/2972-84396ed80cc40d58.js",
+      "static/chunks/9212-048863308e788232.js",
+      "static/chunks/6274-b9f322143c727680.js",
+      "static/chunks/939-b55300bf0fbbd2e1.js",
+      "static/chunks/3317.f9010a229d508680.js"
+    ]
+  }
+}

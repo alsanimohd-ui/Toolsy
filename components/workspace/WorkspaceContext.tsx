@@ -7,7 +7,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { tools, type CategoryId } from "@/lib/tools";
 
@@ -62,7 +62,6 @@ export function WorkspaceProvider({
   children,
   initialTool = null,
 }: WorkspaceProviderProps) {
-  const router = useRouter();
   const pathname = usePathname();
 
   // 1. Find the tool matching the current URL
