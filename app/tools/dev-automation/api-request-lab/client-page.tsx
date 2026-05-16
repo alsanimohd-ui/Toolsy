@@ -15,7 +15,6 @@ import {
   Trash2,
   Plus,
   ShieldAlert,
-  FileType,
   FileCode,
   Zap
 } from "lucide-react";
@@ -148,7 +147,8 @@ export default function ApiRequestLabClient() {
   const [reqBody, setReqBody] = useState("");
   const [formData, setFormData] = useState<KeyValuePair[]>([{ id: "1", key: "", value: "", enabled: true }]);
   
-  // 4. Advanced Settings
+  // 4. Execution Mode
+  const [executionMode, setExecutionMode] = useState<"local" | "remote">("remote");
   const [ignoreSsl, setIgnoreSsl] = useState(false);
 
   // 5. Response Data
@@ -221,29 +221,55 @@ export default function ApiRequestLabClient() {
           activeParams.forEach(p => urlObj.searchParams.append(p.key, p.value));
           finalUrl = urlObj.toString();
         } catch { 
-          // Fallback if URL is partial
           const separator = url.includes('?') ? '&' : '?';
           const query = activeParams.map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&');
           finalUrl = `${url}${separator}${query}`;
         }
       }
 
-      const res = await fetch("/api/network/api-lab", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: finalUrl,
+      let data;
+      if (executionMode === "remote") {
+        const res = await fetch("/api/network/api-lab", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: finalUrl,
+            method,
+            headers: finalHeaders,
+            body: finalBody,
+            ignoreSsl
+          })
+        });
+        data = await res.json();
+      } else {
+        // Local Browser Execution (Subject to CORS)
+        const startTime = performance.now();
+        const res = await fetch(finalUrl, {
           method,
           headers: finalHeaders,
-          body: finalBody,
-          ignoreSsl // Even if proxy doesn't support it yet, we pass it
-        })
-      });
+          body: finalBody
+        });
+        const endTime = performance.now();
+        const bodyText = await res.text();
+        let bodyJson;
+        try { bodyJson = JSON.parse(bodyText); } catch { bodyJson = null; }
+        
+        const resHeaders: Record<string, string> = {};
+        res.headers.forEach((v, k) => { resHeaders[k] = v; });
 
-      const data = await res.json();
+        data = {
+          status: res.status,
+          statusText: res.statusText,
+          headers: resHeaders,
+          body: bodyJson,
+          rawBody: bodyText,
+          timing: Math.round(endTime - startTime),
+          size: bodyText.length
+        };
+      }
       setResponse(data);
     } catch (err: unknown) {
-      setResponse({ error: (err as Error).message || "Connection failed. Ensure the URL is reachable." });
+      setResponse({ error: (err as Error).message || "Connection failed. Check CORS or URL." });
     } finally {
       setIsLoading(false);
     }
@@ -265,19 +291,41 @@ export default function ApiRequestLabClient() {
         categoryId="dev-automation"
       />
 
-      <div className="flex flex-col gap-24 max-w-[96rem] mx-auto w-full pb-32">
+      <div className="flex flex-col gap-10 max-w-[96rem] mx-auto w-full pb-32">
         
-        {/* STEP 1: TARGETING (URL & METHOD) */}
-        <section className="flex flex-col gap-8 relative z-50">
-          <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-accent/70 ml-2">
-            <Globe className="size-4" /> 01. Configure Target
+        {/* STEP 1: TARGETING & MODE */}
+        <section className="flex flex-col gap-6">
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-accent/70">
+              <Globe className="size-4" /> 01. Configure Target
+            </div>
+            
+            {/* Execution Mode Toggle */}
+            <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
+              {[
+                { id: "local", label: "Local (Browser)", icon: Zap },
+                { id: "remote", label: "Remote (Proxy)", icon: Globe }
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setExecutionMode(m.id as "local" | "remote")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
+                    ${executionMode === m.id 
+                      ? "bg-accent text-white shadow-lg shadow-accent/20" 
+                      : "text-muted hover:text-foreground hover:bg-white/5"}`}
+                >
+                  <m.icon className="size-3" /> {m.label}
+                </button>
+              ))}
+            </div>
           </div>
+
           <GlassCard className="p-4 flex flex-col md:flex-row items-stretch md:items-center gap-4 border-l-4 border-l-accent bg-accent/[0.02]">
             <div className="flex items-center gap-0 w-full">
               <MethodSelector value={method} onChange={setMethod} />
               <div className="relative flex-1">
                 <input 
-                  type="text"
+                  type="text" 
                   value={url}
                   onChange={e => setUrl(e.target.value)}
                   placeholder="https://api.example.com/v1/resource"
@@ -301,435 +349,272 @@ export default function ApiRequestLabClient() {
           </GlassCard>
         </section>
 
-        {/* STEP 2 & 3: CONFIGURATION & INSPECTION */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-          
-          {/* CONFIGURATION PANEL (LEFT) */}
-          <div className="xl:col-span-6 flex flex-col gap-8 relative z-10">
-            <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-muted/40 ml-2">
-              <Settings2 className="size-4" /> 02. Configuration
+        {/* STEP 2: CONFIGURATION (Full Width) */}
+        <section className="flex flex-col gap-6">
+          <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-muted/40 ml-2">
+            <Settings2 className="size-4" /> 02. Configuration
+          </div>
+          <GlassCard className="flex flex-col overflow-hidden min-h-[400px] shadow-2xl">
+            {/* Tabs */}
+            <div className="flex items-center gap-2 p-3 bg-white/[0.03] border-b border-white/5 overflow-x-auto custom-scrollbar">
+              {[
+                { id: "params", label: "Params", icon: ListTree },
+                { id: "auth", label: "Auth", icon: Lock },
+                { id: "headers", label: "Headers", icon: Globe },
+                { id: "body", label: "Body", icon: Braces },
+              ].map(t => {
+                const Icon = t.icon;
+                const isActive = activeReqTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveReqTab(t.id)}
+                    className={`flex items-center gap-3 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.25em] transition-all whitespace-nowrap border
+                      ${isActive 
+                        ? "bg-accent/10 text-accent border-accent/20" 
+                        : "text-muted/60 border-transparent hover:text-foreground/80 hover:bg-white/5"}`}
+                  >
+                    <Icon className={`size-3.5 ${isActive ? "text-accent" : "text-muted/40"}`} /> {t.label}
+                  </button>
+                );
+              })}
             </div>
-            <GlassCard className="flex flex-col overflow-hidden min-h-[620px] shadow-2xl">
-              {/* Tabs */}
-              <div className="flex items-center gap-2 p-4 bg-white/[0.03] border-b border-white/5 overflow-x-auto custom-scrollbar">
-                {[
-                  { id: "params", label: "Params", icon: ListTree },
-                  { id: "auth", label: "Auth", icon: Lock },
-                  { id: "headers", label: "Headers", icon: Globe },
-                  { id: "body", label: "Body", icon: Braces },
-                ].map(t => {
-                  const Icon = t.icon;
-                  const isActive = activeReqTab === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setActiveReqTab(t.id)}
-                      className={`flex items-center gap-3 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.25em] transition-all whitespace-nowrap border
-                        ${isActive 
-                          ? "bg-accent/10 text-accent border-accent/20" 
-                          : "text-muted/60 border-transparent hover:text-foreground/80 hover:bg-white/5"}`}
-                    >
-                      <Icon className={`size-3.5 ${isActive ? "text-accent" : "text-muted/40"}`} /> {t.label}
-                    </button>
-                  );
-                })}
-              </div>
 
-              {/* Tab Content */}
-              <div className="p-8 flex-1 flex flex-col overflow-y-auto custom-scrollbar bg-black/20">
-                
-                {/* KEY/VALUE EDITORS (Params, Headers, Form-Data) */}
-                {(activeReqTab === "params" || activeReqTab === "headers" || (activeReqTab === "body" && bodyType === "form-data")) && (
-                  <div className="flex flex-col gap-3">
-                    <div className="grid grid-cols-[30px_1fr_1fr_30px] gap-4 mb-4 px-2">
-                      <div className="w-[30px]"></div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-muted/40">Key</span>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-muted/40">Value</span>
-                      <div className="w-[30px]"></div>
-                    </div>
-                    
-                    {(activeReqTab === "params" ? params : activeReqTab === "headers" ? headers : formData).map((row) => (
-                      <motion.div 
-                        key={row.id} 
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="grid grid-cols-[30px_1fr_1fr_30px] gap-4 items-center group"
+            {/* Tab Content */}
+            <div className="p-6 flex-1 flex flex-col overflow-y-auto custom-scrollbar bg-black/20">
+              
+              {(activeReqTab === "params" || activeReqTab === "headers" || (activeReqTab === "body" && bodyType === "form-data")) && (
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-[30px_1fr_1fr_30px] gap-4 mb-2 px-2">
+                    <div className="w-[30px]"></div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-muted/30">Key</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-muted/30">Value</span>
+                    <div className="w-[30px]"></div>
+                  </div>
+                  
+                  {(activeReqTab === "params" ? params : activeReqTab === "headers" ? headers : formData).map((row) => (
+                    <motion.div key={row.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="grid grid-cols-[30px_1fr_1fr_30px] gap-4 items-center group">
+                      <input 
+                        type="checkbox" 
+                        checked={row.enabled}
+                        onChange={(e) => updateRow(
+                          activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
+                          row.id, "enabled", e.target.checked
+                        )}
+                        className="size-5 rounded-lg border-white/10 bg-black/60 accent-accent cursor-pointer transition-all hover:scale-110"
+                      />
+                      <input 
+                        type="text" 
+                        value={row.key}
+                        onChange={(e) => updateRow(
+                          activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
+                          row.id, "key", e.target.value
+                        )}
+                        placeholder="e.g. limit"
+                        className="toolsy-input bg-black/60 border border-white/5 rounded-xl px-4 py-2.5 font-mono text-xs focus:border-accent/40 transition-all placeholder:opacity-20"
+                      />
+                      <input 
+                        type="text" 
+                        value={row.value}
+                        onChange={(e) => updateRow(
+                          activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
+                          row.id, "value", e.target.value
+                        )}
+                        placeholder="e.g. 100"
+                        className="toolsy-input bg-black/60 border border-white/5 rounded-xl px-4 py-2.5 font-mono text-xs focus:border-accent/40 transition-all placeholder:opacity-20"
+                      />
+                      <button 
+                        onClick={() => removeRow(
+                          activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
+                          row.id
+                        )}
+                        className="size-8 flex items-center justify-center rounded-lg text-muted/40 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
                       >
-                        <input 
-                          type="checkbox" 
-                          checked={row.enabled}
-                          onChange={(e) => updateRow(
-                            activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
-                            row.id, "enabled", e.target.checked
-                          )}
-                          className="size-5 rounded-lg border-white/10 bg-black/60 accent-accent cursor-pointer transition-all hover:scale-110"
-                        />
-                        <input 
-                          type="text" 
-                          value={row.key}
-                          onChange={(e) => updateRow(
-                            activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
-                            row.id, "key", e.target.value
-                          )}
-                          placeholder="e.g. limit"
-                          className="toolsy-input bg-black/60 border border-white/5 rounded-xl px-4 py-3 font-mono text-xs focus:border-accent/40 transition-all placeholder:opacity-20"
-                        />
-                        <input 
-                          type="text" 
-                          value={row.value}
-                          onChange={(e) => updateRow(
-                            activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
-                            row.id, "value", e.target.value
-                          )}
-                          placeholder="e.g. 100"
-                          className="toolsy-input bg-black/60 border border-white/5 rounded-xl px-4 py-3 font-mono text-xs focus:border-accent/40 transition-all placeholder:opacity-20"
-                        />
-                        <button 
-                          onClick={() => removeRow(
-                            activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData, 
-                            row.id
-                          )}
-                          className="size-8 flex items-center justify-center rounded-lg text-muted/40 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      </motion.div>
-                    ))}
-                    
-                    <button 
-                      onClick={() => addRow(activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData)}
-                      className="mt-6 flex items-center gap-2 self-start text-[10px] font-black uppercase tracking-[0.2em] text-accent hover:text-accent/80 transition-all bg-accent/5 px-4 py-2.5 rounded-xl border border-accent/20"
-                    >
-                      <Plus className="size-3.5" /> Add New Key
-                    </button>
-                  </div>
-                )}
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </motion.div>
+                  ))}
+                  
+                  <button onClick={() => addRow(activeReqTab === "params" ? setParams : activeReqTab === "headers" ? setHeaders : setFormData)} className="mt-4 flex items-center gap-2 self-start text-[9px] font-black uppercase tracking-[0.2em] text-accent hover:text-accent/80 transition-all bg-accent/5 px-4 py-2 rounded-xl border border-accent/20">
+                    <Plus className="size-3.5" /> Add Row
+                  </button>
+                </div>
+              )}
 
-                {/* AUTH EDITOR */}
-                {activeReqTab === "auth" && (
-                  <div className="flex flex-col gap-10">
-                    <div className="flex flex-col gap-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted/60 flex items-center gap-2">
-                        <Lock className="size-3" /> Authorization Type
-                      </label>
-                      <div className="grid grid-cols-3 gap-3">
-                        {(["none", "bearer", "basic"] as AuthType[]).map(type => (
-                          <button
-                            key={type}
-                            onClick={() => setAuthType(type)}
-                            className={`px-4 py-4 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all
-                              ${authType === type 
-                                ? "bg-accent/10 border-accent/40 text-accent shadow-lg shadow-accent/10" 
-                                : "bg-black/40 border-white/5 text-muted hover:border-white/20"}`}
-                          >
-                            {type}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <AnimatePresence mode="wait">
-                      {authType === "bearer" && (
-                        <motion.div 
-                          key="bearer" 
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="flex flex-col gap-3"
-                        >
-                          <label className="text-[10px] font-black uppercase tracking-widest text-muted/60">Token</label>
-                          <textarea 
-                            value={bearerToken}
-                            onChange={(e) => setBearerToken(e.target.value)}
-                            placeholder="Bearer eyJhbGciOiJIUzI1Ni..."
-                            className="toolsy-input w-full min-h-[140px] bg-black/60 border border-white/5 rounded-2xl p-6 font-mono text-xs resize-none focus:border-accent/40 shadow-inner"
-                            spellCheck={false}
-                          />
-                        </motion.div>
-                      )}
-
-                      {authType === "basic" && (
-                        <motion.div 
-                          key="basic"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="grid grid-cols-2 gap-4"
-                        >
-                          <div className="flex flex-col gap-3">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-muted/60">Username</label>
-                            <input 
-                              type="text"
-                              value={basicUser}
-                              onChange={e => setBasicUser(e.target.value)}
-                              className="toolsy-input bg-black/60 border border-white/5 rounded-2xl px-5 py-4 font-mono text-xs focus:border-accent/40"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-3">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-muted/60">Password</label>
-                            <input 
-                              type="password"
-                              value={basicPass}
-                              onChange={e => setBasicPass(e.target.value)}
-                              className="toolsy-input bg-black/60 border border-white/5 rounded-2xl px-5 py-4 font-mono text-xs focus:border-accent/40"
-                            />
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {authType === "none" && (
-                        <motion.div 
-                          key="none"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="flex flex-col items-center justify-center py-20 text-muted/20"
-                        >
-                          <ShieldAlert className="size-20 mb-4" />
-                          <span className="text-[10px] font-black uppercase tracking-[0.3em]">No Authentication Required</span>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-
-                {/* BODY EDITOR */}
-                {activeReqTab === "body" && (
-                  <div className="flex flex-col gap-8 flex-1">
-                    <div className="flex items-center gap-3">
-                      {(["none", "json", "form-data", "raw"] as BodyType[]).map(type => (
-                        <button
-                          key={type}
-                          onClick={() => setBodyType(type)}
-                          className={`flex-1 px-3 py-2.5 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all
-                            ${bodyType === type 
-                              ? "bg-white/10 border-white/20 text-foreground" 
-                              : "bg-black/20 border-white/5 text-muted hover:bg-white/5"}`}
-                        >
+              {activeReqTab === "auth" && (
+                <div className="flex flex-col gap-8">
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-muted/60 flex items-center gap-2">
+                      <Lock className="size-3" /> Authorization Type
+                    </label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {(["none", "bearer", "basic"] as AuthType[]).map(type => (
+                        <button key={type} onClick={() => setAuthType(type)} className={`px-4 py-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all ${authType === type ? "bg-accent/10 border-accent/40 text-accent shadow-lg shadow-accent/10" : "bg-black/40 border-white/5 text-muted hover:border-white/20"}`}>
                           {type}
                         </button>
                       ))}
                     </div>
-
-                    <AnimatePresence mode="wait">
-                      {bodyType === "none" ? (
-                        <motion.div 
-                          key="none-body"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="flex-1 flex flex-col items-center justify-center text-muted/20"
-                        >
-                          <FileType className="size-16 mb-4" />
-                          <span className="text-[10px] font-black uppercase tracking-[0.3em]">No Payload Selected</span>
-                        </motion.div>
-                      ) : bodyType === "form-data" ? (
-                        <motion.div key="fd-body" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-4">
-                           {/* Reuses the KV editor logic triggered by the main tab check */}
-                        </motion.div>
-                      ) : (
-                        <motion.div 
-                          key="text-body"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="flex-1 flex flex-col gap-4"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-muted/40">
-                              {bodyType === "json" ? "Application / JSON" : "Raw Text Payload"}
-                            </span>
-                            {bodyType === "json" && (
-                              <button 
-                                onClick={() => {
-                                  try { setReqBody(JSON.stringify(JSON.parse(reqBody), null, 2)); } catch {}
-                                }}
-                                className="text-[10px] font-black uppercase tracking-widest text-accent hover:text-accent/80 transition-all bg-accent/10 px-3 py-1.5 rounded-lg border border-accent/20"
-                              >
-                                Tidy JSON
-                              </button>
-                            )}
-                          </div>
-                          <textarea 
-                            value={reqBody}
-                            onChange={(e) => setReqBody(e.target.value)}
-                            placeholder={bodyType === "json" ? '{ "id": 1, "name": "Toolsy" }' : "Enter raw payload..."}
-                            className="toolsy-input flex-1 w-full bg-black/60 border border-white/5 rounded-2xl p-6 font-mono text-sm leading-relaxed resize-none focus:border-accent/40 custom-scrollbar shadow-inner"
-                            spellCheck={false}
-                          />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
                   </div>
-                )}
-              </div>
-
-              {/* Advanced Settings Footer */}
-              <div className="p-4 bg-white/[0.01] border-t border-white/5">
-                <button 
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted/60 hover:text-foreground transition-colors"
-                >
-                  <Settings2 className="size-3.5" /> Advanced Settings
-                  <ChevronDown className={`size-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
-                </button>
-                <AnimatePresence>
-                  {showAdvanced && (
-                    <motion.div 
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="pt-4 flex flex-col gap-4">
-                        <label className="flex items-center justify-between p-4 rounded-2xl bg-black/40 border border-white/5 cursor-pointer group hover:border-white/10 transition-all">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-foreground">Ignore SSL Certificates</span>
-                            <span className="text-[9px] font-bold text-muted/40 uppercase">Enable for self-signed development servers</span>
-                          </div>
-                          <input 
-                            type="checkbox" 
-                            checked={ignoreSsl}
-                            onChange={e => setIgnoreSsl(e.target.checked)}
-                            className="size-6 rounded-lg accent-accent"
-                          />
-                        </label>
-                        <div className="flex flex-col gap-2 p-4 rounded-2xl bg-black/20 border border-dashed border-white/5 opacity-50 grayscale">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-muted/60">Client Certificate (PFX / PEM)</span>
-                          <div className="flex items-center justify-center h-20 border border-white/5 rounded-xl border-dashed">
-                             <span className="text-[9px] font-bold uppercase tracking-widest">Enterprise Support Only</span>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </GlassCard>
-          </div>
-
-          {/* RESPONSE PANEL (RIGHT) */}
-          <div className="xl:col-span-6 flex flex-col gap-6">
-            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-muted/60">
-              <Zap className="size-4" /> 03. Response Inspector
-            </div>
-            <GlassCard className="flex flex-col overflow-hidden min-h-[580px]">
-              {/* Meta Stats Bar */}
-              <div className="flex flex-wrap items-center justify-between p-4 bg-white/[0.04] border-b border-white/5 gap-4 shadow-xl relative z-10">
-                <div className="flex items-center gap-6">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted/40">Status</span>
-                    <span className={`text-sm font-black tracking-tighter ${getStatusColor(response?.status)}`}>
-                      {response?.status || "---"} {response?.statusText || "IDLE"}
-                    </span>
-                  </div>
-                  <div className="w-px h-8 bg-white/5" />
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted/40">Time</span>
-                    <span className="text-sm font-mono font-bold text-blue-400">
-                      {response?.timing ? `${response.timing}ms` : "---"}
-                    </span>
-                  </div>
-                  <div className="w-px h-8 bg-white/5" />
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted/40">Size</span>
-                    <span className="text-sm font-mono font-bold text-amber-400">
-                      {response?.size ? `${(response.size / 1024).toFixed(2)} KB` : "---"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={handleCopy}
-                    disabled={!response?.rawBody}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/5 text-[10px] font-black uppercase tracking-widest text-muted hover:text-white hover:bg-white/10 disabled:opacity-30 transition-all"
-                  >
-                    {copied ? <CheckCircle2 className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                    {copied ? "Copied" : "Copy Body"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Inspector Tabs */}
-              <div className="flex items-center gap-1 p-3 bg-white/[0.02] border-b border-white/5">
-                {[
-                  { id: "body", label: "Formatted Body", icon: FileCode },
-                  { id: "headers", label: "Response Headers", icon: ListTree },
-                ].map(t => {
-                  const Icon = t.icon;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setActiveResTab(t.id)}
-                      className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all
-                        ${activeResTab === t.id ? "bg-white/10 text-foreground" : "text-muted hover:text-foreground/80 hover:bg-white/5"}`}
-                    >
-                      <Icon className="size-3.5" /> {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Response Content Area */}
-              <div className="flex-1 flex flex-col relative overflow-hidden bg-black/60 group">
-                {!response ? (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 opacity-20 transition-opacity group-hover:opacity-30">
-                    <div className="relative">
-                       <Globe className="size-20 text-muted" />
-                       <div className="absolute inset-0 bg-accent/20 blur-[40px] rounded-full animate-pulse" />
-                    </div>
-                    <div className="flex flex-col items-center gap-2">
-                      <span className="text-[11px] font-black uppercase tracking-[0.4em] text-foreground">Radio Silence</span>
-                      <span className="text-[9px] font-bold text-muted uppercase tracking-widest">Awaiting Remote Transmission</span>
-                    </div>
-                  </div>
-                ) : response.error ? (
-                  <div className="p-8 flex flex-col gap-6 h-full justify-center">
-                    <div className="p-8 bg-red-500/[0.03] border border-red-500/10 rounded-[2rem] flex flex-col items-center gap-6 text-center max-w-sm mx-auto shadow-2xl">
-                      <div className="size-16 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
-                        <ShieldAlert className="size-8 text-red-500 animate-pulse" />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <h4 className="text-lg font-black uppercase tracking-tighter text-red-400">Transmission Failed</h4>
-                        <p className="text-[11px] font-mono font-medium text-red-300/60 leading-relaxed uppercase">
-                          {response.error}
-                        </p>
-                      </div>
-                      <button 
-                        onClick={handleSend}
-                        className="px-6 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/20 transition-all"
-                      >
-                        Re-attempt Handshake
-                      </button>
-                    </div>
-                  </div>
-                ) : activeResTab === "body" ? (
-                  <div className="flex-1 overflow-auto p-8 custom-scrollbar">
-                    <pre className="font-mono text-[13px] text-foreground/90 leading-[1.8] word-break whitespace-pre-wrap selection:bg-accent/30">
-                      {typeof response.body === 'object' 
-                        ? JSON.stringify(response.body, null, 2) 
-                        : response.rawBody}
-                    </pre>
-                  </div>
-                ) : (
-                  <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-2">
-                    {Object.entries(response.headers || {}).map(([k, v], i) => (
-                      <motion.div 
-                        key={i} 
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.02 }}
-                        className="flex gap-6 p-4 hover:bg-white/[0.04] rounded-2xl transition-all border-b border-white/[0.03] last:border-0 group/row"
-                      >
-                        <span className="text-[10px] font-black uppercase tracking-widest text-accent/50 w-1/3 shrink-0 break-all group-hover/row:text-accent transition-colors">{k}</span>
-                        <span className="text-xs font-mono font-medium text-foreground/70 break-all group-hover/row:text-foreground transition-colors">{v}</span>
+                  <AnimatePresence mode="wait">
+                    {authType === "bearer" && (
+                      <motion.div key="bearer" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex flex-col gap-3">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-muted/60">Token</label>
+                        <textarea value={bearerToken} onChange={(e) => setBearerToken(e.target.value)} placeholder="Bearer eyJhbGciOiJIUzI1Ni..." className="toolsy-input w-full min-h-[100px] bg-black/60 border border-white/5 rounded-2xl p-6 font-mono text-xs resize-none focus:border-accent/40 shadow-inner" spellCheck={false} />
                       </motion.div>
+                    )}
+                    {authType === "basic" && (
+                      <motion.div key="basic" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-3">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-muted/60">Username</label>
+                          <input type="text" value={basicUser} onChange={e => setBasicUser(e.target.value)} className="toolsy-input bg-black/60 border border-white/5 rounded-2xl px-5 py-3 font-mono text-xs focus:border-accent/40" />
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-muted/60">Password</label>
+                          <input type="password" value={basicPass} onChange={e => setBasicPass(e.target.value)} className="toolsy-input bg-black/60 border border-white/5 rounded-2xl px-5 py-3 font-mono text-xs focus:border-accent/40" />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {activeReqTab === "body" && (
+                <div className="flex flex-col gap-6 flex-1">
+                  <div className="flex items-center gap-3">
+                    {(["none", "json", "form-data", "raw"] as BodyType[]).map(type => (
+                      <button key={type} onClick={() => setBodyType(type)} className={`flex-1 px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${bodyType === type ? "bg-white/10 border-white/20 text-foreground" : "bg-black/20 border-white/5 text-muted hover:bg-white/5"}`}>
+                        {type}
+                      </button>
                     ))}
                   </div>
-                )}
-              </div>
-            </GlassCard>
-          </div>
+                  <AnimatePresence mode="wait">
+                    {bodyType !== "none" && bodyType !== "form-data" && (
+                      <motion.div key="text-body" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col gap-4">
+                        <textarea value={reqBody} onChange={(e) => setReqBody(e.target.value)} placeholder={bodyType === "json" ? '{ "id": 1, "name": "Toolsy" }' : "Enter raw payload..."} className="toolsy-input flex-1 w-full min-h-[200px] bg-black/60 border border-white/5 rounded-2xl p-6 font-mono text-sm leading-relaxed resize-none focus:border-accent/40 custom-scrollbar shadow-inner" spellCheck={false} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
 
-        </div>
+            {/* Advanced Settings Footer */}
+            <div className="p-4 bg-white/[0.01] border-t border-white/5">
+              <button onClick={() => setShowAdvanced(!showAdvanced)} className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-muted/60 hover:text-foreground transition-colors">
+                <Settings2 className="size-3.5" /> Advanced Settings
+                <ChevronDown className={`size-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+              </button>
+              <AnimatePresence>
+                {showAdvanced && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                    <div className="pt-4 flex flex-col gap-4">
+                      <label className="flex items-center justify-between p-4 rounded-2xl bg-black/40 border border-white/5 cursor-pointer group hover:border-white/10 transition-all">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-foreground">Ignore SSL Certificates</span>
+                          <span className="text-[9px] font-bold text-muted/40 uppercase">Enable for self-signed development servers (Remote Only)</span>
+                        </div>
+                        <input type="checkbox" checked={ignoreSsl} onChange={e => setIgnoreSsl(e.target.checked)} className="size-6 rounded-lg accent-accent" />
+                      </label>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </GlassCard>
+        </section>
+
+        {/* STEP 3: RESPONSE (Full Width) */}
+        <section className="flex flex-col gap-6">
+          <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-muted/40 ml-2">
+            <Zap className="size-4" /> 03. Response Inspector
+          </div>
+          <GlassCard className="flex flex-col overflow-hidden min-h-[500px]">
+            {/* Meta Stats Bar */}
+            <div className="flex flex-wrap items-center justify-between p-4 bg-white/[0.04] border-b border-white/5 gap-4 shadow-xl relative z-10">
+              <div className="flex items-center gap-8">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted/40">Status</span>
+                  <span className={`text-sm font-black tracking-tighter ${getStatusColor(response?.status)}`}>
+                    {response?.status || "---"} {response?.statusText || "IDLE"}
+                  </span>
+                </div>
+                <div className="w-px h-8 bg-white/5" />
+                <div className="flex flex-col gap-1">
+                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted/40">Time</span>
+                  <span className="text-sm font-mono font-bold text-blue-400">
+                    {response?.timing ? `${response.timing}ms` : "---"}
+                  </span>
+                </div>
+                <div className="w-px h-8 bg-white/5" />
+                <div className="flex flex-col gap-1">
+                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted/40">Size</span>
+                  <span className="text-sm font-mono font-bold text-amber-400">
+                    {response?.size ? `${(response.size / 1024).toFixed(2)} KB` : "---"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleCopy}
+                  disabled={!response?.rawBody}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/5 text-[10px] font-black uppercase tracking-widest text-muted hover:text-white hover:bg-white/10 disabled:opacity-30 transition-all"
+                >
+                  {copied ? <CheckCircle2 className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                  {copied ? "Copied" : "Copy Body"}
+                </button>
+              </div>
+            </div>
+
+            {/* Inspector Tabs */}
+            <div className="flex items-center gap-1 p-2 bg-white/[0.02] border-b border-white/5">
+              {[
+                { id: "body", label: "Formatted Body", icon: FileCode },
+                { id: "headers", label: "Headers", icon: ListTree },
+              ].map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveResTab(t.id)}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all
+                    ${activeResTab === t.id ? "bg-white/10 text-foreground" : "text-muted hover:text-foreground/80 hover:bg-white/5"}`}
+                >
+                  <t.icon className="size-3.5" /> {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Response Content Area */}
+            <div className="flex-1 flex flex-col relative overflow-hidden bg-black/60 min-h-[400px]">
+              {!response ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 opacity-20">
+                   <Globe className="size-16 text-muted" />
+                   <span className="text-[10px] font-black uppercase tracking-[0.4em] text-foreground">Radio Silence</span>
+                </div>
+              ) : response.error ? (
+                <div className="p-12 flex flex-col items-center justify-center text-center gap-6">
+                  <ShieldAlert className="size-12 text-red-500 animate-pulse" />
+                  <div className="flex flex-col gap-2">
+                    <h4 className="text-lg font-black uppercase tracking-tighter text-red-400">Transmission Failed</h4>
+                    <p className="text-xs font-mono text-red-300/60 uppercase max-w-md mx-auto">{response.error}</p>
+                  </div>
+                </div>
+              ) : activeResTab === "body" ? (
+                <div className="flex-1 overflow-auto p-8 custom-scrollbar font-mono text-[13px] leading-[1.8] whitespace-pre-wrap">
+                  {typeof response.body === 'object' ? JSON.stringify(response.body, null, 2) : response.rawBody}
+                </div>
+              ) : (
+                <div className="flex-1 overflow-auto p-6 custom-scrollbar flex flex-col gap-2">
+                  {Object.entries(response.headers || {}).map(([k, v], i) => (
+                    <div key={i} className="flex gap-6 p-4 hover:bg-white/[0.04] rounded-2xl transition-all border-b border-white/[0.03] last:border-0 group">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-accent/50 w-1/3 shrink-0 break-all">{k}</span>
+                      <span className="text-xs font-mono font-medium text-foreground/70 break-all">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </GlassCard>
+        </section>
 
         {/* CINEMATIC DOCUMENTATION */}
         <section className="mt-12 pt-16 border-t border-white/5 flex flex-col gap-12">

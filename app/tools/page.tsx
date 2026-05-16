@@ -2,15 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { categoryList, tools, type Tool, type CategoryId } from "@/lib/tools";
+import { categoryList, tools, type Tool } from "@/lib/tools";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Search, 
   Sparkles, 
   ArrowRight, 
-  ShieldCheck, 
-  Braces, 
-  Workflow, 
   Cpu,
   Layers,
   Activity,
@@ -135,76 +132,11 @@ function ToolCard({ tool, categoryColor }: { tool: Tool; categoryColor: string }
   );
 }
 
-/* ─────────────────────────────────────────────
-   Futuristic Tab Component
-  ───────────────────────────────────────────── */
-function CategoryTabs({ 
-  activeTab, 
-  setActiveTab 
-}: { 
-  activeTab: CategoryId | "all"; 
-  setActiveTab: (id: CategoryId | "all") => void 
-}) {
-  const icons = {
-    "all": Sparkles,
-    "network-security": ShieldCheck,
-    "data-analytics": Braces,
-    "dev-automation": Workflow
-  };
-
-  const tabs: { id: CategoryId | "all"; label: string; color: string }[] = [
-    { id: "all", label: "All Modules", color: "var(--accent)" },
-    ...categoryList.map(c => ({ id: c.id, label: c.shortLabel, color: c.color }))
-  ];
-
-  return (
-    <div className="relative mx-auto flex w-full max-w-4xl items-center justify-center p-1.5 rounded-2xl bg-white/40 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 backdrop-blur-2xl shadow-2xl overflow-hidden">
-      {tabs.map((tab) => {
-        const isActive = activeTab === tab.id;
-        const Icon = icons[tab.id];
-
-        return (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`relative flex flex-1 items-center justify-center gap-3 py-3.5 px-4 rounded-xl transition-all duration-500 z-10 ${
-              isActive 
-                ? "text-slate-900 dark:text-white" 
-                : "text-muted hover:text-foreground/80"
-            }`}
-          >
-            {isActive && (
-              <motion.div
-                layoutId="active-tab-bg"
-                className="absolute inset-0 rounded-xl bg-white dark:bg-white/10 shadow-lg border border-slate-200 dark:border-white/10"
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              />
-            )}
-            
-            <Icon className={`size-4 transition-colors duration-500 ${isActive ? "text-accent" : "text-muted/60"}`} />
-            <span className="text-[10px] font-black uppercase tracking-[0.18em] whitespace-nowrap">
-              {tab.label}
-            </span>
-
-            {isActive && (
-              <motion.div
-                layoutId="active-tab-glow"
-                className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 blur-md opacity-60"
-                style={{ backgroundColor: tab.color }}
-              />
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 /* ─────────────────────────────────────────────
    Main Page Component
   ───────────────────────────────────────────── */
 export default function ToolsIndexPage() {
-  const [activeTab, setActiveTab] = useState<CategoryId | "all">("all");
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -224,26 +156,12 @@ export default function ToolsIndexPage() {
   const filteredTools = tools.filter((t) => {
     const s = search.toLowerCase().trim();
     
-    // Tab filter (only if search is empty)
-    if (s === "") {
-      if (activeTab === "all") return true;
-      return t.categoryId === activeTab;
-    }
+    if (s === "") return true;
     
-    // Global search logic (always global)
-    const matchesQuery = t.name.toLowerCase().includes(s) || 
-                         t.description.toLowerCase().includes(s) ||
-                         t.categoryId.toLowerCase().includes(s);
-    
-    // If search is NOT empty, we filter the results further by active tab if it's not "all"
-    if (activeTab !== "all") {
-      return matchesQuery && t.categoryId === activeTab;
-    }
-    
-    return matchesQuery;
+    return t.name.toLowerCase().includes(s) || 
+           t.description.toLowerCase().includes(s) ||
+           t.categoryId.toLowerCase().includes(s);
   });
-
-  const activeCategory = activeTab === "all" ? { color: "var(--accent)" } : categoryList.find(c => c.id === activeTab)!;
 
   return (
     <div className="toolsy-content relative z-10 flex flex-col gap-[clamp(1.5rem,5svh,3rem)]">
@@ -290,13 +208,11 @@ export default function ToolsIndexPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Query modules... (Ctrl+K)"
+                placeholder="Search across all modules... (Ctrl+K)"
                 className="toolsy-input h-14 pl-14 pr-6 rounded-2xl border-white/5 bg-white/[0.02] backdrop-blur-md font-semibold text-sm tracking-wide shadow-2xl focus:bg-white/[0.04]"
               />
             </div>
           </div>
-
-          <CategoryTabs activeTab={activeTab} setActiveTab={setActiveTab} />
       </header>
 
 
@@ -305,20 +221,19 @@ export default function ToolsIndexPage() {
         {/* Background Mood Glow */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeTab}
+            key="global-glow"
             initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 0.15, scale: 1 }}
+            animate={{ opacity: 0.1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.1 }}
             transition={{ duration: 0.8 }}
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 size-[80%] rounded-full blur-[120px] pointer-events-none z-0"
-            style={{ backgroundColor: activeCategory.color }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 size-[80%] rounded-full blur-[120px] pointer-events-none z-0 bg-accent"
           />
         </AnimatePresence>
 
         <div className="relative z-10">
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeTab + search}
+              key={search}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
@@ -327,7 +242,7 @@ export default function ToolsIndexPage() {
             >
               {filteredTools.length > 0 ? (
                 filteredTools.map((tool) => (
-                  <ToolCard key={tool.slug} tool={tool} categoryColor={activeCategory.color} />
+                  <ToolCard key={tool.slug} tool={tool} categoryColor="var(--accent)" />
                 ))
               ) : (
                 <div className="col-span-full py-20 flex flex-col items-center gap-4 text-center">
@@ -336,7 +251,7 @@ export default function ToolsIndexPage() {
                   </div>
                   <div className="flex flex-col gap-1">
                     <h3 className="text-sm font-black uppercase tracking-widest text-muted">No modules found</h3>
-                    <p className="text-xs text-muted/50 font-bold uppercase tracking-tighter">Try a different query or category</p>
+                    <p className="text-xs text-muted/50 font-bold uppercase tracking-tighter">Try a different query</p>
                   </div>
                 </div>
               )}

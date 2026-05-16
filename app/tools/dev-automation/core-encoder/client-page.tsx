@@ -12,16 +12,13 @@ import {
   RefreshCcw,
   Sparkles,
   Fingerprint,
-  ChevronRight,
   Plus,
   X,
   FileCode,
   ShieldCheck,
-  Activity,
   Workflow,
   Globe,
-  Binary,
-  ChevronDown
+  Binary
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
@@ -96,10 +93,10 @@ const ALL_OPERATIONS: Suggestion[] = [
   ───────────────────────────────────────────── */
 
 export default function CoreEncoderClient() {
+
   const [input, setInput] = useState("");
   const [pipeline, setPipeline] = useState<PipelineStep[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [showMore, setShowMore] = useState(false);
 
   // 1. Core Processing Engine
   const processedData = useMemo(() => {
@@ -130,6 +127,11 @@ export default function CoreEncoderClient() {
             sha.update(current);
             current = sha.digest().toHex();
             break;
+          case "sha512":
+            const sha512 = forge.md.sha512.create();
+            sha512.update(current);
+            current = sha512.digest().toHex();
+            break;
           case "md5":
             const md = forge.md.md5.create();
             md.update(current);
@@ -143,9 +145,12 @@ export default function CoreEncoderClient() {
             }
             current = text;
             break;
-          case "ip-lookup":
-            // Placeholder for networking tool integration
-            current = `Network Triage: Routing investigation for ${current}...`;
+          case "binary-encode":
+            let bin = "";
+            for (let i = 0; i < current.length; i++) {
+              bin += current.charCodeAt(i).toString(2).padStart(8, '0') + " ";
+            }
+            current = bin.trim();
             break;
         }
       } catch {
@@ -156,30 +161,7 @@ export default function CoreEncoderClient() {
     return { data: current, error };
   }, [input, pipeline]);
 
-  // 2. Dynamic Suggestion Engine
-  const suggestionGroups = useMemo(() => {
-    const data = processedData.data;
-    if (!data.trim()) return [];
-
-    const matches = ALL_OPERATIONS.filter(op => op.check(data));
-    const sorted = matches.sort((a, b) => b.priority - a.priority);
-    
-    const visible = showMore ? sorted : sorted.slice(0, 5);
-    
-    // Group by category
-    const groups: Partial<Record<Category, Suggestion[]>> = {};
-    visible.forEach(op => {
-      const cat = op.category;
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat]!.push(op);
-    });
-
-    return Object.entries(groups).map(([cat, ops]) => ({
-      category: cat as Category,
-      items: ops
-    }));
-  }, [processedData.data, showMore]);
-
+  // 2. Action Logic
   const addStep = (op: { type: OpType; label: string }) => {
     setPipeline([...pipeline, { id: Math.random().toString(36).substr(2, 9), ...op }]);
   };
@@ -194,162 +176,152 @@ export default function CoreEncoderClient() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const matchingOps = useMemo(() => {
+    const data = processedData.data;
+    if (!data.trim()) return [];
+    return ALL_OPERATIONS.filter(op => op.check(data)).sort((a, b) => b.priority - a.priority);
+  }, [processedData.data]);
+
   return (
     <ToolContainer categoryId="dev-automation">
       <ToolHeader
         title="Core Encoder"
-        description="Next-generation intelligent workstation for data transformation, forensic analysis, and cryptographic hashing."
+        description="High-fidelity data transformation workstation with intelligent heuristics."
         categoryId="dev-automation"
       />
 
-      <div className="flex flex-col gap-10 max-w-[80rem] mx-auto w-full pb-32">
+      <div className="flex flex-col gap-8 max-w-[80rem] mx-auto w-full pb-32">
         
-        {/* PIPELINE CONTROL AREA */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* INPUT & PIPELINE (Left) */}
-          <div className="lg:col-span-7 flex flex-col gap-6">
-            <section className="flex flex-col gap-4">
-              <div className="flex items-center justify-between px-2">
-                <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-accent/80">
-                  <Zap className="size-4" /> Input Stream
-                </div>
-                <button 
-                  onClick={() => { setInput(""); setPipeline([]); }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/5 text-[9px] font-black uppercase tracking-widest text-muted hover:text-red-400 hover:bg-red-500/10 transition-all"
-                >
-                  Reset Workspace
-                </button>
-              </div>
-
-              <GlassCard className="relative group overflow-hidden bg-black/40 border-accent/10 shadow-2xl">
-                <textarea 
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Paste payload (Base64, JWT, JSON...) for intelligent transformation..."
-                  className="w-full min-h-[220px] bg-transparent p-8 font-mono text-sm leading-relaxed outline-none resize-none placeholder:opacity-20 custom-scrollbar focus:bg-accent/[0.01] transition-all"
-                  spellCheck={false}
-                />
-              </GlassCard>
-            </section>
-
-            {/* ACTIVE PIPELINE STEPS */}
-            <section className="flex flex-col gap-4">
-               <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-muted/40 ml-2">
-                <Workflow className="size-4" /> Processing Pipeline
-              </div>
-              <div className="flex flex-wrap items-center gap-3 min-h-[60px] p-4 rounded-3xl border-2 border-dashed border-white/5 bg-white/[0.01]">
-                <AnimatePresence mode="popLayout">
-                  {pipeline.length === 0 ? (
-                    <span className="text-[10px] font-black uppercase tracking-widest text-muted/20 ml-2">No active steps | Stream unmodified</span>
-                  ) : (
-                    pipeline.map((step, idx) => (
-                      <motion.div
-                        key={step.id}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8, x: -10 }}
-                        animate={{ opacity: 1, scale: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.8, x: 10 }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent/10 border border-accent/20 text-accent group"
-                      >
-                        <span className="text-[10px] font-black uppercase tracking-widest">{step.label}</span>
-                        <button onClick={() => removeStep(step.id)} className="text-accent/40 hover:text-red-400 transition-colors">
-                          <X className="size-3.5" />
-                        </button>
-                        {idx < pipeline.length - 1 && <ChevronRight className="size-3 text-accent/20" />}
-                      </motion.div>
-                    ))
-                  )}
-                </AnimatePresence>
-              </div>
-            </section>
+        {/* INPUT AREA */}
+        <section className="flex flex-col gap-4">
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-accent/80">
+              <Zap className="size-4" /> Input Stream
+            </div>
+            <button 
+              onClick={() => { setInput(""); setPipeline([]); }}
+              className="px-4 py-2 rounded-xl bg-white/5 border border-white/5 text-[9px] font-black uppercase tracking-widest text-muted hover:text-red-400 transition-all"
+            >
+              Reset
+            </button>
           </div>
 
-          {/* SUGGESTIONS & ACTIONS (Right) */}
-          <div className="lg:col-span-5 flex flex-col gap-6 sticky top-8">
-            <section className="flex flex-col gap-4">
-              <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-accent ml-2">
-                <Sparkles className="size-4" /> Intelligent Suggestions
-              </div>
-              
-              <div className="flex flex-col gap-6">
-                <AnimatePresence mode="wait">
-                  {suggestionGroups.length > 0 ? (
-                    <motion.div 
-                      key="groups"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex flex-col gap-6"
+          <GlassCard className="relative overflow-hidden bg-black/40 border-accent/10 shadow-2xl">
+            <textarea 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Paste payload (Base64, JWT, JSON...) for transformation..."
+              className="w-full min-h-[160px] bg-transparent p-6 font-mono text-sm leading-relaxed outline-none resize-none placeholder:opacity-20 custom-scrollbar focus:bg-accent/[0.01] transition-all"
+              spellCheck={false}
+            />
+            
+            {/* Quick Actions Bar inside Input Block */}
+            <div className="flex items-center gap-2 p-3 bg-white/[0.03] border-t border-white/5 overflow-x-auto custom-scrollbar">
+              <span className="text-[8px] font-black uppercase tracking-widest text-muted/40 px-2 shrink-0">Quick Decode:</span>
+              {[
+                { type: "base64-decode", label: "Base64", icon: RefreshCcw },
+                { type: "jwt-decode", label: "JWT", icon: ShieldCheck },
+                { type: "json-prettify", label: "JSON", icon: FileCode },
+                { type: "hex-decode", label: "Hex", icon: Binary },
+                { type: "url-decode", label: "URL", icon: Globe },
+              ].map(op => (
+                <button
+                  key={op.type}
+                  onClick={() => addStep({ type: op.type as OpType, label: op.label })}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/5 text-[9px] font-black uppercase tracking-widest text-muted hover:text-accent hover:border-accent/40 transition-all whitespace-nowrap"
+                >
+                  <op.icon className="size-3" /> {op.label}
+                </button>
+              ))}
+            </div>
+          </GlassCard>
+        </section>
+
+        {/* PIPELINE & SUGGESTIONS */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* Active Pipeline (Left) */}
+          <div className="lg:col-span-8 flex flex-col gap-4">
+             <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-muted/40 ml-2">
+              <Workflow className="size-4" /> Processing Chain
+            </div>
+            <div className="flex flex-wrap items-center gap-3 min-h-[60px] p-4 rounded-2xl border border-dashed border-white/10 bg-white/[0.01]">
+              <AnimatePresence mode="popLayout">
+                {pipeline.length === 0 ? (
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted/20 ml-2">No operations active</span>
+                ) : (
+                  pipeline.map((step) => (
+                    <motion.div
+                      key={step.id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent/10 border border-accent/20 text-accent group"
                     >
-                      {suggestionGroups.map((group) => (
-                        <div key={group.category} className="flex flex-col gap-3">
-                          <div className="text-[9px] font-black uppercase tracking-widest text-muted/40 ml-1">{group.category}</div>
-                          <div className="grid grid-cols-1 gap-2">
-                            {group.items.map((s, i) => (
-                              <button
-                                key={s.type + i}
-                                onClick={() => addStep(s)}
-                                className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.06] hover:border-accent/30 transition-all group"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="size-8 rounded-lg bg-accent/5 border border-accent/10 flex items-center justify-center text-accent group-hover:scale-110 transition-transform">
-                                    <s.icon className="size-4" />
-                                  </div>
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-foreground group-hover:text-accent transition-colors">
-                                    {s.label}
-                                  </span>
-                                </div>
-                                <Plus className="size-3.5 text-muted/20 group-hover:text-accent transition-colors" />
-                              </button>
-                            ))}
-                          </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest">{step.label}</span>
+                      <button onClick={() => removeStep(step.id)} className="text-accent/40 hover:text-red-400 transition-colors">
+                        <X className="size-3.5" />
+                      </button>
+                    </motion.div>
+                  ))
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Suggestions (Right) */}
+          <div className="lg:col-span-4 flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-accent/80 ml-2">
+              <Sparkles className="size-4" /> Smart Actions
+            </div>
+            <div className="flex flex-col gap-2">
+              <AnimatePresence mode="wait">
+                {matchingOps.length > 0 ? (
+                  <motion.div key="suggestions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 gap-2">
+                    {matchingOps.slice(0, 3).map((s, i) => (
+                      <button
+                        key={s.type + i}
+                        onClick={() => addStep(s)}
+                        className="flex items-center justify-between p-3 rounded-xl bg-accent/5 border border-accent/20 hover:bg-accent/10 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <s.icon className="size-4 text-accent" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-foreground group-hover:text-accent transition-colors">
+                            {s.label}
+                          </span>
                         </div>
-                      ))}
-                      
-                      {ALL_OPERATIONS.filter(op => op.check(processedData.data)).length > 5 && (
-                        <button 
-                          onClick={() => setShowMore(!showMore)}
-                          className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-white/5 text-[9px] font-black uppercase tracking-widest text-muted hover:text-white hover:bg-white/10 transition-all mt-2"
-                        >
-                          <ChevronDown className={`size-3 transition-transform ${showMore ? "rotate-180" : ""}`} />
-                          {showMore ? "Show Fewer Actions" : "Show All Potential Actions"}
-                        </button>
-                      )}
-                    </motion.div>
-                  ) : (
-                    <motion.div 
-                      key="empty"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 0.2 }}
-                      className="p-12 text-center border border-dashed border-white/5 rounded-3xl"
-                    >
-                      <Activity className="size-12 mx-auto mb-4" />
-                      <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed">Awaiting Data Signal</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </section>
+                        <Plus className="size-3.5 text-accent/40" />
+                      </button>
+                    ))}
+                  </motion.div>
+                ) : (
+                  <div className="p-8 text-center border border-white/5 rounded-2xl opacity-20">
+                    <span className="text-[9px] font-black uppercase tracking-widest">Awaiting Signal...</span>
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
-        {/* FINAL OUTPUT AREA */}
-        <section className="flex flex-col gap-6">
+        {/* RESULTS AREA */}
+        <section className="flex flex-col gap-4">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-muted/40 ml-2">
-            <Fingerprint className="size-4" /> Final Signal Output
+            <Fingerprint className="size-4" /> Processed Output
           </div>
 
-          <GlassCard className={`p-8 border-accent/20 bg-accent/[0.02] relative group shadow-2xl transition-all ${processedData.error ? "border-red-500/40 bg-red-500/5" : ""}`}>
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.4em] text-accent">State Transformation</span>
-                <h3 className="text-base font-black text-foreground">Processed Result</h3>
+          <GlassCard className={`p-6 border-accent/20 bg-accent/[0.02] transition-all ${processedData.error ? "border-red-500/40 bg-red-500/5" : ""}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col">
+                <span className="text-[8px] font-black uppercase tracking-[0.4em] text-accent">State Transformation</span>
+                <h3 className="text-sm font-black text-foreground">Result Stream</h3>
               </div>
               <button 
                 onClick={handleCopy}
                 disabled={!processedData.data}
-                className={`flex items-center gap-3 px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all
-                  ${copiedId === "final" ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "bg-accent text-white shadow-lg shadow-accent/20 hover:opacity-90 disabled:opacity-20"}`}
+                className={`flex items-center gap-3 px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all
+                  ${copiedId === "final" ? "bg-emerald-500 text-white" : "bg-accent text-white hover:opacity-90 disabled:opacity-20"}`}
               >
                 {copiedId === "final" ? <CheckCircle2 className="size-4" /> : <Copy className="size-4" />}
                 {copiedId === "final" ? "Copied" : "Copy Output"}
@@ -357,50 +329,45 @@ export default function CoreEncoderClient() {
             </div>
 
             {processedData.error ? (
-              <div className="p-10 text-center flex flex-col items-center gap-4 text-red-400">
-                <X className="size-12 opacity-50" />
-                <p className="font-mono text-sm uppercase tracking-widest">{processedData.error}</p>
+              <div className="p-8 text-center flex flex-col items-center gap-4 text-red-400">
+                <X className="size-10 opacity-50" />
+                <p className="font-mono text-xs uppercase tracking-widest">{processedData.error}</p>
               </div>
             ) : (
-              <div className="bg-black/60 rounded-3xl p-8 font-mono text-base leading-relaxed break-all max-h-[500px] overflow-y-auto custom-scrollbar border border-white/10 shadow-inner text-blue-100/90 whitespace-pre-wrap">
-                {processedData.data || "Awaiting transformation instructions..."}
+              <div className="bg-black/60 rounded-2xl p-6 font-mono text-sm leading-relaxed break-all max-h-[400px] overflow-y-auto custom-scrollbar border border-white/5 text-blue-100/90 whitespace-pre-wrap selection:bg-accent/40">
+                {processedData.data || "Awaiting transformation..."}
               </div>
             )}
           </GlassCard>
         </section>
 
-        {/* OPERATION MANUAL */}
-        <section className="mt-12 pt-20 border-t border-white/5 grid grid-cols-1 md:grid-cols-3 gap-8">
-          {[
-            { 
-              title: "Heuristic Engine", 
-              icon: Search, 
-              desc: "Deep-analyzes input entropy and patterns to suggest the most logical next step in your forensic triage.",
-              color: "text-blue-400"
-            },
-            { 
-              title: "Pipeline Chaining", 
-              icon: Workflow, 
-              desc: "Chain multiple operations in a high-performance flow. Reorder or remove steps with zero latency.",
-              color: "text-amber-400"
-            },
-            { 
-              title: "Local Isolation", 
-              icon: ShieldCheck, 
-              desc: "State-of-the-art security via local-only processing. No data telemetry or external API calls.",
-              color: "text-emerald-400"
-            }
-          ].map((card, i) => (
-            <div key={i} className="flex flex-col gap-6 p-8 rounded-3xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all group">
-              <div className={`size-12 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-center ${card.color} group-hover:scale-110 transition-transform`}>
-                <card.icon className="size-6" />
+        {/* ALL OPERATIONS (Categorized) */}
+        <section className="mt-8 flex flex-col gap-6">
+          <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-muted/40 ml-2">
+            <Search className="size-4" /> All Operations
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {Array.from(new Set(ALL_OPERATIONS.map(op => op.category))).map(cat => (
+              <div key={cat} className="flex flex-col gap-3">
+                <h4 className="text-[9px] font-black uppercase tracking-[0.3em] text-muted/30 ml-1">{cat}</h4>
+                <div className="flex flex-col gap-1.5">
+                  {ALL_OPERATIONS.filter(op => op.category === cat).map(op => (
+                    <button
+                      key={op.type}
+                      onClick={() => addStep(op)}
+                      className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.06] hover:border-accent/20 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <op.icon className="size-3.5 text-muted/40 group-hover:text-accent transition-colors" />
+                        <span className="text-[10px] font-bold text-muted group-hover:text-foreground transition-colors">{op.label}</span>
+                      </div>
+                      <Plus className="size-3 text-muted/10 group-hover:text-accent transition-colors" />
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <h4 className="text-[11px] font-black uppercase tracking-widest text-foreground">{card.title}</h4>
-                <p className="text-[11px] font-medium text-muted/60 leading-relaxed">{card.desc}</p>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </section>
       </div>
     </ToolContainer>

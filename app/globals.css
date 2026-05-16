@@ -287,9 +287,9 @@ body {
 
   .toolsy-home-shell {
     overflow: hidden;
-    /* Pure cinematic dark canvas — all colour comes from JS layers */
-    background: #020205;
-    color: #f8fafc;
+    /* Responsive cinematic canvas */
+    background: var(--background);
+    color: var(--foreground);
     min-height: 100vh;
     min-height: 100dvh;
     height: 100vh;
@@ -297,6 +297,7 @@ body {
     position: relative;
     display: flex;
     flex-direction: column;
+    transition: background-color 0.7s ease, color 0.7s ease;
   }
 
   .toolsy-home-stage {
@@ -326,8 +327,8 @@ body {
   /* Portal footer */
   .toolsy-portal-footer {
     @apply relative z-10 w-full shrink-0 border-t backdrop-blur-2xl;
-    background-color: #020205;
-    border-color: rgba(255, 255, 255, 0.09);
+    background-color: var(--background);
+    border-color: var(--border-subtle);
     height: auto;
     padding-block: 0;
   }

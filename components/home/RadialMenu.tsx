@@ -194,23 +194,27 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
       {/* Tool Name Label - Accompanying the icon */}
       <foreignObject 
         x={pos.x - 60} 
-        y={pos.y + R + 6} 
+        y={pos.y + R + 10} 
         width={120} 
-        height={30} 
+        height={40} 
         className="overflow-visible pointer-events-none"
       >
         <div className="flex flex-col items-center justify-start w-full">
-          <motion.span 
-            initial={{ opacity: 0 }}
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
             animate={{ 
-              opacity: isVisible ? (hovered ? 1 : 0.5) : 0,
-              y: hovered ? 2 : 0 
+              opacity: isVisible ? (hovered ? 1 : 0.7) : 0,
+              y: hovered ? 0 : 2 
             }}
-            className="text-[9px] font-black text-white uppercase tracking-wider text-center leading-tight drop-shadow-md"
-            style={{ textShadow: hovered ? `0 0 10px ${color}` : "none" }}
+            className="px-2 py-1 rounded bg-black/40 backdrop-blur-sm border border-white/5"
           >
-            {tool.name}
-          </motion.span>
+            <span 
+              className="text-[10px] font-black text-white uppercase tracking-wider text-center leading-tight whitespace-nowrap"
+              style={{ textShadow: hovered ? `0 0 10px ${color}` : "none" }}
+            >
+              {tool.name}
+            </span>
+          </motion.div>
         </div>
       </foreignObject>
     </motion.g>
@@ -351,16 +355,16 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
                 d={dArc} 
                 fill="none" 
                 stroke="transparent" 
-                strokeWidth={ARC_WIDTH + 30} 
+                strokeWidth={ARC_WIDTH + 40} 
                 style={{ pointerEvents: "auto", cursor: "pointer" }}
               />
 
               {/* Hit Area 2: The outer node orbit — keeps hover alive as mouse moves to icons */}
               <path
-                d={arc(CX, CY, NODE_R, s.s - 5, s.e + 5)}
-                fill="none"
-                stroke="transparent"
-                strokeWidth={80}
+                d={arc(CX, CY, NODE_R, s.s - 8, s.e + 8)}
+                fill="none" 
+                stroke="transparent" 
+                strokeWidth={120} 
                 style={{ pointerEvents: "auto", cursor: "pointer" }}
               />
 
