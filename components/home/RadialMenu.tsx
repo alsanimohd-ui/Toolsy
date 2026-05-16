@@ -116,11 +116,21 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
 
   const R = 22;
 
+  const handleClick = () => {
+    if (!isVisible) return;
+    // External tools (e.g. jsonlego) open in a new tab
+    if (tool.route.startsWith("http")) {
+      window.open(tool.route, "_blank", "noopener,noreferrer");
+    } else {
+      router.push(tool.route);
+    }
+  };
+
   return (
     <motion.g
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => isVisible && router.push(tool.route)}
+      onClick={handleClick}
       initial={false}
       animate={{
         opacity: isVisible ? 1 : 0,
@@ -131,7 +141,7 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
         ...SPRING,
         delay: isVisible ? idx * 0.08 : 0,
       }}
-      style={{ pointerEvents: isVisible ? "auto" : "none", cursor: "pointer" }}
+      style={{ pointerEvents: isVisible ? "auto" : "none", cursor: isVisible ? "pointer" : "default" }}
     >
       {/* Invisible larger hit area for the node itself */}
       <circle cx={pos.x} cy={pos.y} r={R + 25} fill="transparent" />
@@ -334,17 +344,27 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
                 </text>
               </motion.g>
 
-              {/* Invisible Hit Area (Extremely thick to cover nodes and avoid gaps) */}
+              {/* ── Hit Areas (rendered BEFORE nodes so nodes sit on top for clicks) ── */}
+
+              {/* Hit Area 1: The arc band itself */}
               <path 
                 d={dArc} 
                 fill="none" 
                 stroke="transparent" 
-                strokeWidth={ARC_WIDTH + 240} 
-                className="cursor-pointer" 
-                style={{ pointerEvents: "auto" }}
+                strokeWidth={ARC_WIDTH + 30} 
+                style={{ pointerEvents: "auto", cursor: "pointer" }}
               />
 
-              {/* Tool Nodes */}
+              {/* Hit Area 2: The outer node orbit — keeps hover alive as mouse moves to icons */}
+              <path
+                d={arc(CX, CY, NODE_R, s.s - 5, s.e + 5)}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={80}
+                style={{ pointerEvents: "auto", cursor: "pointer" }}
+              />
+
+              {/* Tool Nodes — rendered LAST so their click area is on top */}
               {s.tools.map((tool, idx) => {
                 const frac = (idx + 1) / (s.tools.length + 1);
                 const toolDeg = s.s + (s.e - s.s) * frac;

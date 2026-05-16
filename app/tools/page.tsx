@@ -13,66 +13,101 @@ import {
   Workflow, 
   Cpu,
   Layers,
-  Activity
+  Activity,
+  ExternalLink
 } from "lucide-react";
+import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 
 /* ─────────────────────────────────────────────
-   Premium Tool Card - Restructured for OS feel
+   Premium Tool Card — workspace-aware
   ───────────────────────────────────────────── */
 function ToolCard({ tool, categoryColor }: { tool: Tool; categoryColor: string }) {
+  const { openTool, activeTool } = useWorkspace();
+  const isActive = activeTool?.slug === tool.slug;
   const isExternal = tool.isExternal;
 
-  return (
-    <Link href={tool.route} target={isExternal ? "_blank" : undefined} className="block h-full">
-      <motion.div
-        whileHover={{ y: -5, scale: 1.01 }}
-        transition={{ type: "spring", stiffness: 400, damping: 25 }}
-        className="toolsy-card h-full flex flex-col p-8 group relative overflow-hidden transition-all duration-500 hover:border-accent/40"
-      >
-        {/* Subtle background glow on hover */}
-        <div 
-          className="absolute -right-20 -top-20 size-40 blur-[80px] opacity-0 transition-opacity duration-500 group-hover:opacity-20"
+  const handleClick = (e: React.MouseEvent) => {
+    if (isExternal) return; // let link navigate
+    e.preventDefault();
+    openTool({ slug: tool.slug, categoryId: tool.categoryId, route: tool.route });
+  };
+
+  const content = (
+    <motion.div
+      whileHover={{ y: -5, scale: 1.01 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      className={`toolsy-card h-full flex flex-col p-8 group relative overflow-hidden transition-all duration-500 ${
+        isActive ? "border-accent/60 shadow-[0_0_0_1px_var(--accent)]" : "hover:border-accent/40"
+      }`}
+    >
+      {/* Active indicator glow */}
+      {isActive && (
+        <div
+          className="absolute inset-0 opacity-5 pointer-events-none"
           style={{ backgroundColor: categoryColor }}
         />
+      )}
 
-        <div className="flex items-start justify-between mb-8">
-          <div 
-            className="flex size-14 items-center justify-center rounded-2xl bg-slate-100 dark:bg-white/5 text-xl font-black shadow-inner transition-all duration-500 group-hover:scale-110 group-hover:bg-accent/10 group-hover:text-accent dark:group-hover:bg-accent/20"
+      {/* Subtle background glow on hover */}
+      <div 
+        className="absolute -right-20 -top-20 size-40 blur-[80px] opacity-0 transition-opacity duration-500 group-hover:opacity-20"
+        style={{ backgroundColor: categoryColor }}
+      />
+
+      <div className="flex items-start justify-between mb-8">
+        <div 
+          className={`flex size-14 items-center justify-center rounded-2xl bg-slate-100 dark:bg-white/5 text-xl font-black shadow-inner transition-all duration-500 ${
+            isActive 
+              ? "bg-accent/10 text-accent dark:bg-accent/20 scale-110" 
+              : "group-hover:scale-110 group-hover:bg-accent/10 group-hover:text-accent dark:group-hover:bg-accent/20"
+          }`}
+        >
+          {tool.icon}
+        </div>
+        
+        <div className="flex flex-col items-end gap-2">
+          {isExternal && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+              <Activity className="size-2.5" />
+              Remote
+            </div>
+          )}
+          {isActive && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest bg-accent/10 border border-accent/20 text-accent">
+              Active
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 flex-1">
+        <div className="flex flex-col gap-1">
+          <span 
+            className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40"
+            style={{ color: categoryColor }}
           >
-            {tool.icon}
-          </div>
-          
-          <div className="flex flex-col items-end gap-2">
-            {isExternal && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
-                <Activity className="size-2.5" />
-                Remote
-              </div>
-            )}
-          </div>
+            {categoryList.find(c => c.id === tool.categoryId)?.label}
+          </span>
+          <h2 className={`text-xl font-black tracking-tight transition-colors duration-300 ${
+            isActive ? "text-accent" : "text-foreground group-hover:text-accent"
+          }`}>
+            {tool.name}
+          </h2>
         </div>
+        <p className="text-sm text-muted/80 leading-relaxed font-medium line-clamp-3">
+          {tool.description}
+        </p>
+      </div>
 
-        <div className="flex flex-col gap-4 flex-1">
-          <div className="flex flex-col gap-1">
-            <span 
-              className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40"
-              style={{ color: categoryColor }}
-            >
-              {categoryList.find(c => c.id === tool.categoryId)?.label}
-            </span>
-            <h2 className="text-xl font-black tracking-tight text-foreground group-hover:text-accent transition-colors duration-300">
-              {tool.name}
-            </h2>
-          </div>
-          <p className="text-sm text-muted/80 leading-relaxed font-medium line-clamp-3">
-            {tool.description}
-          </p>
+      <div className="mt-10 pt-6 border-t border-border/40 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-muted/60 group-hover:text-accent transition-colors duration-300">
+          <span>
+            {isExternal ? "Establish Connection" : isActive ? "Currently Active" : "Initialize Module"}
+          </span>
         </div>
-
-        <div className="mt-10 pt-6 border-t border-border/40 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-muted/60 group-hover:text-accent transition-colors duration-300">
-            <span>{isExternal ? "Establish Connection" : "Initialize Module"}</span>
-          </div>
+        {isExternal ? (
+          <ExternalLink className="w-4 h-4 text-muted/40" />
+        ) : (
           <motion.div
             initial={{ x: 0 }}
             animate={{ x: [0, 5, 0] }}
@@ -80,9 +115,23 @@ function ToolCard({ tool, categoryColor }: { tool: Tool; categoryColor: string }
           >
             <ArrowRight className="w-4 h-4 text-accent opacity-0 -translate-x-4 transition-all duration-500 group-hover:opacity-100 group-hover:translate-x-0" />
           </motion.div>
-        </div>
-      </motion.div>
-    </Link>
+        )}
+      </div>
+    </motion.div>
+  );
+
+  if (isExternal) {
+    return (
+      <a href={tool.route} target="_blank" rel="noopener noreferrer" className="block h-full">
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <div onClick={handleClick} className="block h-full cursor-pointer">
+      {content}
+    </div>
   );
 }
 

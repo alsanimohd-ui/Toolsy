@@ -521,4 +521,42 @@ body {
       scroll-behavior: auto !important;
     }
   }
+
+  /* ═══════════════════════════════════════════════════════ */
+  /* WORKSPACE SYSTEM — IDE-Style Layout                    */
+  /* ═══════════════════════════════════════════════════════ */
+
+  /**
+   * Full-viewport workspace shell — locks the entire /tools area
+   * to 100dvh so the sidebar + panel fill the screen like an IDE.
+   * The BackgroundLayer (fixed/z:-1) shows through both panels.
+   */
+  .workspace-shell {
+    width: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: row;
+  }
+
+  /**
+   * The scrollable content area within the workspace panel.
+   * flex-1 ensures it fills remaining space after the sidebar.
+   */
+  .workspace-panel {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /**
+   * When a tool is rendered inside the workspace panel, its
+   * ToolContainer uses toolsy-page-shell which has min-height: 100dvh.
+   * We override that inside workspace to avoid double scroll.
+   */
+  .workspace-panel .toolsy-page-shell {
+    min-height: unset;
+  }
 }
