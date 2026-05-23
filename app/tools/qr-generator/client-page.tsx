@@ -76,7 +76,7 @@ interface QRState {
 
 const INITIAL_STATE: QRState = {
   mode: "url",
-  value: "https://toolsy.app",
+  value: "https://mi.maker-ai.tech",
   wifi: { ssid: "", pass: "", encryption: "WPA" },
   email: { address: "", subject: "", body: "" },
   vcard: { 
@@ -119,7 +119,7 @@ export default function QRGeneratorClient() {
   // Generate the final string based on mode - Robust formatting
   const qrValue = useMemo(() => {
     // If we have no base value for simple modes, return a fallback to prevent blank QR
-    const baseValue = state.value || "https://toolsy.app";
+    const baseValue = state.value || "https://mi.maker-ai.tech";
 
     switch (state.mode) {
       case "url": {
@@ -132,12 +132,12 @@ export default function QRGeneratorClient() {
       case "text": return baseValue;
       case "wifi": {
         const { ssid, pass, encryption } = state.wifi;
-        if (!ssid) return "WIFI:S:Toolsy;P:;T:nopass;;";
+        if (!ssid) return "WIFI:S:Mi;P:;T:nopass;;";
         return `WIFI:T:${encryption};S:${ssid};P:${pass};;`;
       }
       case "email": {
         const { address, subject, body } = state.email;
-        if (!address) return "mailto:hello@toolsy.app";
+        if (!address) return "mailto:hello@maker-ai.tech";
         return `MATMSG:TO:${address};SUB:${subject};BODY:${body};;`;
       }
       case "phone": return `tel:${baseValue.replace(/[^0-9+]/g, "")}`;
@@ -145,7 +145,7 @@ export default function QRGeneratorClient() {
       case "whatsapp": return `https://wa.me/${baseValue.replace(/[^0-9]/g, "")}`;
       case "vcard": {
         const { firstName, lastName, org, title, phone, workPhone, fax, email, url, street, city, state: vState, zip, country } = state.vcard;
-        if (!firstName && !lastName && !org) return "BEGIN:VCARD\nVERSION:3.0\nN:User;Toolsy\nFN:Toolsy User\nEND:VCARD";
+        if (!firstName && !lastName && !org) return "BEGIN:VCARD\nVERSION:3.0\nN:User;Mi\nFN:Mi User\nEND:VCARD";
         
         return [
           "BEGIN:VCARD",
@@ -167,7 +167,7 @@ export default function QRGeneratorClient() {
       }
       case "event": {
         const { title, location, start, end, description } = state.event;
-        if (!title) return "BEGIN:VEVENT\nSUMMARY:Toolsy Event\nEND:VEVENT";
+        if (!title) return "BEGIN:VEVENT\nSUMMARY:Mi Event\nEND:VEVENT";
         return [
           "BEGIN:VEVENT",
           `SUMMARY:${title}`,
@@ -186,7 +186,7 @@ export default function QRGeneratorClient() {
       case "social": {
         const { platform, username } = state.social;
         const handle = (username || "").replace("@", "");
-        if (!handle) return "https://toolsy.app";
+        if (!handle) return "https://mi.maker-ai.tech";
         if (platform === "twitter") return `https://twitter.com/${handle}`;
         if (platform === "instagram") return `https://instagram.com/${handle}`;
         if (platform === "linkedin") return `https://linkedin.com/in/${handle}`;
@@ -222,7 +222,7 @@ export default function QRGeneratorClient() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `toolsy-qr-${state.mode}.svg`;
+      link.download = `mi-qr-${state.mode}.svg`;
       link.click();
       URL.revokeObjectURL(url);
     } else {
@@ -246,7 +246,7 @@ export default function QRGeneratorClient() {
             const pngUrl = canvas.toDataURL("image/png");
             const link = document.createElement("a");
             link.href = pngUrl;
-            link.download = `toolsy-qr-${state.mode}.png`;
+            link.download = `mi-qr-${state.mode}.png`;
             link.click();
           } catch (err) {
             console.error("Canvas toDataURL failed:", err);

@@ -30,8 +30,8 @@ const ORBITAL_RINGS = [
 
 export default function Centerpiece({ activeSegment }: CenterpieceProps) {
   const activeCategory = activeSegment ? toolCategories[activeSegment] : null;
-  const activeColor = activeCategory?.color ?? "#7c6aff";
-  const activeGlow = activeCategory?.glowColor ?? "rgba(124,106,255,0.5)";
+  const activeColor = activeCategory?.color ?? "#0eb3ba";
+  const activeGlow = activeCategory?.glowColor ?? "rgba(14, 179, 186, 0.5)";
   const CategoryIcon = activeSegment ? categoryIcons[activeSegment] : Sparkles;
 
   const mouseX = useMotionValue(0);
@@ -44,7 +44,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
   return (
     <Link
       href="/tools"
-      aria-label="Enter Toolsy"
+      aria-label="Enter Mi"
       className="group/core block h-full w-full rounded-full focus:outline-none"
       onMouseMove={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
@@ -207,7 +207,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: 0.1, duration: 0.9, ease: EASE_EXPO }}
             >
-              Toolsy
+              Mi
             </motion.h1>
 
             <motion.div

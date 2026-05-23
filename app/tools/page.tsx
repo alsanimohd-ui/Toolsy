@@ -275,7 +275,7 @@ export default function ToolsIndexPage() {
           <div className="w-px h-3 bg-white/10" />
           <div className="flex items-center gap-2 text-accent/60">
             <Sparkles className="size-3" />
-            <span>Toolsy OS v2.0.5</span>
+            <span>Mi OS v2.0.5 <span className="text-white/20">by maker-ai.tech</span></span>
           </div>
         </div>
         

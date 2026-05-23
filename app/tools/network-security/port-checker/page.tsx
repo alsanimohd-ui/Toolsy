@@ -9,12 +9,12 @@ export function generateMetadata(): Metadata {
 
   if (!category || !tool) {
     return {
-      title: "Tool Not Found | Toolsy",
+      title: "Tool Not Found | Mi",
     };
   }
 
   return {
-    title: `${tool.name} | Toolsy`,
+    title: `${tool.name} | Mi`,
     description: tool.description,
   };
 }

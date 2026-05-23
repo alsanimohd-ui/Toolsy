@@ -12,13 +12,16 @@ import {
   RefreshCcw,
   Sparkles,
   Fingerprint,
+  ChevronRight,
   Plus,
   X,
   FileCode,
   ShieldCheck,
+  Activity,
   Workflow,
   Globe,
-  Binary
+  Binary,
+  ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
@@ -227,7 +230,7 @@ export default function CoreEncoderClient() {
               ].map(op => (
                 <button
                   key={op.type}
-                  onClick={() => addStep({ type: op.type as OpType, label: op.label })}
+                  onClick={() => addStep(op as any)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/5 text-[9px] font-black uppercase tracking-widest text-muted hover:text-accent hover:border-accent/40 transition-all whitespace-nowrap"
                 >
                   <op.icon className="size-3" /> {op.label}
@@ -250,7 +253,7 @@ export default function CoreEncoderClient() {
                 {pipeline.length === 0 ? (
                   <span className="text-[9px] font-black uppercase tracking-widest text-muted/20 ml-2">No operations active</span>
                 ) : (
-                  pipeline.map((step) => (
+                  pipeline.map((step, idx) => (
                     <motion.div
                       key={step.id}
                       layout

@@ -9,11 +9,11 @@ import {
   LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
-  Layers,
   ExternalLink,
 } from "lucide-react";
 import { categoryList, tools, type CategoryId, type Tool } from "@/lib/tools";
 import { useWorkspace } from "./WorkspaceContext";
+import { MiIcon } from "@/components/ui/MiLogo";
 
 /* ───────────────────────────────────────────────────────────────────── */
 /*  Category Icon Map                                                    */
@@ -254,9 +254,9 @@ export default function WorkspaceSidebar() {
             animate={{ opacity: 1 }}
             className="flex items-center gap-2"
           >
-            <Layers className="size-4 text-accent/70 shrink-0" />
+            <MiIcon className="size-4 shrink-0" />
             <span className="text-[10px] font-black uppercase tracking-[0.28em] text-muted/70">
-              Workspace
+              Mi Workspace
             </span>
           </motion.div>
         )}

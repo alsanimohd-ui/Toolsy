@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import {
   ToolContainer,
   ToolHeader,
+  ToolButton,
 } from "@/components/tools";
 import { 
   Globe, 
@@ -15,8 +16,10 @@ import {
   Server,
   Network,
   Zap,
+  ChevronDown,
   Settings2,
   Shield,
+  Search,
   Crosshair
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -105,15 +108,14 @@ export default function PortCheckerClient() {
             latency: Math.round(performance.now() - startTime),
             message: "Port responded (Note: Local mode is limited to HTTP/S reachable ports)."
           });
-        } catch (err: unknown) {
-          const isAbort = err instanceof Error && err.name === "AbortError";
-          const status: ScanResult["status"] = isAbort ? "TIMEOUT" : "CLOSED";
+        } catch (err: any) {
+          const status: any = err.name === 'AbortError' ? 'TIMEOUT' : 'CLOSED';
           setResult({
             host,
             port: parseInt(port, 10),
             status,
             latency: Math.round(performance.now() - startTime),
-            message: isAbort ? "Connection timed out." : "Connection refused or blocked by browser security."
+            message: err.name === 'AbortError' ? "Connection timed out." : "Connection refused or blocked by browser security."
           });
         }
       }
@@ -180,7 +182,7 @@ export default function PortCheckerClient() {
               ].map(m => (
                 <button
                   key={m.id}
-                  onClick={() => setScanMode(m.id as "local" | "remote")}
+                  onClick={() => setScanMode(m.id as any)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
                     ${scanMode === m.id 
                       ? "bg-accent text-white shadow-lg shadow-accent/20" 

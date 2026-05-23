@@ -49,7 +49,7 @@ export default function HomePage() {
               style={{ boxShadow: "0 0 10px var(--accent-glow)" }}
             />
             <span className="toolsy-meta text-white/45">
-              Toolsy&nbsp;
+              Mi <span className="text-white/25">by maker-ai.tech</span>&nbsp;
               <span className="text-white/25">·</span>
               &nbsp;OS v1.0
             </span>

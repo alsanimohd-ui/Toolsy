@@ -16,8 +16,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Toolsy",
-  description: "A modular platform for developer tools — fast, focused, and extensible.",
+  title: "Mi",
+  description: "A modular platform for developer tools by maker-ai.tech — fast, focused, and extensible.",
 };
 
 export default function RootLayout({

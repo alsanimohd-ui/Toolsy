@@ -12,10 +12,10 @@
   --border: #e2e8f0;
   --border-subtle: #cbd5e1;
   
-  --accent: #2563eb;
-  --accent-rgb: 37, 99, 235;
-  --accent-hover: #1d4ed8;
-  --accent-glow: rgba(37, 99, 235, 0.12);
+  --accent: #0eb3ba;
+  --accent-rgb: 14, 179, 186;
+  --accent-hover: #0c9da3;
+  --accent-glow: rgba(14, 179, 186, 0.12);
 
   /* Semantic Glass Tokens - Light */
   --glass-bg: rgba(255, 255, 255, 0.94);
@@ -75,10 +75,10 @@
   --border-subtle: #2a2a3d;
   --muted: #94a3b8;
   
-  --accent: #7c6aff;
-  --accent-rgb: 124, 106, 255;
-  --accent-hover: #9b8dff;
-  --accent-glow: rgba(124, 106, 255, 0.25);
+  --accent: #0eb3ba;
+  --accent-rgb: 14, 179, 186;
+  --accent-hover: #26d1d8;
+  --accent-glow: rgba(14, 179, 186, 0.25);
 
   /* Semantic Glass Tokens - Dark */
   --glass-bg: rgba(10, 10, 15, 0.75);

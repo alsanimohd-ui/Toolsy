@@ -37,13 +37,13 @@ export function generateMetadata({ params }: ToolRouteParams): Metadata {
   const tool = findTool(params.category, params.slug);
   if (!tool) {
     return {
-      title: "Toolsy",
+      title: "Mi",
     };
   }
 
   const category = getCategory(tool.categoryId);
   return {
-    title: `${tool.name} | ${category.label} | Toolsy`,
+    title: `${tool.name} | ${category.label} | Mi`,
     description: tool.description,
   };
 }

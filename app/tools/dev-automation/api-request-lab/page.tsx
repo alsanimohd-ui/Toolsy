@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import ApiRequestLabClient from "./client-page";
 
 export const metadata: Metadata = {
-  title: "API Request Lab | Toolsy",
+  title: "API Request Lab | Mi",
   description: "Cinematic next-generation API engineering workstation. Test, debug, and analyze RESTful endpoints in real-time.",
 };
 

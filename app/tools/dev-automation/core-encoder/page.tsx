@@ -1,7 +1,7 @@
 import ClientPage from "./client-page";
 
 export const metadata = {
-  title: "Core Encoder | Toolsy",
+  title: "Core Encoder | Mi",
   description: "Unified intelligent workstation for real-time encoding, decoding, and forensic hashing.",
 };
 

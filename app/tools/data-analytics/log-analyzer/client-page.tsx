@@ -40,10 +40,10 @@ const sampleLogs = `[2026-05-03 20:10:15] INFO: Server initialized on port 3000
 [10.0.0.12] [2026-05-03 20:12:34] ERROR: Failed to parse user payload: SyntaxError: Unexpected token < in JSON at position 0
 [2026-05-03 20:12:40] DEBUG: Retrying payload parsing...
 [2026-05-03 20:13:02] INFO: Request completed in 24ms
-[10.0.5.22] [2026-05-03 20:14:11] ERROR: Auth failed for admin@toolsy.com
-[10.0.5.22] [2026-05-03 20:14:12] ERROR: Auth failed for admin@toolsy.com
-[10.0.5.22] [2026-05-03 20:14:12] ERROR: Auth failed for admin@toolsy.com
-[10.0.5.22] [2026-05-03 20:14:13] ERROR: Auth failed for admin@toolsy.com
+[10.0.5.22] [2026-05-03 20:14:11] ERROR: Auth failed for admin@maker-ai.tech
+[10.0.5.22] [2026-05-03 20:14:12] ERROR: Auth failed for admin@maker-ai.tech
+[10.0.5.22] [2026-05-03 20:14:12] ERROR: Auth failed for admin@maker-ai.tech
+[10.0.5.22] [2026-05-03 20:14:13] ERROR: Auth failed for admin@maker-ai.tech
 [127.0.0.1] [2026-05-03 20:14:15] ERROR: Database disconnected unexpectedly
 [2026-05-03 20:14:15] WARN: Fallback cache server engaged
 [2026-05-03 20:15:00] INFO: System status check passed
@@ -111,7 +111,7 @@ export default function LogAnalyzerClient() {
     if (prefill) setLogs(prefill);
     else {
       try {
-        const stored = localStorage.getItem("toolsy_log_analyzer_input");
+        const stored = localStorage.getItem("mi_log_analyzer_input");
         if (stored) setLogs(stored);
       } catch {}
     }
@@ -120,7 +120,7 @@ export default function LogAnalyzerClient() {
   useEffect(() => {
     if (logs) {
       try {
-        localStorage.setItem("toolsy_log_analyzer_input", logs);
+        localStorage.setItem("mi_log_analyzer_input", logs);
       } catch {}
     }
   }, [logs]);
@@ -331,7 +331,7 @@ export default function LogAnalyzerClient() {
     setLogs("");
     setFilterLevel("ALL");
     setSearchQuery("");
-    try { localStorage.removeItem("toolsy_log_analyzer_input"); } catch {}
+    try { localStorage.removeItem("mi_log_analyzer_input"); } catch {}
   };
 
   const handleCopy = () => {

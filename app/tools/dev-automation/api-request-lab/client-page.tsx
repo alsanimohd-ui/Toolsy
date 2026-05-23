@@ -15,6 +15,7 @@ import {
   Trash2,
   Plus,
   ShieldAlert,
+  FileType,
   FileCode,
   Zap
 } from "lucide-react";
@@ -308,7 +309,7 @@ export default function ApiRequestLabClient() {
               ].map(m => (
                 <button
                   key={m.id}
-                  onClick={() => setExecutionMode(m.id as "local" | "remote")}
+                  onClick={() => setExecutionMode(m.id as any)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
                     ${executionMode === m.id 
                       ? "bg-accent text-white shadow-lg shadow-accent/20" 

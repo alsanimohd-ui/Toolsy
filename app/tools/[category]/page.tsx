@@ -39,7 +39,7 @@ export default function CategoryPage({ params }: CategoryPageParams) {
       <div className="toolsy-content">
         <header className="flex flex-col gap-[clamp(0.85rem,1.8svh,1.25rem)]">
           <div className="toolsy-meta flex items-center gap-2">
-            <Link href="/tools" className="transition-colors hover:text-foreground">Toolsy</Link>
+            <Link href="/tools" className="transition-colors hover:text-foreground">Mi</Link>
             <span className="text-muted/40">/</span>
             <span>{category.label}</span>
           </div>

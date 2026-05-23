@@ -38,7 +38,7 @@ export default function ToolHeader({
       {/* Back navigation */}
       <div className="toolsy-meta flex flex-wrap items-center gap-2 text-muted">
         <Link href="/tools" className="transition-colors duration-200 hover:text-foreground">
-          Toolsy
+          Mi
         </Link>
         {category && (
           <>

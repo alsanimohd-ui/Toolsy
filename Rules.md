@@ -1,4 +1,4 @@
-# Toolsy - Development Guidelines
+# Mi - Development Guidelines
 
 ## 📁 Project Structure
 
