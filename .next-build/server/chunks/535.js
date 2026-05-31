@@ -1,1 +1,0 @@
-"use strict";exports.id=535,exports.ids=[535],exports.modules={80535:(t,e,s)=>{s.r(e),s.d(e,{default:()=>r});let r=(0,s(68570).createProxy)(String.raw`C:\Users\USER\Desktop\Toolsy\app\tools\network-security\threat-inspector\client-page.tsx#default`)}};

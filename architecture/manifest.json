@@ -1,0 +1,288 @@
+{
+  "generatedAt": "2026-05-31T09:41:51.166Z",
+  "version": "1.0.0",
+  "projectName": "Toolsy (Mi)",
+  "platform": {
+    "framework": "Next.js 14.2.35",
+    "react": "React 18",
+    "typescript": "TypeScript 5",
+    "tailwind": "Tailwind CSS 3.4",
+    "animation": "Framer Motion 12",
+    "icons": "Lucide React",
+    "testing": "Vitest 4 + jsdom",
+    "build": "typecheck → lint → next build (dist: .next-build)"
+  },
+  "architecture": {
+    "toolsCategories": [
+      {
+        "id": "network-security",
+        "label": "Network & Security",
+        "color": "#ef4444",
+        "route": "/tools/network-security"
+      },
+      {
+        "id": "data-analytics",
+        "label": "Data & Analytics",
+        "color": "#3b82f6",
+        "route": "/tools/data-analytics"
+      },
+      {
+        "id": "dev-automation",
+        "label": "Dev & Automation",
+        "color": "#a855f7",
+        "route": "/tools/dev-automation"
+      }
+    ],
+    "toolsCount": 12,
+    "tools": [
+      {
+        "name": "QR Generator",
+        "slug": "qr-generator",
+        "categoryId": "data-analytics",
+        "description": "Full-featured QR creation studio. Generate website, WiFi, vCard, and custom branded QR codes with live preview and advanced styling.",
+        "isExternal": false
+      },
+      {
+        "name": "SSL Toolkit",
+        "slug": "ssl-toolkit",
+        "categoryId": "network-security",
+        "description": "Extract PFX, generate certificates, and decode PEM/CRT info completely offline.",
+        "isExternal": false
+      },
+      {
+        "name": "Threat Inspector",
+        "slug": "threat-inspector",
+        "categoryId": "network-security",
+        "description": "Local-first file analysis & VirusTotal reputation check. Extract IOCs and detect threats securely.",
+        "isExternal": false
+      },
+      {
+        "name": "Port Checker",
+        "slug": "port-checker",
+        "categoryId": "network-security",
+        "description": "Instantly check the connectivity status, latency, and service of any port on any host.",
+        "isExternal": false
+      },
+      {
+        "name": "PCAP Analyzer",
+        "slug": "pcap-analyzer",
+        "categoryId": "network-security",
+        "description": "High-performance forensic workstation with virtualized stream analysis and local packet triage.",
+        "isExternal": false
+      },
+      {
+        "name": "JsonLego",
+        "slug": "jsonlego",
+        "categoryId": "data-analytics",
+        "description": "Advanced JSON formatting, validation, and visualization with a powerful Lego-inspired interface.",
+        "isExternal": true
+      },
+      {
+        "name": "Log Analyzer",
+        "slug": "log-analyzer",
+        "categoryId": "data-analytics",
+        "description": "Instantly filter, highlight, and summarize raw server or application log outputs.",
+        "isExternal": false
+      },
+      {
+        "name": "Paste to Code",
+        "slug": "paste-to-code",
+        "categoryId": "dev-automation",
+        "description": "Paste messy data (CSV, TSV, HTML tables) and instantly convert it into clean JSON, TS, SQL, or PHP code.",
+        "isExternal": false
+      },
+      {
+        "name": "Regex Studio",
+        "slug": "regex-studio",
+        "categoryId": "dev-automation",
+        "description": "World-class regex debugging and pattern analysis workstation. Write, test, and debug regular expressions in real-time.",
+        "isExternal": false
+      },
+      {
+        "name": "API Request Lab",
+        "slug": "api-request-lab",
+        "categoryId": "dev-automation",
+        "description": "Cinematic next-generation API engineering workstation. Test, debug, and analyze RESTful and GraphQL endpoints.",
+        "isExternal": false
+      },
+      {
+        "name": "Running-Config Decoder",
+        "slug": "running-config-decoder",
+        "categoryId": "network-security",
+        "description": "Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline.",
+        "isExternal": false
+      },
+      {
+        "name": "Core Encoder",
+        "slug": "core-encoder",
+        "categoryId": "dev-automation",
+        "description": "Unified intelligent workstation for real-time encoding, decoding, and forensic hashing. Smart detection and instant processing.",
+        "isExternal": false
+      }
+    ],
+    "tsInterfaces": {
+      "CategoryId": "= \"data-analytics\" | \"network-security\" | \"dev-automation\";",
+      "ToolCategory": "{\n  id: CategoryId;\n  label: string;\n  shortLabel: string;\n  description: string;\n  icon: \"Braces\" | \"ShieldCheck\" | \"Workflow\";\n  color: string;\n  glow: string;\n  glowColor: string;\n  gradientStart: string;\n  gradientMid: string;\n  gradientEnd: string;\n  radialStartAngle: number;\n  radialEndAngle: number;\n  route: string;\n}",
+      "Tool": "{\n  /** Display name */\n  name: string;\n  /** URL-safe identifier */\n  slug: string;\n  /** Nested category-aware application path */\n  route: string;\n  /** Legacy flat path kept for compatibility */\n  legacyRoute?: string;\n  /** Short description */\n  description: string;\n  /** Display category label */\n  category: string;\n  /** Canonical category id */\n  categoryId: CategoryId;\n  /** Emoji icon displayed on the card */\n  icon: string;\n  /** Flag to indicate if the tool is an external link */\n  isExternal?: boolean;\n  /** External URL if isExternal is true */\n  externalUrl?: string;\n}"
+    },
+    "componentTree": {
+      "components/tools": [
+        "index.ts",
+        "ToolButton.tsx",
+        "ToolContainer.tsx",
+        "ToolHeader.tsx",
+        "ToolSection.tsx",
+        "ToolTextarea.tsx"
+      ],
+      "components/ui": [
+        "GlassCard.tsx",
+        "MiLogo.tsx"
+      ],
+      "components/layout": [
+        "AppLayout.tsx",
+        "BackgroundLayer.tsx"
+      ],
+      "components/workspace": [
+        "WorkspaceContext.tsx",
+        "WorkspaceLayout.tsx",
+        "WorkspacePanel.tsx",
+        "WorkspaceSidebar.tsx"
+      ],
+      "components/a11y": [
+        "SkipToContent.tsx"
+      ],
+      "components/home": [
+        "Centerpiece.tsx",
+        "RadialMenu.tsx",
+        "SectionBlock.tsx",
+        "SmartInput.tsx",
+        "ThemeToggle.tsx"
+      ]
+    },
+    "hooks": [
+      "useFocusTrap.ts"
+    ],
+    "libModules": [
+      "port-intelligence.ts",
+      "regex-engine.ts",
+      "regex-worker.ts",
+      "ssrf-utils.ts",
+      "threat-analysis.ts",
+      "tools.ts"
+    ],
+    "routes": [],
+    "clientPages": []
+  },
+  "designSystem": {
+    "cssVariableTokens": 48,
+    "clampExpressions": [
+      "1rem, 3vw, 2.5rem",
+      "1.25rem, 4svh, 5rem",
+      "1rem, 2.5vw, 2rem",
+      "1rem, 2.2vw, 1.75rem",
+      "1rem, 1.8vw, 1.5rem",
+      "3.5rem, 9svh, 5.25rem",
+      "1.25rem, 3svh, 3rem",
+      "2rem,5vw,4.25rem",
+      "0.72rem,1.1vw,0.9rem",
+      "0.25rem, 1.5svh, 1.25rem",
+      "0.5rem, 2vw, 1.5rem",
+      "0.65rem, 1.7svh, 1.25rem",
+      "4.5rem, 13dvh, 6.25rem"
+    ],
+    "utilityClasses": [
+      ".toolsy-button",
+      ".toolsy-button-ghost",
+      ".toolsy-button-primary",
+      ".toolsy-button-secondary",
+      ".toolsy-card",
+      ".toolsy-card-hover",
+      ".toolsy-content",
+      ".toolsy-description",
+      ".toolsy-divider",
+      ".toolsy-empty-state",
+      ".toolsy-glass",
+      ".toolsy-home-shell",
+      ".toolsy-home-stage",
+      ".toolsy-input",
+      ".toolsy-kicker",
+      ".toolsy-label",
+      ".toolsy-meta",
+      ".toolsy-page-shell",
+      ".toolsy-page-title",
+      ".toolsy-panel",
+      ".toolsy-portal-footer",
+      ".toolsy-radial-scale",
+      ".toolsy-section-title",
+      ".toolsy-textarea"
+    ],
+    "keyframes": [
+      "orbital",
+      "core",
+      "core",
+      "shimmer",
+      "fadeIn",
+      "slideUp",
+      "core",
+      "ambient"
+    ],
+    "responsiveBreakpoints": [
+      "@media (max-width: 640px)",
+      "@media (prefers-reduced-motion: reduce)"
+    ],
+    "hasWorkspaceSystem": true,
+    "hasGlassSystem": true,
+    "hasBackdropFallback": true,
+    "prefersReducedMotion": true
+  },
+  "config": {
+    "scripts": {
+      "dev": "next dev",
+      "build": "npm run typecheck && npm run lint && next build",
+      "start": "next start",
+      "lint": "next lint",
+      "typecheck": "tsc --noEmit",
+      "test": "vitest run",
+      "test:watch": "vitest",
+      "manifest": "node scripts/generate-manifest.js"
+    },
+    "dependencies": [
+      "framer-motion",
+      "jszip",
+      "lucide-react",
+      "next",
+      "node-forge",
+      "qrcode.react",
+      "react",
+      "react-dom",
+      "react-globe.gl",
+      "react-window"
+    ],
+    "devDependencies": [
+      "@testing-library/jest-dom",
+      "@testing-library/react",
+      "@testing-library/user-event",
+      "@types/js-yaml",
+      "@types/node",
+      "@types/node-forge",
+      "@types/react",
+      "@types/react-dom",
+      "@types/react-window",
+      "@vitejs/plugin-react",
+      "eslint",
+      "eslint-config-next",
+      "jsdom",
+      "postcss",
+      "tailwindcss",
+      "typescript",
+      "vitest"
+    ],
+    "tailwindSafelist": "// Dynamic color patterns for threat levels & categories & log highlighting { pattern: /^(bg|text|border|decoration)-(red|amber|emerald|blue|cyan|purple|pink|muted)-(300|400|500|600|700)(\\/10|\\/20|\\/30|\\/5|\\/80)?$/ }, // Specific static classes used in JS logic \"bg-red-500/10\", \"bg-amber-500/10\", \"bg-emerald-500/10\", \"bg-muted/10\", \"text-red-400\", \"text-amber-400\", \"text-emerald-400\", \"text-muted\", \"bg-white/5\", \"bg-white/10\", \"bg-black/20\", \"bg-black/40\", \"border-white/5\", \"border-white/10\", \"border-accent/10\", \"border-accent/20\", \"animate-pulse\", \"animate-bounce\", \"animate-spin\", \"decoration-blue-500/30\", \"decoration-blue-400/30\", \"text-emerald-400\", \"text-cyan-400\", \"text-blue-400\", \"text-blue-300\", \"text-amber-400/80\", \"light\"",
+    "nextConfig": {
+      "distDir": ".next-build",
+      "eslint": {
+        "ignoreDuringBuilds": false
+      }
+    }
+  }
+}

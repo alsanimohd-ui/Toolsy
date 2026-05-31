@@ -1,1 +1,0 @@
-"use strict";exports.id=940,exports.ids=[940],exports.modules={51940:(e,t,s)=>{s.r(t),s.d(t,{default:()=>o});let o=(0,s(68570).createProxy)(String.raw`C:\Users\USER\Desktop\Toolsy\app\tools\dev-automation\api-request-lab\client-page.tsx#default`)}};
