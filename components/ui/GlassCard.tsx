@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef } from "react";
 import { motion } from "framer-motion";
 
 interface GlassCardProps {
@@ -8,13 +9,19 @@ interface GlassCardProps {
   hoverEffect?: boolean;
 }
 
-export default function GlassCard({ children, className = "", hoverEffect = true }: GlassCardProps) {
-  return (
-    <motion.div
-      whileHover={hoverEffect ? { y: -3, scale: 1.005 } : undefined}
-      className={`toolsy-card ${hoverEffect ? "toolsy-card-hover" : ""} p-[var(--space-card)] ${className}`}
-    >
-      {children}
-    </motion.div>
-  );
-}
+const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
+  ({ children, className = "", hoverEffect = true }, ref) => {
+    return (
+      <motion.div
+        ref={ref}
+        whileHover={hoverEffect ? { y: -3, scale: 1.005 } : undefined}
+        className={`toolsy-card ${hoverEffect ? "toolsy-card-hover" : ""} p-[var(--space-card)] ${className}`}
+      >
+        {children}
+      </motion.div>
+    );
+  }
+);
+
+GlassCard.displayName = "GlassCard";
+export default GlassCard;

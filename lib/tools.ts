@@ -205,6 +205,15 @@ export const tools: Tool[] = [
     icon: "API",
   },
   {
+    name: "Running-Config Decoder",
+    slug: "running-config-decoder",
+    route: getToolPath("network-security", "running-config-decoder"),
+    description: "Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline.",
+    category: toolCategories["network-security"].label,
+    categoryId: "network-security",
+    icon: "CFG",
+  },
+  {
     name: "Core Encoder",
     slug: "core-encoder",
     route: getToolPath("dev-automation", "core-encoder"),

@@ -1,6 +1,7 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { useState, useRef, type ReactNode } from "react";
+import { Menu, X } from "lucide-react";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceContext";
 import WorkspaceSidebar from "@/components/workspace/WorkspaceSidebar";
 import WorkspacePanel from "@/components/workspace/WorkspacePanel";
@@ -11,10 +12,29 @@ import WorkspacePanel from "@/components/workspace/WorkspacePanel";
 /* ───────────────────────────────────────────────────────────────────── */
 
 function WorkspaceShell({ children }: { children: ReactNode }) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
+
   return (
-    <div className="workspace-shell flex h-[100dvh] overflow-hidden">
+    <div className="workspace-shell flex h-[100dvh] overflow-hidden relative">
+      {/* Mobile hamburger toggle */}
+      <button
+        ref={hamburgerRef}
+        onClick={() => setMobileSidebarOpen((v) => !v)}
+        className="fixed top-3 left-3 z-50 flex md:hidden items-center justify-center size-9 rounded-xl bg-black/40 backdrop-blur-xl border border-white/10 text-muted hover:text-foreground transition-colors"
+        aria-label={mobileSidebarOpen ? "Close menu" : "Open menu"}
+      >
+        {mobileSidebarOpen ? <X className="size-4" /> : <Menu className="size-4" />}
+      </button>
+
       {/* Left: IDE-style sidebar */}
-      <WorkspaceSidebar />
+      <WorkspaceSidebar
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => {
+          setMobileSidebarOpen(false);
+          hamburgerRef.current?.focus();
+        }}
+      />
 
       {/* Right: Dynamic tool panel */}
       <WorkspacePanel>{children}</WorkspacePanel>

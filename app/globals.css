@@ -152,7 +152,11 @@ body {
 
 @layer components {
   .toolsy-glass {
-    @apply backdrop-blur-[var(--glass-blur)] bg-[var(--glass-bg)] border border-[var(--glass-border)] shadow-[var(--glass-shadow)];
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 }
 
@@ -278,7 +282,9 @@ body {
   
   .toolsy-input:focus {
     background-color: var(--input-focus-bg);
-    @apply ring-4 ring-white/10 border-white/20;
+    @apply ring-4 ring-white/10;
+    border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 55%, transparent);
+    --tw-ring-color: var(--category-glow, var(--accent-glow));
   }
 
   /* ──────────────────────────────────────────────────────────── */
@@ -315,22 +321,13 @@ body {
     flex: 0 0 auto;
   }
 
-  /* Premium glass container */
-  .toolsy-glass {
-    @apply bg-white/[0.06] dark:bg-white/[0.04];
-    backdrop-filter: blur(40px) saturate(180%);
-    -webkit-backdrop-filter: blur(40px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
   /* Portal footer */
   .toolsy-portal-footer {
     @apply relative z-10 w-full shrink-0 border-t backdrop-blur-2xl;
     background-color: var(--background);
     border-color: var(--border-subtle);
-    height: auto;
-    padding-block: 0;
+    min-height: var(--home-footer-block);
+    padding-block: clamp(0.65rem, 1.7svh, 1.25rem);
   }
 
   .dark .toolsy-portal-footer {
@@ -340,11 +337,6 @@ body {
 
   .toolsy-input::placeholder {
     color: color-mix(in srgb, var(--muted) 55%, transparent);
-  }
-
-  .toolsy-input:focus {
-    border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 55%, transparent);
-    --tw-ring-color: var(--category-glow, var(--accent-glow));
   }
 
   .toolsy-textarea {
@@ -384,11 +376,6 @@ body {
 
   .toolsy-empty-state {
     @apply toolsy-panel flex flex-col items-center justify-center p-8 text-center text-muted;
-  }
-
-  .toolsy-portal-footer {
-    min-height: var(--home-footer-block);
-    padding-block: clamp(0.65rem, 1.7svh, 1.25rem);
   }
 
   /* ═══════════════════════════════════════════════════════ */

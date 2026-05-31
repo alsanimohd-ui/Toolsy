@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import AppLayout from "@/components/layout/AppLayout";
+import SkipToContent from "@/components/a11y/SkipToContent";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -28,6 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}>
+        <SkipToContent />
         <AppLayout>{children}</AppLayout>
       </body>
     </html>

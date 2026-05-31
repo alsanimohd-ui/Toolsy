@@ -7,7 +7,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { tools, type CategoryId } from "@/lib/tools";
 
@@ -63,6 +63,7 @@ export function WorkspaceProvider({
   initialTool = null,
 }: WorkspaceProviderProps) {
   const pathname = usePathname();
+  const router = useRouter();
 
   // 1. Find the tool matching the current URL
   const resolvedTool = useMemo(() => {
@@ -95,16 +96,15 @@ export function WorkspaceProvider({
     (tool: ActiveTool) => {
       setActiveTool(tool);
       setExpandedCategory(tool.categoryId);
-      // Sync URL without triggering a full page navigation
-      window.history.pushState(null, "", tool.route);
+      router.push(tool.route, { scroll: false });
     },
-    []
+    [router]
   );
 
   const closeActiveTool = useCallback(() => {
     setActiveTool(null);
-    window.history.pushState(null, "", "/tools");
-  }, []);
+    router.push("/tools", { scroll: false });
+  }, [router]);
 
   return (
     <WorkspaceContext.Provider

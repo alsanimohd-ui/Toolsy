@@ -446,6 +446,10 @@ export default function SSLToolkitClient() {
 
   const certOverview = useMemo(() => detected.cert ? getCertOverview(detected.cert) : null, [detected.cert]);
 
+  const chainOverviews = useMemo(() => {
+    return detected.chain.map(c => getCertOverview(c)).filter(Boolean) as CertOverview[];
+  }, [detected.chain]);
+
   const hasAnyData = originalFiles.length > 0;
 
   return (
@@ -456,10 +460,10 @@ export default function SSLToolkitClient() {
         categoryId="network-security"
       />
 
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-6">
         
         {/* SECTION 1: UPLOAD & INGESTION */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
           <GlassCard className="xl:col-span-7 flex flex-col gap-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -517,15 +521,17 @@ export default function SSLToolkitClient() {
                         <span className="text-[9px] font-black text-muted uppercase tracking-widest">{file.displayType}</span>
                       </div>
                     </div>
-                    <button onClick={() => handleDeleteFile(file.id)} className="p-2 rounded-lg hover:bg-red-500/10 text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={() => handleDeleteFile(file.id)} className="p-2 rounded-lg hover:bg-red-500/10 text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all" aria-label={`Delete ${file.name}`}>
                       <Trash2 className="size-3.5" />
                     </button>
                   </div>
                 ))
               ) : (
-                <div className="flex flex-col items-center justify-center py-10 opacity-20 italic text-[10px] uppercase font-black tracking-widest">
-                  Awaiting Input Data
-                </div>
+                  <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed border-white/5 rounded-[32px] gap-3">
+                    <Globe className="size-8 text-muted/10" />
+                    <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">Awaiting SSL Input Data</span>
+                    <span className="text-[8px] font-bold text-muted/20 uppercase tracking-widest">Drop .crt, .key, .pem files above</span>
+                  </div>
               )}
             </div>
           </GlassCard>
@@ -533,7 +539,7 @@ export default function SSLToolkitClient() {
 
         {/* SECTION 2: IDENTITY & VALIDATION */}
         {hasAnyData && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 animate-fadeIn">
             <GlassCard className="lg:col-span-8 flex flex-col gap-8">
               <div className="flex items-center gap-3 border-b border-white/5 pb-4">
                 <ShieldCheck className="size-5 text-accent" />
@@ -600,9 +606,12 @@ export default function SSLToolkitClient() {
                   </div>
                 </div>
               ) : (
-                <div className="py-12 flex flex-col items-center justify-center text-center opacity-40">
-                  <Search className="size-8 mb-3 text-muted/20" />
-                  <p className="text-[10px] font-black uppercase tracking-widest">Upload a certificate to reveal identity</p>
+                <div className="py-12 flex flex-col items-center justify-center text-center border-2 border-dashed border-white/5 rounded-[32px] gap-4">
+                  <Search className="size-10 text-muted/10" />
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black text-muted/30 uppercase tracking-[0.2em]">No Certificate Identity</span>
+                    <span className="text-[8px] font-bold text-muted/20 uppercase tracking-widest">Upload a .crt or .pem file to reveal identity data</span>
+                  </div>
                 </div>
               )}
             </GlassCard>
@@ -636,7 +645,109 @@ export default function SSLToolkitClient() {
           </div>
         )}
 
-        {/* SECTION 3: TACTICAL EXPORT */}
+        {/* SECTION 3: CHAIN EXPLORER & EXPIRATION DASHBOARD */}
+        {hasAnyData && (detected.chain.length > 0 || detected.cert) && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 animate-fadeIn">
+            {/* Chain Visualizer */}
+            <GlassCard className="lg:col-span-7 flex flex-col gap-8">
+              <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                <Link className="size-5 text-accent" />
+                <h2 className="text-sm font-black uppercase tracking-[0.2em]">Certificate Chain</h2>
+              </div>
+
+              <div className="flex flex-col gap-1 pl-6 border-l-2 border-accent/30 ml-4">
+                {/* Root CA */}
+                {chainOverviews.length > 0 && (
+                  <ChainNode
+                    label="Root CA"
+                    cert={chainOverviews[chainOverviews.length - 1]}
+                    isLast={chainOverviews.length === 1}
+                  />
+                )}
+                {/* Intermediates */}
+                {chainOverviews.slice(0, -1).reverse().map((cert, i) => (
+                  <ChainNode
+                    key={i}
+                    label={`Intermediate ${chainOverviews.length > 1 ? `CA (${chainOverviews.length - 1 - i})` : ""}`}
+                    cert={cert}
+                    isLast={false}
+                  />
+                ))}
+                {/* Leaf Certificate */}
+                {certOverview && (
+                  <ChainNode
+                    label="Leaf Certificate"
+                    cert={certOverview}
+                    isLast={true}
+                  />
+                )}
+                {detected.chain.length === 0 && !detected.cert && (
+                  <div className="py-10 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-white/5 rounded-[32px]">
+                    <Link className="size-8 text-muted/10" />
+                    <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No Chain Data Available</span>
+                  </div>
+                )}
+              </div>
+            </GlassCard>
+
+            {/* Expiration Dashboard */}
+            <GlassCard className="lg:col-span-5 flex flex-col gap-6">
+              <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                <Clock className="size-5 text-accent" />
+                <h2 className="text-sm font-black uppercase tracking-[0.2em]">Expiration Dashboard</h2>
+              </div>
+
+              {(() => {
+                const allCerts: { label: string; overview: CertOverview }[] = [];
+                if (certOverview) allCerts.push({ label: "Leaf Certificate", overview: certOverview });
+                chainOverviews.forEach((c, i) => {
+                  allCerts.push({ label: `CA ${chainOverviews.length - i}`, overview: c });
+                });
+
+                return (
+                  <div className="flex flex-col gap-3">
+                    {allCerts.map(({ label, overview }, i) => {
+                      const daysLeft = overview.daysLeft;
+                      const statusColor = daysLeft < 0 ? "text-red-400" : daysLeft < 30 ? "text-amber-400" : "text-emerald-400";
+                      const statusBg = daysLeft < 0 ? "bg-red-500/10" : daysLeft < 30 ? "bg-amber-500/10" : "bg-emerald-500/10";
+                      const statusBorder = daysLeft < 0 ? "border-red-500/20" : daysLeft < 30 ? "border-amber-500/20" : "border-emerald-500/20";
+
+                      return (
+                        <div key={i} className={`p-4 rounded-2xl ${statusBg} ${statusBorder} border`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-muted/60">{label}</span>
+                            <div className="flex items-center gap-2">
+                              <div className={`size-2 rounded-full ${daysLeft < 0 ? "bg-red-400" : daysLeft < 30 ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
+                              <span className={`text-xs font-black ${statusColor}`}>
+                                {daysLeft < 0 ? "EXPIRED" : daysLeft < 30 ? "EXPIRING" : "VALID"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-baseline gap-2 mb-3">
+                            <span className={`text-2xl font-black ${statusColor}`}>{overview.domain}</span>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className={`text-3xl font-black ${statusColor}`}>
+                              {daysLeft < 0 ? Math.abs(daysLeft) : daysLeft}
+                            </span>
+                            <span className="text-[10px] font-black uppercase text-muted/60 tracking-widest">
+                              {daysLeft < 0 ? "Days Overdue" : "Days Remaining"}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-[9px] font-medium text-muted/40 uppercase tracking-wider">
+                            Expires: {overview.validTo}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </GlassCard>
+          </div>
+        )}
+
+        {/* SECTION 4: TACTICAL EXPORT */}
         {hasAnyData && (
           <GlassCard className="flex flex-col gap-8 animate-fadeIn">
             <div className="flex items-center justify-between border-b border-white/5 pb-4">
@@ -663,7 +774,7 @@ export default function SSLToolkitClient() {
               </div>
 
               <div className="lg:col-span-5 flex flex-col gap-6">
-                <div className="p-8 rounded-3xl bg-accent/10 border border-accent/20 relative overflow-hidden group">
+                <div className="p-8 rounded-3xl bg-accent/[0.08] border border-accent/20 relative overflow-hidden group hover:shadow-[0_0_30px_rgba(var(--accent-rgb),0.15)] transition-all duration-500">
                   <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                     <Download className="size-24" />
                   </div>
@@ -687,7 +798,7 @@ export default function SSLToolkitClient() {
         )}
 
         {/* REFINED FOOTER */}
-        <div className="mt-8 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 opacity-60">
+        <div className="mt-10 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 opacity-60">
           <div className="flex items-center gap-6">
             <span className="text-[10px] font-black uppercase tracking-[0.2em]">SSL Toolkit v2.0</span>
             <div className="h-3 w-px bg-white/10 hidden md:block" />
@@ -788,9 +899,36 @@ function DownloadItem({ icon, type, name, onClick, action = "Download" }: { icon
           <span className="text-[11px] font-bold text-foreground truncate max-w-[200px] md:max-w-md">{name}</span>
         </div>
       </div>
-      <button className="text-[10px] font-black uppercase tracking-widest text-accent opacity-0 group-hover:opacity-100 transition-opacity ml-4">
+      <button className="text-[10px] font-black uppercase tracking-widest text-accent opacity-0 group-hover:opacity-100 transition-opacity ml-4" aria-label={`${action} ${name}`}>
         {action}
       </button>
+    </div>
+  );
+}
+
+function ChainNode({ label, cert, isLast }: { label: string; cert: CertOverview; isLast: boolean }) {
+  const daysLeft = cert.daysLeft;
+  const statusColor = daysLeft < 0 ? "text-red-400" : daysLeft < 30 ? "text-amber-400" : "text-emerald-400";
+  const borderColor = daysLeft < 0 ? "border-red-500/20" : daysLeft < 30 ? "border-amber-500/20" : "border-emerald-500/20";
+  return (
+    <div className="relative pb-6">
+      {!isLast && <div className="absolute left-[-9px] top-4 bottom-0 w-px bg-accent/20" />}
+      <div className={`relative flex items-start gap-4 p-4 rounded-2xl bg-black/40 border ${borderColor} hover:bg-black/60 transition-all ml-4`}>
+        <div className={`absolute left-[-25px] top-5 size-3 rounded-full border-2 ${borderColor} ${statusColor.replace("text", "bg")}/50`} />
+        <div className="flex flex-col gap-2 w-full">
+          <div className="flex items-center justify-between">
+            <span className="text-[8px] font-black uppercase tracking-widest text-muted/40">{label}</span>
+            <span className={`text-[9px] font-black ${statusColor}`}>
+              {daysLeft < 0 ? "EXPIRED" : `${daysLeft}d`}
+            </span>
+          </div>
+          <span className="text-xs font-black text-foreground break-all">{cert.domain}</span>
+          <div className="flex items-center gap-4 text-[9px] font-medium text-muted/60">
+            <span>Issuer: {cert.issuer}</span>
+            <span>Valid: {cert.validFrom} → {cert.validTo}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,377 +1,620 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { ToolContainer, ToolHeader } from "@/components/tools";
-import { 
-  Zap, 
-  Search, 
-  Trash2, 
-  Copy, 
-  CheckCircle2, 
-  Hash, 
+import {
+  Zap,
+  Copy,
+  CheckCircle2,
+  Hash,
   RefreshCcw,
   Sparkles,
   Fingerprint,
-  ChevronRight,
   Plus,
   X,
-  FileCode,
-  ShieldCheck,
-  Activity,
-  Workflow,
   Globe,
   Binary,
-  ChevronDown
+  Search,
+  Key,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  GripVertical,
+  Terminal,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import GlassCard from "@/components/ui/GlassCard";
+import { Reorder } from "framer-motion";
 import forge from "node-forge";
 
-/* ─────────────────────────────────────────────
-   Types & Utilities
-  ───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════
+   Types
+   ═══════════════════════════════════════════════ */
 
-type Category = "Encoding" | "Decoding" | "Hashing" | "Parsing" | "Networking";
+type Category = "Encoding" | "Decoding" | "Hashing";
 
-type OpType = 
-  | "base64-decode" | "base64-encode" 
-  | "hex-decode" | "hex-encode" 
-  | "url-decode" | "url-encode" 
-  | "json-prettify" | "json-minify" 
-  | "jwt-decode"
-  | "sha256" | "sha512" | "md5"
-  | "binary-decode" | "binary-encode"
-  | "ip-lookup";
+type OpType =
+  | "base64-encode" | "base64-decode"
+  | "hex-encode" | "hex-decode"
+  | "url-encode" | "url-decode"
+  | "html-encode" | "html-decode"
+  | "binary-encode" | "binary-decode"
+  | "md5" | "sha1" | "sha256" | "sha512"
+  | "hmac";
 
-interface Suggestion {
+interface OpDefinition {
   type: OpType;
   label: string;
   category: Category;
   icon: React.ElementType;
-  priority: number;
-  check: (data: string) => boolean;
+  hasConfig?: boolean;
+  configLabel?: string;
+  configPlaceholder?: string;
 }
 
-interface PipelineStep {
+interface ChainStep {
   id: string;
   type: OpType;
-  label: string;
+  config: Record<string, string>;
 }
 
-const DETECTORS = {
-  json: (s: string) => {
-    try {
-      const p = JSON.parse(s);
-      return typeof p === "object" && p !== null;
-    } catch { return false; }
-  },
-  base64: (s: string) => /^[A-Za-z0-9+/]*={0,2}$/.test(s) && s.length % 4 === 0 && s.length > 8,
-  hex: (s: string) => /^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0 && s.length > 4,
-  url: (s: string) => /%[0-9a-fA-F]{2}/.test(s),
-  jwt: (s: string) => /^([a-zA-Z0-9_=]+)\.([a-zA-Z0-9_=]+)\.([a-zA-Z0-9_\-\+\/=]*)$/.test(s),
-  binary: (s: string) => /^[01\s]+$/.test(s) && s.replace(/\s/g, "").length >= 8,
-  ip: (s: string) => /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(s.trim()),
+interface StepResult {
+  output: string;
+  error: string | null;
+}
+
+interface Preset {
+  label: string;
+  icon: React.ElementType;
+  steps: { type: OpType; label: string; config?: Record<string, string> }[];
+}
+
+/* ═══════════════════════════════════════════════
+   Operations Library
+   ═══════════════════════════════════════════════ */
+
+const CATEGORY_LABELS: Record<Category, string> = {
+  Encoding: "Encoding",
+  Decoding: "Decoding",
+  Hashing: "Hashing",
 };
 
-const ALL_OPERATIONS: Suggestion[] = [
-  { type: "jwt-decode", label: "Parse JWT", category: "Parsing", icon: ShieldCheck, priority: 10, check: DETECTORS.jwt },
-  { type: "json-prettify", label: "Prettify JSON", category: "Parsing", icon: FileCode, priority: 9, check: DETECTORS.json },
-  { type: "json-minify", label: "Minify JSON", category: "Parsing", icon: Trash2, priority: 8, check: DETECTORS.json },
-  { type: "base64-decode", label: "Base64 Decode", category: "Decoding", icon: RefreshCcw, priority: 9, check: DETECTORS.base64 },
-  { type: "hex-decode", label: "Hex Decode", category: "Decoding", icon: Binary, priority: 8, check: DETECTORS.hex },
-  { type: "url-decode", label: "URL Decode", category: "Decoding", icon: Globe, priority: 8, check: DETECTORS.url },
-  { type: "binary-decode", label: "Binary Decode", category: "Decoding", icon: Binary, priority: 7, check: DETECTORS.binary },
-  { type: "ip-lookup", label: "IP Lookup", category: "Networking", icon: Globe, priority: 10, check: DETECTORS.ip },
-  
-  // Encodings & Hashes (Fallback or Contextual)
-  { type: "base64-encode", label: "Base64 Encode", category: "Encoding", icon: RefreshCcw, priority: 5, check: (s) => s.length > 0 },
-  { type: "hex-encode", label: "Hex Encode", category: "Encoding", icon: Binary, priority: 4, check: (s) => s.length > 0 },
-  { type: "url-encode", label: "URL Encode", category: "Encoding", icon: Globe, priority: 3, check: (s) => s.length > 0 },
-  { type: "sha256", label: "SHA-256", category: "Hashing", icon: Hash, priority: 5, check: (s) => s.length > 0 },
-  { type: "md5", label: "MD5", category: "Hashing", icon: Hash, priority: 4, check: (s) => s.length > 0 },
+const ALL_OPS: OpDefinition[] = [
+  { type: "base64-encode", label: "Base64 Encode", category: "Encoding", icon: RefreshCcw },
+  { type: "base64-decode", label: "Base64 Decode", category: "Decoding", icon: RefreshCcw },
+  { type: "hex-encode", label: "Hex Encode", category: "Encoding", icon: Binary },
+  { type: "hex-decode", label: "Hex Decode", category: "Decoding", icon: Binary },
+  { type: "url-encode", label: "URL Encode", category: "Encoding", icon: Globe },
+  { type: "url-decode", label: "URL Decode", category: "Decoding", icon: Globe },
+  { type: "html-encode", label: "HTML Encode", category: "Encoding", icon: Eye },
+  { type: "html-decode", label: "HTML Decode", category: "Decoding", icon: EyeOff },
+  { type: "binary-encode", label: "Binary Encode", category: "Encoding", icon: Binary },
+  { type: "binary-decode", label: "Binary Decode", category: "Decoding", icon: Binary },
+  { type: "md5", label: "MD5", category: "Hashing", icon: Hash },
+  { type: "sha1", label: "SHA-1", category: "Hashing", icon: Fingerprint },
+  { type: "sha256", label: "SHA-256", category: "Hashing", icon: Fingerprint },
+  { type: "sha512", label: "SHA-512", category: "Hashing", icon: Fingerprint },
+  { type: "hmac", label: "HMAC", category: "Hashing", icon: Key, hasConfig: true, configLabel: "Secret Key", configPlaceholder: "Enter HMAC secret..." },
 ];
 
-/* ─────────────────────────────────────────────
-   Core Encoder Component
-  ───────────────────────────────────────────── */
+const CATEGORIES = Array.from(new Set(ALL_OPS.map((o) => o.category))) as Category[];
 
-export default function CoreEncoderClient() {
+/* ═══════════════════════════════════════════════
+   HTML Entity Helpers (browser-safe)
+   ═══════════════════════════════════════════════ */
 
-  const [input, setInput] = useState("");
-  const [pipeline, setPipeline] = useState<PipelineStep[]>([]);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+function htmlEncode(str: string): string {
+  const el = document.createElement("span");
+  el.appendChild(document.createTextNode(str));
+  return el.innerHTML;
+}
 
-  // 1. Core Processing Engine
-  const processedData = useMemo(() => {
-    let current = input;
-    let error: string | null = null;
+function htmlDecode(str: string): string {
+  const el = document.createElement("span");
+  el.innerHTML = str;
+  return el.textContent || "";
+}
 
-    for (const step of pipeline) {
-      try {
-        switch (step.type) {
-          case "base64-decode": current = atob(current); break;
-          case "base64-encode": current = btoa(current); break;
-          case "hex-decode": current = forge.util.hexToBytes(current); break;
-          case "hex-encode": current = forge.util.bytesToHex(current); break;
-          case "url-decode": current = decodeURIComponent(current); break;
-          case "url-encode": current = encodeURIComponent(current); break;
-          case "json-prettify": current = JSON.stringify(JSON.parse(current), null, 2); break;
-          case "json-minify": current = JSON.stringify(JSON.parse(current)); break;
-          case "jwt-decode": 
-            const parts = current.split('.');
-            current = JSON.stringify({
-              header: JSON.parse(atob(parts[0])),
-              payload: JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))),
-              signature: parts[2]
-            }, null, 2);
-            break;
-          case "sha256": 
-            const sha = forge.md.sha256.create();
-            sha.update(current);
-            current = sha.digest().toHex();
-            break;
-          case "sha512":
-            const sha512 = forge.md.sha512.create();
-            sha512.update(current);
-            current = sha512.digest().toHex();
-            break;
-          case "md5":
-            const md = forge.md.md5.create();
-            md.update(current);
-            current = md.digest().toHex();
-            break;
-          case "binary-decode":
-            const clean = current.replace(/\s/g, "");
-            let text = "";
-            for (let i = 0; i < clean.length; i += 8) {
-              text += String.fromCharCode(parseInt(clean.substr(i, 8), 2));
-            }
-            current = text;
-            break;
-          case "binary-encode":
-            let bin = "";
-            for (let i = 0; i < current.length; i++) {
-              bin += current.charCodeAt(i).toString(2).padStart(8, '0') + " ";
-            }
-            current = bin.trim();
-            break;
-        }
-      } catch {
-        error = `Error in ${step.label}: Invalid format`;
+/* ═══════════════════════════════════════════════
+   Pipeline Execution Engine
+   ═══════════════════════════════════════════════ */
+
+function executeStep(input: string, step: ChainStep): StepResult {
+  try {
+    const t = step.type;
+    if (!input && t !== "md5" && t !== "sha1" && t !== "sha256" && t !== "sha512" && t !== "hmac") {
+      return { output: input, error: null };
+    }
+    let result = input;
+
+    switch (t) {
+      case "base64-decode": result = atob(input); break;
+      case "base64-encode": result = btoa(input); break;
+      case "hex-decode": result = forge.util.hexToBytes(input); break;
+      case "hex-encode": result = forge.util.bytesToHex(input); break;
+      case "url-decode": result = decodeURIComponent(input); break;
+      case "url-encode": result = encodeURIComponent(input); break;
+      case "html-encode": result = htmlEncode(input); break;
+      case "html-decode": result = htmlDecode(input); break;
+      case "md5": { const md = forge.md.md5.create(); md.update(input); result = md.digest().toHex(); break; }
+      case "sha1": { const md = forge.md.sha1.create(); md.update(input); result = md.digest().toHex(); break; }
+      case "sha256": { const md = forge.md.sha256.create(); md.update(input); result = md.digest().toHex(); break; }
+      case "sha512": { const md = forge.md.sha512.create(); md.update(input); result = md.digest().toHex(); break; }
+      case "hmac": {
+        const key = step.config.key || "";
+        if (!key) return { output: "", error: "HMAC requires a secret key" };
+        const hmac = forge.hmac.create();
+        hmac.start("sha256", key);
+        hmac.update(input);
+        result = hmac.digest().toHex();
         break;
       }
+      case "binary-decode": {
+        const clean = input.replace(/\s/g, "");
+        let text = "";
+        for (let i = 0; i < clean.length; i += 8) {
+          text += String.fromCharCode(parseInt(clean.substring(i, i + 8), 2));
+        }
+        result = text;
+        break;
+      }
+      case "binary-encode": {
+        let bin = "";
+        for (let i = 0; i < input.length; i++) {
+          bin += input.charCodeAt(i).toString(2).padStart(8, "0") + " ";
+        }
+        result = bin.trim();
+        break;
+      }
+      default:
+        return { output: input, error: `Unknown operation: ${t}` };
     }
-    return { data: current, error };
-  }, [input, pipeline]);
+    return { output: result, error: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Operation failed";
+    return { output: input, error: msg };
+  }
+}
 
-  // 2. Action Logic
-  const addStep = (op: { type: OpType; label: string }) => {
-    setPipeline([...pipeline, { id: Math.random().toString(36).substr(2, 9), ...op }]);
-  };
+function runPipeline(input: string, steps: ChainStep[]): StepResult[] {
+  let current = input;
+  const results: StepResult[] = [];
+  for (const step of steps) {
+    const r = executeStep(current, step);
+    results.push(r);
+    if (r.error) {
+      // Subsequent steps receive the previous input unchanged so chain stays visible
+    } else {
+      current = r.output;
+    }
+  }
+  return results;
+}
 
-  const removeStep = (id: string) => {
-    setPipeline(pipeline.filter(s => s.id !== id));
-  };
+/* ═══════════════════════════════════════════════
+   Quick Decode Presets
+   ═══════════════════════════════════════════════ */
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(processedData.data);
-    setCopiedId("final");
-    setTimeout(() => setCopiedId(null), 2000);
-  };
+const PRESETS: Preset[] = [
+  { label: "Base64", icon: RefreshCcw, steps: [{ type: "base64-decode", label: "Base64 Decode" }] },
+  { label: "Hex", icon: Binary, steps: [{ type: "hex-decode", label: "Hex Decode" }] },
+  { label: "URL", icon: Globe, steps: [{ type: "url-decode", label: "URL Decode" }] },
+  {
+    label: "Base64 → Hex",
+    icon: Sparkles,
+    steps: [
+      { type: "base64-decode", label: "Base64 Decode" },
+      { type: "hex-encode", label: "Hex Encode" },
+    ],
+  },
+];
 
-  const matchingOps = useMemo(() => {
-    const data = processedData.data;
-    if (!data.trim()) return [];
-    return ALL_OPERATIONS.filter(op => op.check(data)).sort((a, b) => b.priority - a.priority);
-  }, [processedData.data]);
+/* ═══════════════════════════════════════════════
+   Main Component
+   ═══════════════════════════════════════════════ */
+
+export default function CoreEncoderClient() {
+  const [input, setInput] = useState("");
+  const [pipeline, setPipeline] = useState<ChainStep[]>([]);
+  const [copied, setCopied] = useState(false);
+  const [opSearch, setOpSearch] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  /* ── Pipeline Execution ───────────────────── */
+
+  const stepResults = useMemo(() => runPipeline(input, pipeline), [input, pipeline]);
+
+  const finalOutput = useMemo(() => {
+    if (stepResults.length === 0) return input;
+    return stepResults[stepResults.length - 1].output;
+  }, [stepResults, input]);
+
+  const hasError = useMemo(() => stepResults.some((r) => r.error), [stepResults]);
+
+  /* ── Step Handlers ────────────────────────── */
+
+  const addStep = useCallback((type: OpType, label: string, config?: Record<string, string>) => {
+    setPipeline((prev) => [
+      ...prev,
+      { id: Math.random().toString(36).substring(2, 11), type, config: config || {} },
+    ]);
+    setOpSearch("");
+  }, []);
+
+  const clearChainAndAdd = useCallback((preset: Preset) => {
+    setPipeline(
+      preset.steps.map((s) => ({
+        id: Math.random().toString(36).substring(2, 11),
+        type: s.type,
+        config: s.config || {},
+      }))
+    );
+    setOpSearch("");
+  }, []);
+
+  const removeStep = useCallback((id: string) => {
+    setPipeline((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  const updateStepConfig = useCallback((id: string, key: string, value: string) => {
+    setPipeline((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, config: { ...s.config, [key]: value } } : s))
+    );
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(finalOutput);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [finalOutput]);
+
+  const resetAll = useCallback(() => {
+    setInput("");
+    setPipeline([]);
+    setOpSearch("");
+  }, []);
+
+  /* ── Textarea auto-resize ─────────────────── */
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 360) + "px";
+  }, []);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 360) + "px";
+    }
+  }, [input]);
+
+  /* ── Cmd+K focus search ───────────────────── */
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  /* ── Operations Browser ───────────────────── */
+
+  const filteredOps = useMemo(() => {
+    if (!opSearch.trim()) return null;
+    const q = opSearch.toLowerCase();
+    return ALL_OPS.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) ||
+        o.type.toLowerCase().includes(q) ||
+        o.category.toLowerCase().includes(q)
+    );
+  }, [opSearch]);
+
+  const opDefMap = useMemo(() => {
+    const m = new Map<OpType, OpDefinition>();
+    ALL_OPS.forEach((o) => m.set(o.type, o));
+    return m;
+  }, []);
+
+  const activeStepWithConfig = useMemo(
+    () => pipeline.find((s) => opDefMap.get(s.type)?.hasConfig),
+    [pipeline, opDefMap]
+  );
+
+  /* ── Render ───────────────────────────────── */
 
   return (
     <ToolContainer categoryId="dev-automation">
       <ToolHeader
         title="Core Encoder"
-        description="High-fidelity data transformation workstation with intelligent heuristics."
+        description="Data transformation pipeline with live input & output."
         categoryId="dev-automation"
       />
 
-      <div className="flex flex-col gap-8 max-w-[80rem] mx-auto w-full pb-32">
-        
-        {/* INPUT AREA */}
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-accent/80">
-              <Zap className="size-4" /> Input Stream
-            </div>
-            <button 
-              onClick={() => { setInput(""); setPipeline([]); }}
-              className="px-4 py-2 rounded-xl bg-white/5 border border-white/5 text-[9px] font-black uppercase tracking-widest text-muted hover:text-red-400 transition-all"
-            >
-              Reset
-            </button>
-          </div>
-
-          <GlassCard className="relative overflow-hidden bg-black/40 border-accent/10 shadow-2xl">
-            <textarea 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Paste payload (Base64, JWT, JSON...) for transformation..."
-              className="w-full min-h-[160px] bg-transparent p-6 font-mono text-sm leading-relaxed outline-none resize-none placeholder:opacity-20 custom-scrollbar focus:bg-accent/[0.01] transition-all"
-              spellCheck={false}
-            />
-            
-            {/* Quick Actions Bar inside Input Block */}
-            <div className="flex items-center gap-2 p-3 bg-white/[0.03] border-t border-white/5 overflow-x-auto custom-scrollbar">
-              <span className="text-[8px] font-black uppercase tracking-widest text-muted/40 px-2 shrink-0">Quick Decode:</span>
-              {[
-                { type: "base64-decode", label: "Base64", icon: RefreshCcw },
-                { type: "jwt-decode", label: "JWT", icon: ShieldCheck },
-                { type: "json-prettify", label: "JSON", icon: FileCode },
-                { type: "hex-decode", label: "Hex", icon: Binary },
-                { type: "url-decode", label: "URL", icon: Globe },
-              ].map(op => (
-                <button
-                  key={op.type}
-                  onClick={() => addStep(op as any)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/5 text-[9px] font-black uppercase tracking-widest text-muted hover:text-accent hover:border-accent/40 transition-all whitespace-nowrap"
-                >
-                  <op.icon className="size-3" /> {op.label}
-                </button>
-              ))}
-            </div>
-          </GlassCard>
-        </section>
-
-        {/* PIPELINE & SUGGESTIONS */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* Active Pipeline (Left) */}
-          <div className="lg:col-span-8 flex flex-col gap-4">
-             <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-muted/40 ml-2">
-              <Workflow className="size-4" /> Processing Chain
-            </div>
-            <div className="flex flex-wrap items-center gap-3 min-h-[60px] p-4 rounded-2xl border border-dashed border-white/10 bg-white/[0.01]">
-              <AnimatePresence mode="popLayout">
-                {pipeline.length === 0 ? (
-                  <span className="text-[9px] font-black uppercase tracking-widest text-muted/20 ml-2">No operations active</span>
-                ) : (
-                  pipeline.map((step, idx) => (
-                    <motion.div
-                      key={step.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent/10 border border-accent/20 text-accent group"
-                    >
-                      <span className="text-[10px] font-black uppercase tracking-widest">{step.label}</span>
-                      <button onClick={() => removeStep(step.id)} className="text-accent/40 hover:text-red-400 transition-colors">
-                        <X className="size-3.5" />
-                      </button>
-                    </motion.div>
-                  ))
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-
-          {/* Suggestions (Right) */}
-          <div className="lg:col-span-4 flex flex-col gap-4">
-            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-accent/80 ml-2">
-              <Sparkles className="size-4" /> Smart Actions
-            </div>
-            <div className="flex flex-col gap-2">
-              <AnimatePresence mode="wait">
-                {matchingOps.length > 0 ? (
-                  <motion.div key="suggestions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 gap-2">
-                    {matchingOps.slice(0, 3).map((s, i) => (
-                      <button
-                        key={s.type + i}
-                        onClick={() => addStep(s)}
-                        className="flex items-center justify-between p-3 rounded-xl bg-accent/5 border border-accent/20 hover:bg-accent/10 transition-all group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <s.icon className="size-4 text-accent" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-foreground group-hover:text-accent transition-colors">
-                            {s.label}
-                          </span>
-                        </div>
-                        <Plus className="size-3.5 text-accent/40" />
-                      </button>
-                    ))}
-                  </motion.div>
-                ) : (
-                  <div className="p-8 text-center border border-white/5 rounded-2xl opacity-20">
-                    <span className="text-[9px] font-black uppercase tracking-widest">Awaiting Signal...</span>
-                  </div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        </div>
-
-        {/* RESULTS AREA */}
-        <section className="flex flex-col gap-4">
-           <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-muted/40 ml-2">
-            <Fingerprint className="size-4" /> Processed Output
-          </div>
-
-          <GlassCard className={`p-6 border-accent/20 bg-accent/[0.02] transition-all ${processedData.error ? "border-red-500/40 bg-red-500/5" : ""}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex flex-col">
-                <span className="text-[8px] font-black uppercase tracking-[0.4em] text-accent">State Transformation</span>
-                <h3 className="text-sm font-black text-foreground">Result Stream</h3>
+      <div className="flex flex-1 min-h-0 gap-5">
+        {/* ════════════ LEFT: DATA STREAM ════════════ */}
+        <div className="flex flex-col flex-1 min-w-0 gap-5">
+          {/* ── Input Card ── */}
+          <div className="toolsy-card flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Zap className="size-4 text-accent" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-foreground">Input</span>
               </div>
-              <button 
-                onClick={handleCopy}
-                disabled={!processedData.data}
-                className={`flex items-center gap-3 px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all
-                  ${copiedId === "final" ? "bg-emerald-500 text-white" : "bg-accent text-white hover:opacity-90 disabled:opacity-20"}`}
+              <button
+                onClick={resetAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest text-muted/50 hover:text-red-400 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
               >
-                {copiedId === "final" ? <CheckCircle2 className="size-4" /> : <Copy className="size-4" />}
-                {copiedId === "final" ? "Copied" : "Copy Output"}
+                <X className="size-3" />
+                Clear
               </button>
             </div>
 
-            {processedData.error ? (
-              <div className="p-8 text-center flex flex-col items-center gap-4 text-red-400">
-                <X className="size-10 opacity-50" />
-                <p className="font-mono text-xs uppercase tracking-widest">{processedData.error}</p>
-              </div>
-            ) : (
-              <div className="bg-black/60 rounded-2xl p-6 font-mono text-sm leading-relaxed break-all max-h-[400px] overflow-y-auto custom-scrollbar border border-white/5 text-blue-100/90 whitespace-pre-wrap selection:bg-accent/40">
-                {processedData.data || "Awaiting transformation..."}
-              </div>
-            )}
-          </GlassCard>
-        </section>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={handleInputChange}
+              placeholder="Paste payload for transformation…"
+              className="w-full min-h-[80px] bg-transparent p-5 font-mono text-sm leading-relaxed outline-none resize-none placeholder:opacity-15 custom-scrollbar focus:bg-accent/[0.01] transition-all flex-1"
+              spellCheck={false}
+              rows={3}
+            />
 
-        {/* ALL OPERATIONS (Categorized) */}
-        <section className="mt-8 flex flex-col gap-6">
-          <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-muted/40 ml-2">
-            <Search className="size-4" /> All Operations
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {Array.from(new Set(ALL_OPERATIONS.map(op => op.category))).map(cat => (
-              <div key={cat} className="flex flex-col gap-3">
-                <h4 className="text-[9px] font-black uppercase tracking-[0.3em] text-muted/30 ml-1">{cat}</h4>
-                <div className="flex flex-col gap-1.5">
-                  {ALL_OPERATIONS.filter(op => op.category === cat).map(op => (
-                    <button
-                      key={op.type}
-                      onClick={() => addStep(op)}
-                      className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.06] hover:border-accent/20 transition-all group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <op.icon className="size-3.5 text-muted/40 group-hover:text-accent transition-colors" />
-                        <span className="text-[10px] font-bold text-muted group-hover:text-foreground transition-colors">{op.label}</span>
-                      </div>
-                      <Plus className="size-3 text-muted/10 group-hover:text-accent transition-colors" />
-                    </button>
-                  ))}
+            {activeStepWithConfig && (
+              <div className="shrink-0 border-t border-border px-5 py-3 bg-white/[0.02]">
+                <div className="flex items-center gap-3">
+                  <Key className="size-3.5 text-muted/40 shrink-0" />
+                  <input
+                    type="text"
+                    value={activeStepWithConfig.config.key || ""}
+                    onChange={(e) => updateStepConfig(activeStepWithConfig.id, "key", e.target.value)}
+                    placeholder="Enter HMAC secret key…"
+                    className="bg-transparent text-xs font-mono text-foreground outline-none flex-1 placeholder:opacity-25"
+                    aria-label="HMAC Secret Key"
+                  />
                 </div>
               </div>
-            ))}
+            )}
           </div>
-        </section>
+
+          {/* ── Output Card ── */}
+          <div className="toolsy-card flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Terminal className="size-4 text-accent" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-foreground">Output</span>
+                {pipeline.length > 0 && (
+                  <span className="text-muted/40 font-mono text-[9px] tracking-normal bg-white/[0.04] px-2 py-0.5 rounded-md">
+                    {finalOutput.length} chars
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {hasError && pipeline.length > 0 && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 text-[7px] font-black uppercase tracking-widest">
+                    <AlertTriangle className="size-2.5" />
+                    Pipeline Error
+                  </span>
+                )}
+                <button
+                  onClick={handleCopy}
+                  disabled={!finalOutput}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all border ${
+                    copied
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                      : "text-muted/50 hover:text-foreground hover:bg-white/5 border-transparent hover:border-white/10"
+                  } disabled:opacity-20`}
+                >
+                  {copied ? <CheckCircle2 className="size-3" /> : <Copy className="size-3" />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+
+            <pre
+              className={`flex-1 min-h-0 p-5 font-mono text-sm leading-relaxed overflow-auto custom-scrollbar whitespace-pre-wrap break-all selection:bg-accent/30 transition-colors ${
+                hasError && pipeline.length > 0
+                  ? "text-red-300/70"
+                  : "text-blue-100/90"
+              }`}
+            >
+              {finalOutput || "Awaiting transformation…"}
+            </pre>
+          </div>
+        </div>
+
+        {/* ════════════ RIGHT: ENGINE PANEL ════════════ */}
+        <div className="flex flex-col w-[400px] shrink-0 gap-5">
+          {/* ── Processing Chain Card ── */}
+          <div className="toolsy-card flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Fingerprint className="size-4 text-accent" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-foreground">
+                  Processing Chain
+                </span>
+                {pipeline.length > 0 && (
+                  <span className="text-muted/40 font-mono text-[9px] tracking-normal bg-white/[0.04] px-2 py-0.5 rounded-md">
+                    {pipeline.length}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {pipeline.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 px-5 text-center">
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted/20">
+                  No steps in chain
+                </span>
+                <span className="text-[8px] text-muted/15 mt-1">
+                  Add operations below to build your pipeline
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col max-h-[220px] overflow-y-auto custom-scrollbar">
+                <Reorder.Group
+                  axis="y"
+                  values={pipeline}
+                  onReorder={setPipeline}
+                  className="flex flex-col gap-0.5 p-1.5"
+                >
+                  {pipeline.map((step, idx) => {
+                    const def = opDefMap.get(step.type);
+                    const result = stepResults[idx];
+                    return (
+                      <Reorder.Item
+                        key={step.id}
+                        value={step}
+                        className={`
+                          flex items-center gap-2 px-3 py-2 rounded-xl border cursor-grab active:cursor-grabbing select-none transition-colors
+                          ${result?.error
+                            ? "border-red-500/30 bg-red-500/8 text-red-300"
+                            : "border-border hover:border-accent/20 hover:bg-accent/[0.03] text-foreground"
+                          }
+                        `}
+                      >
+                        <GripVertical className="size-3.5 text-muted/30 shrink-0" />
+                        <div className="flex items-center justify-center size-6 rounded-lg bg-white/[0.04] shrink-0">
+                          {def && <def.icon className="size-3.5 text-accent" />}
+                        </div>
+                        <span className="flex-1 text-[11px] font-bold truncate">
+                          {def?.label || step.type}
+                        </span>
+                        {idx === 0 && (
+                          <span className="text-[7px] font-black uppercase tracking-widest text-accent/40 bg-accent/[0.06] px-1.5 py-0.5 rounded shrink-0">
+                            First
+                          </span>
+                        )}
+                        {result?.error && (
+                          <AlertTriangle className="size-3 text-red-400 shrink-0" />
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeStep(step.id); }}
+                          className="p-0.5 rounded hover:bg-white/10 transition-colors shrink-0"
+                          aria-label={`Remove ${def?.label || step.type}`}
+                        >
+                          <X className="size-3 text-muted/40 hover:text-red-400" />
+                        </button>
+                      </Reorder.Item>
+                    );
+                  })}
+                </Reorder.Group>
+              </div>
+            )}
+          </div>
+
+          {/* ── Operations Library Card ── */}
+          <div className="toolsy-card flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Search className="size-4 text-accent" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-foreground">
+                  Operations
+                </span>
+                <span className="text-muted/30 font-mono text-[8px]">({ALL_OPS.length})</span>
+              </div>
+            </div>
+
+            <div className="shrink-0 px-4 pt-3 pb-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3 text-muted/30 pointer-events-none" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={opSearch}
+                  onChange={(e) => setOpSearch(e.target.value)}
+                  placeholder="Search…  (⌘K)"
+                  className="w-full h-8 bg-black/40 border border-border-subtle pl-9 pr-3 rounded-xl text-[11px] font-mono outline-none placeholder:opacity-25 focus:border-accent/40 transition-all"
+                />
+                {opSearch && (
+                  <button
+                    onClick={() => setOpSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted/30 hover:text-foreground transition-colors"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-4">
+              {opSearch.trim() ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {filteredOps!.length === 0 ? (
+                    <span className="text-[9px] text-muted/30 py-4 text-center w-full">No matching operations</span>
+                  ) : (
+                    filteredOps!.map((op) => (
+                      <button
+                        key={op.type}
+                        onClick={() => addStep(op.type, op.label)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.03] border border-border-subtle hover:bg-accent/[0.08] hover:border-accent/25 transition-all group text-[9px] font-semibold text-muted hover:text-accent"
+                        title={`${op.label} — ${op.category}`}
+                      >
+                        <op.icon className="size-3 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
+                        <span className="whitespace-nowrap">{op.label}</span>
+                        <Plus className="size-2.5 opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {CATEGORIES.map((cat) => (
+                    <div key={cat}>
+                      <span className="text-[7px] font-black uppercase tracking-[0.2em] text-muted/30 block mb-1.5">
+                        {CATEGORY_LABELS[cat]}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {ALL_OPS.filter((o) => o.category === cat).map((op) => (
+                          <button
+                            key={op.type}
+                            onClick={() => addStep(op.type, op.label)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.03] border border-border-subtle hover:bg-accent/[0.08] hover:border-accent/25 transition-all group text-[9px] font-semibold text-muted hover:text-accent"
+                            title={op.label}
+                          >
+                            <op.icon className="size-3 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
+                            <span className="whitespace-nowrap">{op.label}</span>
+                            <Plus className="size-2.5 opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Quick Presets Card ── */}
+          <div className="toolsy-card flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="size-4 text-accent" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-foreground">
+                  Quick Presets
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 px-4 py-3">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  onClick={() => clearChainAndAdd(p)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle bg-white/[0.02] hover:bg-white/[0.06] hover:border-accent/25 transition-all text-[8px] font-black uppercase tracking-widest text-muted/60 hover:text-accent"
+                  title={`${p.steps.map((s) => s.label).join(" → ")}`}
+                >
+                  <p.icon className="size-2.5" />
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </ToolContainer>
   );

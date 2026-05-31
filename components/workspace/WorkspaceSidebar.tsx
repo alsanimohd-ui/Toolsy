@@ -9,11 +9,13 @@ import {
   LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
+  X,
   ExternalLink,
 } from "lucide-react";
 import { categoryList, tools, type CategoryId, type Tool } from "@/lib/tools";
 import { useWorkspace } from "./WorkspaceContext";
 import { MiIcon } from "@/components/ui/MiLogo";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 /* ───────────────────────────────────────────────────────────────────── */
 /*  Category Icon Map                                                    */
@@ -33,38 +35,43 @@ function ToolItem({
   tool,
   isActive,
   collapsed,
+  onActivate,
 }: {
   tool: Tool;
   isActive: boolean;
   collapsed: boolean;
+  onActivate?: () => void;
 }) {
   const { openTool } = useWorkspace();
 
   const handleClick = (e: React.MouseEvent) => {
-    if (tool.isExternal) return; // Let the link navigate naturally
+    if (tool.isExternal) return;
     e.preventDefault();
     openTool({
       slug: tool.slug,
       categoryId: tool.categoryId,
       route: tool.route,
     });
+    onActivate?.();
   };
 
   return (
-    <motion.button
-      onClick={handleClick}
-      whileHover={{ x: 2 }}
-      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      className={`
-        group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
-        text-left transition-all duration-200 text-xs
-        ${isActive
-          ? "bg-accent/15 text-accent font-black border border-accent/25"
-          : "text-muted hover:text-foreground hover:bg-white/5 font-semibold border border-transparent"
-        }
-      `}
-      title={collapsed ? tool.name : undefined}
-    >
+      <motion.button
+        onClick={handleClick}
+        whileHover={{ x: 2 }}
+        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+        className={`
+          group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
+          text-left transition-all duration-200 text-xs
+          ${isActive
+            ? "bg-accent/15 text-accent font-black border border-accent/25"
+            : "text-muted hover:text-foreground hover:bg-white/5 font-semibold border border-transparent"
+          }
+        `}
+        title={collapsed ? tool.name : tool.name}
+        aria-label={tool.name}
+        aria-current={isActive ? "page" : undefined}
+      >
       {/* Active indicator */}
       {isActive && (
         <motion.div
@@ -118,9 +125,11 @@ function ToolItem({
 function CategorySection({
   categoryId,
   collapsed,
+  onActivate,
 }: {
   categoryId: CategoryId;
   collapsed: boolean;
+  onActivate?: () => void;
 }) {
   const { expandedCategory, setExpandedCategory, activeTool } = useWorkspace();
   const category = categoryList.find((c) => c.id === categoryId)!;
@@ -136,18 +145,20 @@ function CategorySection({
   return (
     <div className="flex flex-col gap-0.5">
       {/* Category header */}
-      <button
-        onClick={toggleExpanded}
-        className={`
-          group flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl
-          transition-all duration-200
-          ${hasActiveChild
-            ? "text-foreground"
-            : "text-muted hover:text-foreground"
-          }
-        `}
-        title={collapsed ? category.label : undefined}
-      >
+        <button
+          onClick={toggleExpanded}
+          className={`
+            group flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl
+            transition-all duration-200
+            ${hasActiveChild
+              ? "text-foreground"
+              : "text-muted hover:text-foreground"
+            }
+          `}
+          title={collapsed ? category.label : undefined}
+          aria-label={category.label}
+          aria-expanded={isExpanded}
+        >
         {/* Category icon */}
         <div
           className="shrink-0 flex items-center justify-center size-7 rounded-xl transition-all duration-200"
@@ -196,6 +207,7 @@ function CategorySection({
                     tool={tool}
                     isActive={activeTool?.slug === tool.slug}
                     collapsed={false}
+                    onActivate={onActivate}
                   />
                 ))}
               </div>
@@ -213,6 +225,7 @@ function CategorySection({
               tool={tool}
               isActive={activeTool?.slug === tool.slug}
               collapsed={true}
+              onActivate={onActivate}
             />
           ))}
         </div>
@@ -225,21 +238,50 @@ function CategorySection({
 /*  Main Sidebar                                                         */
 /* ───────────────────────────────────────────────────────────────────── */
 
-export default function WorkspaceSidebar() {
+export default function WorkspaceSidebar({
+  mobileOpen,
+  onMobileClose,
+}: {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}) {
   const { activeTool, closeActiveTool, sidebarCollapsed, setSidebarCollapsed } =
     useWorkspace();
 
+  const handleToolClick = () => {
+    onMobileClose?.();
+  };
+
+  const focusTrapRef = useFocusTrap(!!mobileOpen);
+
   return (
-    <motion.aside
-      animate={{ width: sidebarCollapsed ? 64 : 240 }}
-      transition={{ type: "spring", stiffness: 400, damping: 35 }}
-      className={`
-        relative flex flex-col h-full shrink-0
-        border-r border-white/5
-        bg-black/20 backdrop-blur-xl
-        overflow-hidden
-      `}
-    >
+    <>
+      {/* Mobile overlay backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+
+      <motion.aside
+        animate={{
+          width: sidebarCollapsed ? 64 : 240,
+          x: mobileOpen ? 0 : undefined,
+        }}
+        initial={false}
+        transition={{ type: "spring", stiffness: 400, damping: 35 }}
+        className={`
+          relative flex flex-col h-full shrink-0
+          border-r border-white/5
+          bg-black/20 backdrop-blur-xl
+          overflow-hidden
+          max-md:fixed max-md:left-0 max-md:top-0 max-md:z-40 max-md:h-dvh
+          ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}
+          max-md:transition-transform max-md:duration-300 max-md:ease-in-out
+        `}
+      >
+      <div ref={focusTrapRef} className="flex flex-col h-full">
       {/* ── Header ── */}
       <div
         className={`
@@ -276,10 +318,10 @@ export default function WorkspaceSidebar() {
       </div>
 
       {/* ── Navigation ── */}
-      <nav className="flex flex-col flex-1 gap-1 p-2 overflow-y-auto overflow-x-hidden custom-scrollbar">
+      <nav className="flex flex-col flex-1 gap-1 p-2 overflow-y-auto overflow-x-hidden custom-scrollbar" aria-label="Tool navigation">
         {/* All Tools / Grid View */}
         <button
-          onClick={closeActiveTool}
+          onClick={() => { closeActiveTool(); handleToolClick(); }}
           className={`
             group flex items-center gap-3 w-full px-3 py-2.5 rounded-xl
             transition-all duration-200 border
@@ -289,6 +331,8 @@ export default function WorkspaceSidebar() {
             }
           `}
           title={sidebarCollapsed ? "All Modules" : undefined}
+          aria-label="All Modules"
+          aria-current={!activeTool ? "page" : undefined}
         >
           <LayoutGrid
             className={`shrink-0 transition-colors duration-200 ${
@@ -309,6 +353,7 @@ export default function WorkspaceSidebar() {
             key={cat.id}
             categoryId={cat.id}
             collapsed={sidebarCollapsed}
+            onActivate={handleToolClick}
           />
         ))}
       </nav>
@@ -324,6 +369,19 @@ export default function WorkspaceSidebar() {
           </div>
         </div>
       )}
+    </div>
+    {/* Mobile close button */}
+    {mobileOpen && (
+      <button
+        data-sidebar-close
+        onClick={onMobileClose}
+        className="absolute top-3 right-3 z-50 flex md:hidden items-center justify-center size-8 rounded-xl text-muted hover:text-foreground hover:bg-white/5 transition-all"
+        aria-label="Close sidebar"
+      >
+        <X className="size-4" />
+      </button>
+    )}
     </motion.aside>
+    </>
   );
 }

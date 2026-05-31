@@ -99,7 +99,7 @@ export default function WorkspacePanel({ children }: WorkspacePanelProps) {
   }, [activeTool?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="workspace-panel relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+    <div id="main-content" role="main" className="workspace-panel relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
       <AnimatePresence mode="wait" initial={false}>
         {activeTool && ToolComponent ? (
           <motion.div

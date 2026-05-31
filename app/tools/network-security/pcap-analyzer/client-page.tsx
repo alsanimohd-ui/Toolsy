@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import { 
   ShieldCheck, 
   Search, 
@@ -20,9 +20,11 @@ import {
   Fingerprint,
   ChevronDown,
   Trash2,
-  MousePointer2
+  MousePointer2,
+  FileSpreadsheet
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { FixedSizeList as List } from "react-window";
 import { ToolContainer, ToolHeader, ToolButton } from "@/components/tools";
 import GlassCard from "@/components/ui/GlassCard";
 
@@ -466,37 +468,6 @@ export default function PcapAnalyzerClient() {
     });
   }, [result, activeProtoFilters, filterQuery]);
 
-  const highlight = (text: string, query: string) => {
-    if (!query.trim()) return text;
-    const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1 && !t.includes(":"));
-    if (terms.length === 0) return text;
-
-    let result: (string | React.ReactNode)[] = [text];
-    
-    terms.forEach(term => {
-      const nextResult: (string | React.ReactNode)[] = [];
-      result.forEach(part => {
-        if (typeof part !== "string") {
-          nextResult.push(part);
-          return;
-        }
-        
-        const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, "gi");
-        const splits = part.split(regex);
-        splits.forEach((split, idx) => {
-          if (split.toLowerCase() === term.toLowerCase()) {
-            nextResult.push(<mark key={`${term}-${idx}`} className="bg-accent/40 text-white rounded-sm px-0.5">{split}</mark>);
-          } else if (split) {
-            nextResult.push(split);
-          }
-        });
-      });
-      result = nextResult;
-    });
-    
-    return result;
-  };
-
   const handleSelectPacket = (p: Packet) => {
     if (!p.layers) {
       p.layers = PcapParser.decodeFullPacket(p);
@@ -510,6 +481,83 @@ export default function PcapAnalyzerClient() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
   }, [result]);
+
+  const exportCSV = useCallback(() => {
+    const data = filteredPackets.length > 0 ? filteredPackets : result?.packets;
+    if (!data || data.length === 0) return;
+    const headers = ["ID", "Timestamp", "Protocol", "Source", "Dest", "Source Port", "Dest Port", "Size", "Flags", "Summary"];
+    const rows = data.map(p => [
+      p.id, p.timestamp.toFixed(6), p.protocol, p.source, p.dest,
+      p.sourcePort ?? "", p.destPort ?? "", p.len,
+      p.flags?.join(" ") ?? "", `"${p.summary.replace(/"/g, '""')}"`
+    ]);
+    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pcap-export-${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [filteredPackets, result]);
+
+  const visiblePackets = useMemo(
+    () => view === "FEED" ? filteredPackets : [],
+    [view, filteredPackets]
+  );
+
+  const listHeight = useMemo(
+    () => Math.min((view === "FEED" ? visiblePackets.length : 0) * 36 + 2, 750),
+    [view, visiblePackets.length]
+  );
+
+  const PacketRow = useCallback(
+    ({ index, style, data }: { index: number; style: React.CSSProperties; data: Packet[] }) => {
+      const p = data[index];
+      if (!p) return null;
+      return (
+        <div
+          style={style}
+          onClick={() => handleSelectPacket(p)}
+          className={`group flex items-center gap-4 px-6 border-b border-white/[0.02] transition-all cursor-pointer ${
+            selectedPacket?.id === p.id
+              ? "bg-accent/15 border-l-2 border-l-accent shadow-[inset_4px_0_12px_rgba(var(--accent-rgb),0.1)]"
+              : "hover:bg-white/[0.03] border-l-2 border-l-transparent"
+          }`}
+        >
+          <div className="w-12 text-[10px] font-mono text-muted/30 tabular-nums shrink-0">
+            {p.id}
+          </div>
+          <div className={`w-16 shrink-0 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-center ${
+            p.protocol === "TCP" ? "text-blue-400" :
+            p.protocol === "UDP" ? "text-amber-400" :
+            p.protocol === "HTTP" || p.protocol === "DNS" ? "text-emerald-400" :
+            p.protocol === "ICMP" ? "text-red-400" :
+            "text-muted/60"
+          }`}>
+            {p.protocol}
+          </div>
+          <div className="flex-1 flex items-center gap-3 overflow-hidden min-w-0">
+            <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[130px] shrink-0">
+              {p.sourcePort ? `${p.source}:${p.sourcePort}` : p.source}
+            </span>
+            <ArrowRight className="size-3 text-muted/10 shrink-0" />
+            <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[130px] shrink-0">
+              {p.destPort ? `${p.dest}:${p.destPort}` : p.dest}
+            </span>
+          </div>
+          <div className="flex items-center justify-end gap-4 shrink-0">
+            <span className="text-[10px] font-bold text-accent/60 font-mono truncate max-w-[100px] text-right">{p.summary}</span>
+            <span className="text-[9px] font-black text-muted/20 tabular-nums w-12 text-right">{p.len}B</span>
+          </div>
+        </div>
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedPacket]
+  );
 
   const renderHexView = (data: Uint8Array) => {
     const hex = [];
@@ -562,7 +610,7 @@ export default function PcapAnalyzerClient() {
         categoryId="network-security"
       />
 
-      <div className="flex flex-col gap-8 max-w-[96rem] mx-auto w-full">
+      <div className="flex flex-col gap-6">
         
         {/* INGESTION AREA */}
         {!result && !isAnalyzing && (
@@ -640,7 +688,7 @@ export default function PcapAnalyzerClient() {
           <div className="flex flex-col gap-8 animate-fadeIn">
             
             {/* TOP STATS BAR */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
               {[
                 { label: "Total Packets", value: result.stats.totalPackets.toLocaleString(), icon: Layers, color: "text-blue-400" },
                 { label: "Unique Hosts", value: result.stats.hosts.size, icon: Globe, color: "text-emerald-400" },
@@ -660,7 +708,7 @@ export default function PcapAnalyzerClient() {
             </div>
 
             {/* MAIN WORKSPACE GRID */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
               
               {/* LEFT: FILTERS & PROTOCOLS */}
               <div className="lg:col-span-3 flex flex-col gap-6">
@@ -759,118 +807,117 @@ export default function PcapAnalyzerClient() {
                         {f}
                       </button>
                     ))}
+                    <ToolButton variant="secondary" size="sm" onClick={exportCSV} className="ml-auto" disabled={filteredPackets.length === 0}>
+                      <FileSpreadsheet className="size-3 mr-1.5" /> Export CSV
+                    </ToolButton>
                   </div>
                 </div>
 
 
-                {/* Packet List with TRUE Virtualization */}
+                {/* Packet List with TRUE Virtualization (react-window) */}
                 <div className="relative toolsy-card bg-black/20 border-white/5 overflow-hidden">
                   <div className="flex items-center gap-4 px-6 py-3 border-b border-white/5 bg-white/[0.02] text-[9px] font-black uppercase tracking-widest text-muted/60">
-                    <div className="w-10">ID</div>
-                    <div className="w-12 text-center">Proto</div>
+                    <div className="w-12">ID</div>
+                    <div className="w-16 text-center">Protocol</div>
                     <div className="flex-1">Traffic Flow (Source → Destination)</div>
-                    <div className="w-[180px] text-right">Operational Summary</div>
+                    <div className="w-[180px] text-right">Size / Summary</div>
                   </div>
                   
-                  <div className="flex flex-col max-h-[750px] overflow-y-auto custom-scrollbar relative">
-                    {view === "FEED" && filteredPackets.slice(0, 500).map((p) => (
-                      <div 
-                        key={p.id}
-                        onClick={() => handleSelectPacket(p)}
-                        className={`group flex items-center gap-4 px-6 py-2 border-b border-white/[0.02] transition-all cursor-pointer ${selectedPacket?.id === p.id ? 'bg-accent/15 border-l-2 border-l-accent shadow-[inset_4px_0_12px_rgba(var(--accent-rgb),0.1)]' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'}`}
+                  <div className="relative" style={{ height: listHeight }}>
+                    {view === "FEED" && visiblePackets.length > 0 && (
+                      <List
+                        height={listHeight}
+                        itemCount={visiblePackets.length}
+                        itemSize={36}
+                        width="100%"
+                        overscanCount={20}
+                        itemData={visiblePackets}
                       >
-                        <div className="w-10 text-[10px] font-mono text-muted/30 tabular-nums">
-                          {p.id}
-                        </div>
-                        
-                        <div className={`w-12 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-center ${
-                          p.protocol === 'TCP' ? 'text-blue-400' :
-                          p.protocol === 'UDP' ? 'text-amber-400' :
-                          p.protocol === 'HTTP' || p.protocol === 'DNS' ? 'text-emerald-400' :
-                          'text-muted/60'
-                        }`}>
-                          {p.protocol}
-                        </div>
+                        {PacketRow}
+                      </List>
+                    )}
 
-                        <div className="flex-1 flex items-center gap-4 overflow-hidden">
-                          <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[140px]">{highlight(p.source, filterQuery)}</span>
-                          <ArrowRight className="size-3 text-muted/10 shrink-0" />
-                          <span className="text-[11px] font-mono font-bold text-foreground/70 truncate tabular-nums w-[140px]">{highlight(p.dest, filterQuery)}</span>
+                    {view === "FEED" && visiblePackets.length === 0 && (
+                      <div className="flex flex-col items-center justify-center gap-4 py-20 border-2 border-dashed border-white/5 rounded-[32px]">
+                        <FileSearch className="size-10 text-muted/10" />
+                        <div className="flex flex-col gap-1 text-center">
+                          <p className="text-[10px] font-black text-muted/30 uppercase tracking-[0.2em]">No Matching Packets</p>
+                          <p className="text-[8px] font-bold text-muted/20 uppercase tracking-widest">Adjust filters or query to widen results</p>
                         </div>
-
-                        <div className="flex items-center justify-end gap-4 min-w-[180px]">
-                          <span className="text-[10px] font-bold text-accent/60 font-mono truncate max-w-[120px]">{highlight(p.summary, filterQuery)}</span>
-                          <span className="text-[9px] font-black text-muted/20 tabular-nums w-8 text-right">{p.len}B</span>
-                        </div>
-                      </div>
-                    ))}
-
-                    {filteredPackets.length > 500 && view === "FEED" && (
-                      <div className="p-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted/30 italic">
-                        Viewing first 500 results. Use filters to narrow down search.
                       </div>
                     )}
 
-                    {view === "CONV" && result.conversations.map((c, i) => (
-                      <div 
-                        key={i} 
-                        onClick={() => {
-                          setFilterQuery(`ip:${c.source} ip:${c.dest}`);
-                          setView("FEED");
-                        }}
-                        className="px-6 py-4 flex items-center justify-between border-b border-white/[0.02] hover:bg-white/[0.02] transition-all cursor-pointer group/conv"
-                      >
-                        <div className="flex items-center gap-6">
-                          <div className="size-8 rounded-lg bg-accent/5 flex items-center justify-center border border-accent/10">
-                            <Network className="size-4 text-accent" />
+                    {view === "CONV" && (
+                      <div className="flex flex-col max-h-[750px] overflow-y-auto custom-scrollbar">
+                        {result.conversations.length === 0 ? (
+                          <div className="py-20 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-white/5 rounded-[32px]">
+                            <Network className="size-8 text-muted/10" />
+                            <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No Conversations Found</span>
                           </div>
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-4 text-sm font-mono">
-                              <span className="text-foreground/80 group-hover/conv:text-accent transition-colors">{c.source}</span>
-                              <ArrowRight className="size-3 text-muted/20" />
-                              <span className="text-foreground/80 group-hover/conv:text-accent transition-colors">{c.dest}</span>
+                        ) : result.conversations.map((c, i) => (
+                          <div 
+                            key={i} 
+                            onClick={() => {
+                              setFilterQuery(`ip:${c.source} ip:${c.dest}`);
+                              setView("FEED");
+                            }}
+                            className="px-6 py-4 flex items-center justify-between border-b border-white/[0.02] hover:bg-white/[0.02] transition-all cursor-pointer group/conv"
+                          >
+                            <div className="flex items-center gap-6">
+                              <div className="size-8 rounded-lg bg-accent/5 flex items-center justify-center border border-accent/10">
+                                <Network className="size-4 text-accent" />
+                              </div>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-4 text-sm font-mono">
+                                  <span className="text-foreground/80 group-hover/conv:text-accent transition-colors">{c.source}</span>
+                                  <ArrowRight className="size-3 text-muted/20" />
+                                  <span className="text-foreground/80 group-hover/conv:text-accent transition-colors">{c.dest}</span>
+                                </div>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted/40">{c.protocol} Stream • {c.packetCount} Packets</span>
+                              </div>
                             </div>
-                            <span className="text-[9px] font-black uppercase tracking-widest text-muted/40">{c.protocol} Stream • {c.packetCount} Packets</span>
+                            <div className="flex items-center gap-8">
+                              <div className="flex flex-col items-end">
+                                <span className="text-[11px] font-bold text-foreground/60">{c.duration.toFixed(3)}s</span>
+                                <span className="text-[9px] font-black uppercase text-muted/30">Duration</span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-[11px] font-bold text-foreground/60">{(c.byteCount / 1024).toFixed(1)} KB</span>
+                                <span className="text-[9px] font-black uppercase text-muted/30">Volume</span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-8">
-                          <div className="flex flex-col items-end">
-                            <span className="text-[11px] font-bold text-foreground/60">{c.duration.toFixed(3)}s</span>
-                            <span className="text-[9px] font-black uppercase text-muted/30">Duration</span>
-                          </div>
-                          <div className="flex flex-col items-end">
-                            <span className="text-[11px] font-bold text-foreground/60">{(c.byteCount / 1024).toFixed(1)} KB</span>
-                            <span className="text-[9px] font-black uppercase text-muted/30">Volume</span>
-                          </div>
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
 
-                    {view === "IOCS" && result.iocs.map((ioc, i) => (
-                      <div key={i} className="px-6 py-4 flex items-center justify-between group hover:bg-white/[0.02] border-b border-white/[0.02]">
-                        <div className="flex items-center gap-4">
-                          <div className={`size-10 rounded-xl flex items-center justify-center border ${
-                            ioc.type === 'IP' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                            ioc.type === 'URL' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                            'bg-purple-500/10 border-purple-500/20 text-purple-400'
-                          }`}>
-                            <Fingerprint className="size-5" />
+                    {view === "IOCS" && (
+                      <div className="flex flex-col max-h-[750px] overflow-y-auto custom-scrollbar">
+                        {result.iocs.length === 0 ? (
+                          <div className="py-20 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-white/5 rounded-[32px]">
+                            <Fingerprint className="size-8 text-muted/10" />
+                            <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No Indicators Found</span>
                           </div>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-muted">{ioc.type}</span>
-                            <span className="text-sm font-mono text-foreground font-medium">{ioc.value}</span>
+                        ) : result.iocs.map((ioc, i) => (
+                          <div key={i} className="px-6 py-4 flex items-center justify-between group hover:bg-white/[0.02] border-b border-white/[0.02]">
+                            <div className="flex items-center gap-4">
+                              <div className={`size-10 rounded-xl flex items-center justify-center border ${
+                                ioc.type === 'IP' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                ioc.type === 'URL' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                'bg-purple-500/10 border-purple-500/20 text-purple-400'
+                              }`}>
+                                <Fingerprint className="size-5" />
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted">{ioc.type}</span>
+                                <span className="text-sm font-mono text-foreground font-medium">{ioc.value}</span>
+                              </div>
+                            </div>
+                            <div className="text-[10px] font-black text-muted opacity-40 uppercase group-hover:text-accent transition-colors">
+                              Seen {ioc.count}x
+                            </div>
                           </div>
-                        </div>
-                        <div className="text-[10px] font-black text-muted opacity-40 uppercase group-hover:text-accent transition-colors">
-                          Seen {ioc.count}x
-                        </div>
-                      </div>
-                    ))}
-
-                    {filteredPackets.length === 0 && view === "FEED" && (
-                      <div className="py-20 flex flex-col items-center justify-center gap-4 text-muted/40">
-                        <FileSearch className="size-12" />
-                        <p className="text-xs font-bold uppercase tracking-widest">No matching packets found</p>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -891,11 +938,12 @@ export default function PcapAnalyzerClient() {
                   </div>
 
                   {!selectedPacket ? (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 text-center opacity-30">
-                      <MousePointer2 className="size-10" />
-                      <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed">
-                        Select a packet from the feed to decode layers and inspect payload hex.
-                      </p>
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 text-center border-2 border-dashed border-white/5 rounded-[32px] mx-4 my-4">
+                      <MousePointer2 className="size-10 text-muted/10" />
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[10px] font-black text-muted/30 uppercase tracking-[0.2em]">No Packet Selected</p>
+                        <p className="text-[8px] font-bold text-muted/20 uppercase tracking-widest">Click any row in the traffic feed to inspect</p>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col overflow-hidden">
@@ -945,13 +993,13 @@ export default function PcapAnalyzerClient() {
             </div>
 
             {/* ANALYTICS INSIGHTS DOCS */}
-            <section className="mt-8 pt-12 border-t border-white/5 flex flex-col gap-12">
+            <section className="mt-10 pt-8 border-t border-white/5 flex flex-col gap-8">
               <div className="flex flex-col gap-2">
                 <h3 className="text-sm font-black uppercase tracking-[0.3em] text-foreground">Operational Intelligence</h3>
                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Traffic Analysis & Threat Investigation Guidance</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 {[
                   {
                     title: "Advanced Triage",

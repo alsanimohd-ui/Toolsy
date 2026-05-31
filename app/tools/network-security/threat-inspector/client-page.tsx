@@ -192,14 +192,14 @@ export default function ThreatInspectorClient() {
         categoryId="network-security"
       />
 
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-6">
         
         {/* Cinematic Dropzone */}
         {!file || isAnalyzing ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`relative group h-[400px] flex flex-col items-center justify-center rounded-[32px] border-2 border-dashed transition-all duration-700
+            className={`relative group h-[320px] flex flex-col items-center justify-center rounded-[32px] border-2 border-dashed transition-all duration-700
               ${dragActive ? "border-accent bg-accent/5 scale-[0.99]" : "border-white/5 bg-black/20 hover:border-white/10"}`}
             onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
             onDragLeave={() => setDragActive(false)}
@@ -256,11 +256,11 @@ export default function ThreatInspectorClient() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col gap-8"
+              className="flex flex-col gap-6"
             >
               
               {/* Top Banner - Verdict & Summary */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                 
                 {/* File Identity */}
                 <GlassCard className="lg:col-span-8 flex flex-col gap-8 p-10">
@@ -400,7 +400,7 @@ export default function ThreatInspectorClient() {
               </div>
 
               {/* Artifacts Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 
                 {/* Network Artifacts (IOCs) */}
                 <GlassCard className="flex flex-col gap-6 lg:col-span-1">
@@ -536,9 +536,10 @@ export default function ThreatInspectorClient() {
                         </div>
                       ))
                     ) : (
-                      <div className="flex-1 flex flex-col items-center justify-center py-20 opacity-10 gap-3 grayscale">
-                        <Database className="size-8" />
-                        <span className="italic text-[10px] font-black uppercase tracking-widest">No printable sequences</span>
+                      <div className="flex-1 flex flex-col items-center justify-center py-20 gap-4 border-2 border-dashed border-white/5 rounded-[32px]">
+                        <Database className="size-10 text-muted/10" />
+                        <span className="text-[10px] font-black text-muted/30 uppercase tracking-[0.2em]">No Printable Sequences</span>
+                        <span className="text-[8px] font-bold text-muted/20 uppercase tracking-widest">Strings extracted from binary data will appear here</span>
                       </div>
                     )}
                   </div>
@@ -590,13 +591,13 @@ export default function ThreatInspectorClient() {
         </AnimatePresence>
 
         {/* Refined Documentation System */}
-        <section className="mt-16 pt-12 border-t border-white/5 flex flex-col gap-12">
+        <section className="mt-10 pt-8 border-t border-white/5 flex flex-col gap-8">
           <div className="flex flex-col gap-2 text-center md:text-left">
             <h3 className="text-sm font-black uppercase tracking-[0.3em] text-foreground">Forensic Documentation</h3>
             <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Malware Triage & Investigation Protocol</p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <GlassCard className="flex flex-col gap-6 p-8 bg-white/[0.01]">
               <div className="flex items-center gap-3">
                 <div className="size-8 rounded-lg bg-accent/10 flex items-center justify-center border border-accent/20">

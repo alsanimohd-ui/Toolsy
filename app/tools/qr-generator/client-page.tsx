@@ -297,7 +297,7 @@ export default function QRGeneratorClient() {
         categoryId="data-analytics"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
         
         {/* Left Side: Controls */}
         <div className="lg:col-span-7 flex flex-col gap-6">
@@ -347,7 +347,7 @@ export default function QRGeneratorClient() {
                 </div>
 
                 {/* Dynamic Form */}
-                <GlassCard className="p-8 flex flex-col gap-8 bg-white/[0.01]">
+                <GlassCard className="p-6 flex flex-col gap-6 bg-white/[0.01]">
                   <div className="flex items-center gap-3 border-b border-white/5 pb-6">
                     <div className="size-10 rounded-xl bg-accent/10 flex items-center justify-center border border-accent/20">
                       {modes.find(m => m.id === state.mode)?.icon && 
@@ -591,7 +591,7 @@ export default function QRGeneratorClient() {
                 exit={{ opacity: 0, x: -20 }}
                 className="flex flex-col gap-8"
               >
-                <GlassCard className="p-10 flex flex-col gap-10">
+                <GlassCard className="p-6 flex flex-col gap-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                     {/* Foreground Color */}
                     <div className="flex flex-col gap-4">
@@ -779,14 +779,14 @@ export default function QRGeneratorClient() {
       </div>
 
       {/* Strategic Footer Documentation */}
-      <section className="mt-24 pt-12 border-t border-white/5 flex flex-col gap-12">
+      <section className="mt-16 pt-8 border-t border-white/5 flex flex-col gap-8">
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-black uppercase tracking-[0.3em] text-foreground">Operational Protocol</h3>
           <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Mastering the QR Studio Ecosystem</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          <GlassCard className="p-8 flex flex-col gap-6 bg-white/[0.01]">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <GlassCard className="p-6 flex flex-col gap-5 bg-white/[0.01]">
             <div className="flex items-center gap-3">
               <div className="size-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
                 <Globe className="size-4 text-blue-400" />
@@ -798,7 +798,7 @@ export default function QRGeneratorClient() {
             </p>
           </GlassCard>
 
-          <GlassCard className="p-8 flex flex-col gap-6 bg-white/[0.01]">
+          <GlassCard className="p-6 flex flex-col gap-5 bg-white/[0.01]">
             <div className="flex items-center gap-3">
               <div className="size-8 rounded-lg bg-purple-500/10 flex items-center justify-center border border-purple-500/20">
                 <Palette className="size-4 text-purple-400" />
@@ -810,11 +810,13 @@ export default function QRGeneratorClient() {
             </p>
           </GlassCard>
 
-          <GlassCard className="p-8 flex flex-col gap-6 bg-white/[0.01]">
-            <div className="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-              <Smartphone className="size-4 text-emerald-400" />
+          <GlassCard className="p-6 flex flex-col gap-5 bg-white/[0.01]">
+            <div className="flex items-center gap-3">
+              <div className="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+                <Smartphone className="size-4 text-emerald-400" />
+              </div>
+              <h4 className="text-[11px] font-black uppercase tracking-wider">Contactless vCards</h4>
             </div>
-            <h4 className="text-[11px] font-black uppercase tracking-wider">Contactless vCards</h4>
             <p className="text-[11px] font-medium text-muted/60 leading-relaxed">
               Bridge the physical and digital world with <span className="text-foreground">vCard 3.0</span> standards. Instantly transmit contact information, social links, and organization details directly to a user&apos;s native address book.
             </p>

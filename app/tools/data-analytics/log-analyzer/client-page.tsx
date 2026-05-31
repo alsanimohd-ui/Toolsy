@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ToolContainer,
@@ -29,7 +29,8 @@ import {
   Target,
   Network,
   Crosshair,
-  ServerCrash
+  ServerCrash,
+  BarChart3
 } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
 
@@ -94,15 +95,138 @@ const REGEX = {
   email: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/gi,
 };
 
+/* ─────────────────────────────────────────────
+   Log Format Auto-Detection
+   ───────────────────────────────────────────── */
+
+type LogFormat =
+  | "Apache Common"
+  | "Apache Combined"
+  | "Nginx"
+  | "Syslog"
+  | "CloudWatch JSON"
+  | "Windows Event"
+  | "Generic";
+
+const FORMAT_PATTERNS: { pattern: RegExp; format: LogFormat; label: string }[] = [
+  { pattern: /"\w+ \S+ HTTP\/[\d.]+" \d+ \d+ "https?:\/\/[^"]*" "[^"]*"/, format: "Apache Combined", label: "Apache Combined" },
+  { pattern: /"\w+ \S+ HTTP\/[\d.]+" \d+ \d+$/, format: "Apache Common", label: "Apache Common" },
+  { pattern: /nginx/i, format: "Nginx", label: "Nginx" },
+  { pattern: /^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+\[/, format: "Syslog", label: "Linux Syslog" },
+  { pattern: /"timestamp":\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, format: "CloudWatch JSON", label: "CloudWatch JSON" },
+  { pattern: /<Event[^>]*>[\s\S]*?<System>[\s\S]*?<\/System>/, format: "Windows Event", label: "Windows Event Log" },
+  { pattern: /^[A-Z]\w+\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+/, format: "Syslog", label: "Linux Syslog" },
+];
+
+function detectLogFormat(input: string): { format: LogFormat; label: string } | null {
+  if (!input.trim()) return null;
+  const sample = input.slice(0, 3000);
+  for (const entry of FORMAT_PATTERNS) {
+    if (entry.pattern.test(sample)) {
+      return { format: entry.format, label: entry.label };
+    }
+  }
+  return { format: "Generic", label: "Generic" };
+}
+
+/* ─────────────────────────────────────────────
+   Timeline Chart Helpers
+   ───────────────────────────────────────────── */
+
+function extractTimestamps(lines: LogLine[]): { ts: Date; level: LogLevel }[] {
+  const results: { ts: Date; level: LogLevel }[] = [];
+  for (const line of lines) {
+    if (!line.timestamp) continue;
+    const d = new Date(line.timestamp.replace(/[\[\]]/g, ""));
+    if (!isNaN(d.getTime())) {
+      results.push({ ts: d, level: line.level });
+    }
+  }
+  return results;
+}
+
+function bucketTimestamps(
+  stamps: { ts: Date; level: LogLevel }[],
+  bucketCount: number
+): { label: string; count: number; errors: number; ts: Date }[] {
+  if (stamps.length === 0) return [];
+  const sorted = [...stamps].sort((a, b) => a.ts.getTime() - b.ts.getTime());
+  const minT = sorted[0].ts.getTime();
+  const maxT = sorted[sorted.length - 1].ts.getTime();
+  const range = maxT - minT || 1;
+  const bucketSize = range / bucketCount;
+  const buckets: { label: string; count: number; errors: number; ts: Date }[] = [];
+  for (let i = 0; i < bucketCount; i++) {
+    const start = minT + i * bucketSize;
+    const end = start + bucketSize;
+    const inBucket = sorted.filter(s => s.ts.getTime() >= start && s.ts.getTime() < end);
+    buckets.push({
+      label: new Date(start).toLocaleTimeString(),
+      count: inBucket.length,
+      errors: inBucket.filter(s => s.level === "ERROR" || s.level === "CRITICAL").length,
+      ts: new Date(start),
+    });
+  }
+  return buckets;
+}
+
+function TimelineChart({ buckets }: { buckets: { count: number; errors: number }[] }) {
+  const maxCount = Math.max(...buckets.map(b => b.count), 1);
+  const chartH = 100;
+  return (
+    <div className="flex items-end gap-[2px] h-[100px] w-full">
+      {buckets.map((b, i) => {
+        const h = (b.count / maxCount) * chartH;
+        return (
+          <div key={i} className="relative flex flex-col items-center justify-end flex-1 min-w-[3px] group/tbar">
+            <div
+              className="w-full rounded-t-sm transition-all duration-300"
+              style={{
+                height: `${Math.max(h, 2)}px`,
+                background: b.errors > 0
+                  ? `linear-gradient(to top, rgba(239,68,68,0.6), rgba(239,68,68,0.3))`
+                  : `linear-gradient(to top, rgba(var(--accent-rgb),0.5), rgba(var(--accent-rgb),0.15))`,
+              }}
+            />
+            <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover/tbar:opacity-100 transition-opacity pointer-events-none text-[8px] font-black text-muted whitespace-nowrap bg-black/80 px-2 py-0.5 rounded z-10">
+              {b.count} events{b.errors > 0 ? ` / ${b.errors} err` : ""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function LogAnalyzerClient() {
   const [logs, setLogs] = useState<string>("");
+  const [debouncedLogs, setDebouncedLogs] = useState<string>("");
   const [filterLevel, setFilterLevel] = useState<LogLevel>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [collapseDuplicates, setCollapseDuplicates] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [fileMeta, setFileMeta] = useState<{ name: string; size: number } | null>(null);
+  const [detectedFormat, setDetectedFormat] = useState<{ format: LogFormat; label: string } | null>(null);
   
   const [activeTab, setActiveTab] = useState<"FEED" | "INCIDENTS" | "IOCS">("FEED");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce parsing 300ms
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedLogs(logs);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [logs]);
+
+  // Auto-detect format on input
+  useEffect(() => {
+    const fmt = detectLogFormat(debouncedLogs);
+    setDetectedFormat(fmt);
+  }, [debouncedLogs]);
 
   const searchParams = useSearchParams();
 
@@ -129,9 +253,9 @@ export default function LogAnalyzerClient() {
      Tactical Parser Engine & IOC Extractor
     ───────────────────────────────────────────── */
   const parsedData = useMemo(() => {
-    if (!logs.trim()) return [];
+    if (!debouncedLogs.trim()) return [];
     
-    const lines = logs.split("\n");
+    const lines = debouncedLogs.split("\n");
     const result: LogLine[] = [];
     let lastNonStackIdx = -1;
 
@@ -196,7 +320,7 @@ export default function LogAnalyzerClient() {
     }
 
     return result;
-  }, [logs, collapseDuplicates]);
+  }, [debouncedLogs, collapseDuplicates]);
 
   /* ─────────────────────────────────────────────
      Correlation Engine (Incident Grouping)
@@ -273,6 +397,11 @@ export default function LogAnalyzerClient() {
       });
     });
     return Array.from(map.values()).sort((a, b) => a.type.localeCompare(b.type));
+  }, [parsedData]);
+
+  const timelineBuckets = useMemo(() => {
+    const stamps = extractTimestamps(parsedData);
+    return bucketTimestamps(stamps, 40);
   }, [parsedData]);
 
   const filteredLines = useMemo(() => {
@@ -358,7 +487,7 @@ export default function LogAnalyzerClient() {
         categoryId="data-analytics"
       />
 
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         
         {/* INGESTION & UPLOAD */}
         <div className="flex flex-col gap-4">
@@ -447,7 +576,7 @@ export default function LogAnalyzerClient() {
         </div>
 
         {logs && (
-          <div className="flex flex-col gap-8 animate-fadeIn">
+          <div className="flex flex-col gap-6 animate-fadeIn">
             {/* WORKSPACE TABS */}
             <div className="flex items-center gap-2 p-1.5 bg-black/40 border border-white/5 rounded-xl self-start">
               {[
@@ -472,20 +601,27 @@ export default function LogAnalyzerClient() {
 
             {/* TAB CONTENT: FEED */}
             {activeTab === "FEED" && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                 {/* FILTER PANEL */}
-                <GlassCard className="lg:col-span-12 flex flex-col gap-6">
+                <GlassCard className="lg:col-span-12 flex flex-col gap-5">
                   <div className="flex items-center justify-between border-b border-white/5 pb-4">
                     <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
                       <Filter className="size-3.5" /> Filter Engine
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer group">
-                      <input type="checkbox" checked={collapseDuplicates} onChange={(e) => setCollapseDuplicates(e.target.checked)} className="size-3.5 rounded border-white/10 bg-black/40 accent-accent" />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-muted group-hover:text-foreground transition-colors">Collapse Duplicates</span>
-                    </label>
+                    <div className="flex items-center gap-3">
+                      {detectedFormat && (
+                        <span className="px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20 text-[9px] font-black uppercase tracking-widest text-accent">
+                          {detectedFormat.label}
+                        </span>
+                      )}
+                      <label className="flex items-center gap-2 cursor-pointer group">
+                        <input type="checkbox" checked={collapseDuplicates} onChange={(e) => setCollapseDuplicates(e.target.checked)} className="size-3.5 rounded border-white/10 bg-black/40 accent-accent" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted group-hover:text-foreground transition-colors">Collapse Duplicates</span>
+                      </label>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="flex flex-col gap-3">
                       <label className="text-[9px] font-black uppercase tracking-[0.2em] text-muted/60">Severity Level</label>
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -519,8 +655,21 @@ export default function LogAnalyzerClient() {
                   </div>
                 </GlassCard>
 
+                {/* TIMELINE CHART */}
+                {timelineBuckets.length > 0 && (
+                  <GlassCard className="lg:col-span-12 flex flex-col gap-4 p-6">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
+                      <BarChart3 className="size-3.5" /> Event Timeline
+                      <span className="text-muted/40 font-normal normal-case tracking-normal ml-2">
+                        ({timelineBuckets.reduce((a, b) => a + b.count, 0)} events over {timelineBuckets.length} intervals)
+                      </span>
+                    </div>
+                    <TimelineChart buckets={timelineBuckets} />
+                  </GlassCard>
+                )}
+
                 {/* FEED OUTPUT */}
-                <GlassCard className="lg:col-span-12 flex flex-col gap-6">
+                <GlassCard className="lg:col-span-12 flex flex-col gap-5">
                   <div className="flex items-center justify-between border-b border-white/5 pb-4">
                     <div className="flex items-center gap-3">
                       <Activity className="size-4 text-emerald-400" />
@@ -574,7 +723,7 @@ export default function LogAnalyzerClient() {
 
             {/* TAB CONTENT: INCIDENTS */}
             {activeTab === "INCIDENTS" && (
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-5">
                 <div className="flex items-center gap-3 mb-2">
                   <ServerCrash className="size-5 text-accent" />
                   <div className="flex flex-col">
@@ -617,7 +766,7 @@ export default function LogAnalyzerClient() {
 
             {/* TAB CONTENT: IOCS */}
             {activeTab === "IOCS" && (
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-5">
                 <div className="flex items-center gap-3 mb-2">
                   <Fingerprint className="size-5 text-accent" />
                   <div className="flex flex-col">

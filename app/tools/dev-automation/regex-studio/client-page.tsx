@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ToolContainer,
   ToolHeader,
@@ -11,11 +11,20 @@ import {
   AlertTriangle,
   PlayCircle,
   ArrowRightLeft,
-  Database
+  Database,
+  Loader2
 } from "lucide-react";
 import { motion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
-import { executeRegex } from "@/lib/regex-engine";
+import type { RegexEngineResult } from "@/lib/regex-engine";
+
+const DEFAULT_RESULT: RegexEngineResult = {
+  isValid: true,
+  matches: [],
+  explanation: [],
+  executionTime: 0,
+  replacedText: "",
+};
 
 /* ─────────────────────────────────────────────
    Presets
@@ -37,10 +46,49 @@ export default function RegexStudioClient() {
   const [testString, setTestString] = useState<string>("Welcome to Regex Studio!\nThis is a World-Class testing environment.\nSupports Multiline, Unicode, and Replace.");
   const [replaceString, setReplaceString] = useState<string>("");
   const [outputMode, setOutputMode] = useState<"highlight" | "extracted" | "groups" | "replace">("highlight");
-  
-  const engineResult = useMemo(() => {
-    return executeRegex(pattern, flags, testString, replaceString);
+  const [workerResult, setWorkerResult] = useState<RegexEngineResult | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    if (!pattern) return;
+
+    setIsProcessing(true);
+    setWorkerResult(null);
+
+    const worker = new Worker(new URL("../../../../lib/regex-worker.ts", import.meta.url));
+    workerRef.current = worker;
+
+    const timeoutId = setTimeout(() => {
+      worker.terminate();
+      setWorkerResult({
+        isValid: false,
+        error:
+          "Execution timed out after 5 seconds. Your pattern may be causing catastrophic backtracking.",
+        matches: [],
+        explanation: [],
+        executionTime: 5000,
+        replacedText: testString,
+      });
+      setIsProcessing(false);
+    }, 5000);
+
+    worker.onmessage = (e: MessageEvent) => {
+      clearTimeout(timeoutId);
+      setWorkerResult(e.data);
+      setIsProcessing(false);
+      worker.terminate();
+    };
+
+    worker.postMessage({ pattern, flags, testString, replaceString });
+
+    return () => {
+      clearTimeout(timeoutId);
+      worker.terminate();
+    };
   }, [pattern, flags, testString, replaceString]);
+
+  const engineResult = workerResult ?? DEFAULT_RESULT;
 
   const toggleFlag = (flag: string) => {
     if (flags.includes(flag)) {
@@ -227,7 +275,12 @@ export default function RegexStudioClient() {
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-[10px] font-black uppercase tracking-widest text-muted/40 bg-white/5 px-2 py-1 rounded flex items-center gap-2">
-                  <PlayCircle className="size-3 text-blue-400" /> {engineResult.executionTime.toFixed(2)}ms
+                  {isProcessing ? (
+                    <Loader2 className="size-3 text-accent animate-spin" />
+                  ) : (
+                    <PlayCircle className="size-3 text-blue-400" />
+                  )}
+                  {isProcessing ? "Processing..." : `${engineResult.executionTime.toFixed(2)}ms`}
                 </span>
                 <span className="text-[10px] font-black uppercase tracking-widest text-muted/40 bg-white/5 px-2 py-1 rounded">
                   {engineResult.matches.length} Matches
