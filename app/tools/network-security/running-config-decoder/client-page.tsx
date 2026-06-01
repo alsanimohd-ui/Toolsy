@@ -1017,6 +1017,8 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
   const positionsRef = useRef<Record<string, { x: number; y: number }>>({});
   const velocitiesRef = useRef<Record<string, { vx: number; vy: number }>>({});
+  const alphaRef = useRef<number>(1.0);
+  const fixedRef = useRef<Record<string, { fx: number; fy: number } | null>>({});
 
   const dragInfo = useRef<{
     isPanning: boolean;
@@ -1147,6 +1149,8 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
     positionsRef.current = newPositions;
     velocitiesRef.current = newVelocities;
+    fixedRef.current = {};
+    alphaRef.current = 1.0;
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
   }, [nodes, viewMode, switches, vlans, hosts, routers]);
@@ -1165,114 +1169,137 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     let animationId: number;
 
     const tick = () => {
-      // 1. Force-directed simulation calculations
-      const fx: Record<string, number> = {};
-      const fy: Record<string, number> = {};
-      nodes.forEach(n => {
-        fx[n.id] = 0;
-        fy[n.id] = 0;
-      });
+      // 1. Force-directed simulation calculations if cooling alpha is active
+      if (alphaRef.current > 0) {
+        const fx: Record<string, number> = {};
+        const fy: Record<string, number> = {};
+        nodes.forEach(n => {
+          fx[n.id] = 0;
+          fy[n.id] = 0;
+        });
 
-      const cx = width / 2;
-      const cy = height / 2;
+        const cx = width / 2;
+        const cy = height / 2;
 
-      // Centering Gravity Pull
-      nodes.forEach(n => {
-        const pos = positionsRef.current[n.id];
-        if (!pos) return;
-        fx[n.id] += (cx - pos.x) * 0.005;
-        fy[n.id] += (cy - pos.y) * 0.005;
-      });
+        // Centering Gravity Pull
+        nodes.forEach(n => {
+          const pos = positionsRef.current[n.id];
+          if (!pos) return;
+          fx[n.id] += (cx - pos.x) * 0.005;
+          fy[n.id] += (cy - pos.y) * 0.005;
+        });
 
-      // Pairwise Repulsion Force (Enforce strict minimum 120px separation)
-      const minDistance = 120;
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const n1 = nodes[i];
-          const n2 = nodes[j];
-          const p1 = positionsRef.current[n1.id];
-          const p2 = positionsRef.current[n2.id];
-          if (!p1 || !p2) continue;
+        // Pairwise Repulsion Force (Enforce strict minimum 120px separation)
+        const minDistance = 120;
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const n1 = nodes[i];
+            const n2 = nodes[j];
+            const p1 = positionsRef.current[n1.id];
+            const p2 = positionsRef.current[n2.id];
+            if (!p1 || !p2) continue;
 
-          let dx = p2.x - p1.x;
-          let dy = p2.y - p1.y;
-          if (dx === 0 && dy === 0) {
-            dx = Math.random() - 0.5;
-            dy = Math.random() - 0.5;
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            if (dx === 0 && dy === 0) {
+              dx = Math.random() - 0.5;
+              dy = Math.random() - 0.5;
+            }
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+            if (dist < minDistance) {
+              const overlap = minDistance - dist;
+              // High dynamic force to push them back
+              const force = (overlap / dist) * 0.5;
+              const pushX = dx * force;
+              const pushY = dy * force;
+              fx[n1.id] -= pushX;
+              fy[n1.id] -= pushY;
+              fx[n2.id] += pushX;
+              fy[n2.id] += pushY;
+            } else {
+              // Standard inverse-square repulsion to space them out cleanly
+              const force = 100 / (dist * dist);
+              fx[n1.id] -= dx * force;
+              fy[n1.id] -= dy * force;
+              fx[n2.id] += dx * force;
+              fy[n2.id] += dy * force;
+            }
           }
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        }
 
-          if (dist < minDistance) {
-            const overlap = minDistance - dist;
-            // High dynamic force to push them back
-            const force = (overlap / dist) * 0.5;
-            const pushX = dx * force;
-            const pushY = dy * force;
-            fx[n1.id] -= pushX;
-            fy[n1.id] -= pushY;
-            fx[n2.id] += pushX;
-            fy[n2.id] += pushY;
-          } else {
-            // Standard inverse-square repulsion to space them out cleanly
-            const force = 100 / (dist * dist);
-            fx[n1.id] -= dx * force;
-            fy[n1.id] -= dy * force;
-            fx[n2.id] += dx * force;
-            fy[n2.id] += dy * force;
+        // Link Attraction Force
+        nodes.forEach(n => {
+          const p1 = positionsRef.current[n.id];
+          if (!p1) return;
+
+          n.connections.forEach(targetId => {
+            const p2 = positionsRef.current[targetId];
+            if (!p2) return;
+
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+            const restLength = 150;
+            const k = 0.03; // Hooke's spring constant
+            const force = (dist - restLength) * k;
+
+            const pullX = (dx / dist) * force;
+            const pullY = (dy / dist) * force;
+
+            fx[n.id] += pullX;
+            fy[n.id] += pullY;
+            fx[targetId] -= pullX;
+            fy[targetId] -= pullY;
+          });
+        });
+
+        // Update positions and apply friction damping
+        nodes.forEach(n => {
+          const fixed = fixedRef.current[n.id];
+          if (n.id === dragInfo.current.draggedNodeId || fixed) {
+            velocitiesRef.current[n.id] = { vx: 0, vy: 0 };
+            if (fixed) {
+              positionsRef.current[n.id] = { x: fixed.fx, y: fixed.fy };
+            }
+            return;
+          }
+
+          const vel = velocitiesRef.current[n.id] || { vx: 0, vy: 0 };
+          vel.vx = (vel.vx + fx[n.id] * alphaRef.current) * 0.82;
+          vel.vy = (vel.vy + fy[n.id] * alphaRef.current) * 0.82;
+
+          velocitiesRef.current[n.id] = vel;
+
+          const pos = positionsRef.current[n.id];
+          if (pos) {
+            pos.x += vel.vx;
+            pos.y += vel.vy;
+
+            // Keep nodes inside canvas frame with a safe buffer boundary
+            pos.x = Math.max(40, Math.min(width - 40, pos.x));
+            pos.y = Math.max(40, Math.min(height - 40, pos.y));
+          }
+        });
+
+        // Decay alpha over time so the simulation stabilizes (settles within 1-2 seconds)
+        alphaRef.current -= 0.012;
+        if (alphaRef.current < 0.005) {
+          alphaRef.current = 0; // Lock the layout
+        }
+      } else {
+        // Alpha is 0 (stabilized) - keep node locked to fixed dragging coordinates if active
+        const nodeId = dragInfo.current.draggedNodeId;
+        if (nodeId) {
+          const fixed = fixedRef.current[nodeId];
+          const pos = positionsRef.current[nodeId];
+          if (fixed && pos) {
+            pos.x = fixed.fx;
+            pos.y = fixed.fy;
           }
         }
       }
-
-      // Link Attraction Force
-      nodes.forEach(n => {
-        const p1 = positionsRef.current[n.id];
-        if (!p1) return;
-
-        n.connections.forEach(targetId => {
-          const p2 = positionsRef.current[targetId];
-          if (!p2) return;
-
-          const dx = p2.x - p1.x;
-          const dy = p2.y - p1.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-          const restLength = 150;
-          const k = 0.03; // Hooke's spring constant
-          const force = (dist - restLength) * k;
-
-          const pullX = (dx / dist) * force;
-          const pullY = (dy / dist) * force;
-
-          fx[n.id] += pullX;
-          fy[n.id] += pullY;
-          fx[targetId] -= pullX;
-          fy[targetId] -= pullY;
-        });
-      });
-
-      // Update positions and apply friction damping
-      nodes.forEach(n => {
-        if (n.id === dragInfo.current.draggedNodeId) {
-          velocitiesRef.current[n.id] = { vx: 0, vy: 0 };
-          return;
-        }
-
-        const vel = velocitiesRef.current[n.id] || { vx: 0, vy: 0 };
-        vel.vx = (vel.vx + fx[n.id]) * 0.82;
-        vel.vy = (vel.vy + fy[n.id]) * 0.82;
-
-        velocitiesRef.current[n.id] = vel;
-
-        const pos = positionsRef.current[n.id];
-        if (pos) {
-          pos.x += vel.vx;
-          pos.y += vel.vy;
-
-          // Keep nodes inside canvas frame with a safe buffer boundary
-          pos.x = Math.max(40, Math.min(width - 40, pos.x));
-          pos.y = Math.max(40, Math.min(height - 40, pos.y));
-        }
-      });
 
       // 2. Draw loop on canvas
       ctx.clearRect(0, 0, width, height);
@@ -1579,12 +1606,14 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
     if (clickedNodeId) {
       // Relative offset tracking to prevent sudden node snapping
+      const pos = positionsRef.current[clickedNodeId];
       dragInfo.current = {
         isPanning: false,
         draggedNodeId: clickedNodeId,
-        startX: localX - positionsRef.current[clickedNodeId].x,
-        startY: localY - positionsRef.current[clickedNodeId].y
+        startX: localX - pos.x,
+        startY: localY - pos.y
       };
+      fixedRef.current[clickedNodeId] = { fx: pos.x, fy: pos.y };
     } else {
       dragInfo.current = {
         isPanning: true,
@@ -1609,10 +1638,13 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
     if (info.draggedNodeId) {
       const nodeId = info.draggedNodeId;
+      const dragX = localX - info.startX;
+      const dragY = localY - info.startY;
       positionsRef.current[nodeId] = {
-        x: localX - info.startX,
-        y: localY - info.startY
+        x: dragX,
+        y: dragY
       };
+      fixedRef.current[nodeId] = { fx: dragX, fy: dragY };
     } else if (info.isPanning) {
       setPanOffset({
         x: clientX - info.startX,
@@ -1638,6 +1670,10 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
   };
 
   const handleMouseUp = () => {
+    if (dragInfo.current.draggedNodeId) {
+      const nodeId = dragInfo.current.draggedNodeId;
+      fixedRef.current[nodeId] = null; // Release the coordinate lock on drag end
+    }
     dragInfo.current.isPanning = false;
     dragInfo.current.draggedNodeId = null;
   };
