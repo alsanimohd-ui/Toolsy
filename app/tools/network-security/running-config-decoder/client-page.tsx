@@ -94,7 +94,7 @@ const TABS: TabDef[] = [
     Multi-Vendor Config Parser (regex-only, offline)
     ───────────────────────────────────────────── */
 
-type VendorType = "Cisco" | "Juniper" | "FortiGate" | "Unknown";
+type VendorType = "Cisco" | "Juniper" | "FortiGate" | "PaloAlto" | "Unknown";
 
 const SAMPLE_CONFIG = `! Device: Cisco Catalyst 9300
 ! Software: IOS-XE 17.3.1
@@ -202,6 +202,14 @@ function detectVendor(raw: string): VendorType {
       lower.includes('config router bgp')) {
     return "FortiGate";
   }
+
+  // Check for Palo Alto patterns
+  if (lower.includes('set deviceconfig system') ||
+      lower.includes('set network interface') ||
+      lower.includes('set zone') ||
+      lower.includes('set network virtual-router')) {
+    return "PaloAlto";
+  }
   
   // Default to Cisco for backward compatibility
   if (lower.includes('hostname ') ||
@@ -215,225 +223,32 @@ function detectVendor(raw: string): VendorType {
   return "Unknown";
 }
 
-function parseCiscoConfig(raw: string): ParsedConfig {
+function parseGenericConfig(raw: string): ParsedConfig {
   const lines = raw.split("\n");
   const cfg: ParsedConfig = {
-    hostname: "",
+    hostname: "Generic-Device",
     managementIp: "",
-    brand: "Cisco",
-    model: "Catalyst 9300",
+    brand: "Generic",
+    model: "Fallback Scanner",
     routingProtocols: [],
     vlans: [],
     interfaces: [],
   };
-
-  const ciscoModelMatch = raw.match(/(?:Catalyst|Nexus|ISR|ASR|Cisco\s+Catalyst|Cisco\s+Nexus|Cisco\s+ISR|Cisco\s+ASR)\s*(\d+[a-zA-Z0-9\-]*)/i);
-  if (ciscoModelMatch) {
-    cfg.model = ciscoModelMatch[0];
-  } else {
-    const genericMatch = raw.match(/(?:Model|Device|Hardware|Platform|Switch|Router)\s*:\s*([a-zA-Z0-9\-]+)/i);
-    if (genericMatch) {
-      cfg.model = genericMatch[1];
-    }
-  }
-
-  let currentInterface: Partial<InterfaceInfo> | null = null;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    if (!line || line === "!" || line === "end") {
-      if (currentInterface?.name) {
-        cfg.interfaces.push(finalizeInterface(currentInterface));
-      }
-      currentInterface = null;
-      continue;
-    }
-
-    // Hostname
-    const hnMatch = line.match(/^hostname\s+(.+)/i);
-    if (hnMatch) { cfg.hostname = hnMatch[1].trim(); continue; }
-
-    // VLAN definition
-    const vlanMatch = line.match(/^vlan\s+(\d+)/i);
-    if (vlanMatch) {
-      const id = parseInt(vlanMatch[1]);
-      const nameLine = lines[lines.indexOf(rawLine) + 1]?.trim() || "";
-      const nameMatch = nameLine.match(/^name\s+(.+)/i);
-      cfg.vlans.push({ id, name: nameMatch ? nameMatch[1].trim() : `VLAN ${id}` });
-      continue;
-    }
-
-    // Routing protocols
-    if (line.match(/^router\s+(ospf|bgp|eigrp|rip)\s+/i)) {
-      const proto = line.match(/^router\s+(ospf|bgp|eigrp|rip)/i)?.[1].toUpperCase() || "";
-      if (!cfg.routingProtocols.includes(proto)) cfg.routingProtocols.push(proto);
-      continue;
-    }
-    if (line.match(/^ip\s+route\s+/i)) {
-      if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
-      continue;
-    }
-
-    // Interface block start
-    const ifMatch = line.match(/^interface\s+(.+)/i);
-    if (ifMatch) {
-      if (currentInterface?.name) {
-        cfg.interfaces.push(finalizeInterface(currentInterface));
-      }
-      const ifName = ifMatch[1].trim();
-      const isVlan = ifName.match(/^Vlan(\d+)/i);
-      currentInterface = {
-        name: ifName,
-        description: "",
-        speed: "auto",
-        duplex: "auto",
-        status: "up",
-        ip: "",
-        vlanAccess: null,
-        vlanTrunkAllowed: [],
-        mode: isVlan ? "routed" : "unknown",
-        mac: "",
-        mtu: 1500,
-        type: isVlan ? "SVI" : ifName.match(/^(Gigabit|Fast|TenGigabit|Ethernet)/i)?.[1] || "Other",
-      };
-      continue;
-    }
-
-    if (!currentInterface) continue;
-
-    // Interface properties
-    const descMatch = line.match(/^description\s+(.+)/i);
-    if (descMatch) { currentInterface.description = descMatch[1].trim(); continue; }
-
-    const speedMatch = line.match(/^speed\s+([\d]+)/i);
-    if (speedMatch) { currentInterface.speed = speedMatch[1]; continue; }
-
-    const duplexMatch = line.match(/^duplex\s+(full|half|auto)/i);
-    if (duplexMatch) { currentInterface.duplex = duplexMatch[1].toLowerCase(); continue; }
-
-    if (line.match(/^shutdown/i)) { currentInterface.status = "adminDown"; continue; }
-    if (line.match(/^no shutdown/i)) { currentInterface.status = "up"; continue; }
-
-    const ipMatch = line.match(/^ip\s+address\s+([\d.]+)\s+([\d.]+)/i);
-    if (ipMatch) {
-      currentInterface.ip = `${ipMatch[1]}/${cidrFromMask(ipMatch[2])}`;
-      if (currentInterface.name?.match(/^Vlan1/i)) {
-        cfg.managementIp = ipMatch[1];
-      }
-      continue;
-    }
-
-    if (line.match(/^switchport\s+mode\s+access/i)) { currentInterface.mode = "access"; continue; }
-    if (line.match(/^switchport\s+mode\s+trunk/i)) { currentInterface.mode = "trunk"; continue; }
-
-    const accessVlan = line.match(/^switchport\s+access\s+vlan\s+(\d+)/i);
-    if (accessVlan) { currentInterface.vlanAccess = parseInt(accessVlan[1]); continue; }
-
-    const trunkVlan = line.match(/^switchport\s+trunk\s+allowed\s+vlan\s+(.+)/i);
-    if (trunkVlan) {
-      const vlanStr = trunkVlan[1].trim();
-      if (vlanStr.toLowerCase() === "all") {
-        currentInterface.vlanTrunkAllowed = [1, 10, 20, 30, 100, 200, 300];
-      } else {
-        currentInterface.vlanTrunkAllowed = vlanStr.split(",").map(v => parseInt(v.trim())).filter(n => !isNaN(n));
-      }
-      continue;
-    }
-
-    const macMatch = line.match(/^mac-address\s+([\da-fA-F.]+)/i);
-    if (macMatch) { currentInterface.mac = macMatch[1]; continue; }
-
-    const mtuMatch = line.match(/^mtu\s+(\d+)/i);
-    if (mtuMatch) { currentInterface.mtu = parseInt(mtuMatch[1]); }
-  }
-
-  // Flush last interface
-  if (currentInterface?.name) {
-    cfg.interfaces.push(finalizeInterface(currentInterface));
-  }
-
-  return cfg;
-}
-
-function parseJuniperConfig(raw: string): ParsedConfig {
-  const cfg: ParsedConfig = {
-    hostname: "",
-    managementIp: "",
-    brand: "Juniper",
-    model: "SRX300",
-    routingProtocols: [],
-    vlans: [],
-    interfaces: [],
-  };
-
-  const juniperModelMatch = raw.match(/model\s+(\S+);/i) || 
-                            raw.match(/\b(SRX\d+|EX\d+|MX\d+|QFX\d+|PTX\d+|ACX\d+)\b/i) ||
-                            raw.match(/(?:SRX|EX|MX|QFX|PTX|ACX)-\d+[a-zA-Z0-9\-]*/i);
-  if (juniperModelMatch) {
-    cfg.model = (juniperModelMatch[1] || juniperModelMatch[0]).replace(/[;"]/g, "").trim();
-  }
-
-  const flatLines: string[] = [];
-  const lines = raw.split("\n");
-  const isBracketed = raw.includes("{") && raw.includes("}");
-
-  if (isBracketed) {
-    const pathStack: string[] = [];
-    for (const rawLine of lines) {
-      let line = rawLine.replace(/#.*/g, "").trim();
-      line = line.replace(/\/\*.*?\*\//g, "").trim();
-      if (!line) continue;
-
-      if (line.startsWith("}")) {
-        pathStack.pop();
-        const rest = line.substring(1).trim();
-        if (rest && rest !== ";") {
-          line = rest;
-        } else {
-          continue;
-        }
-      }
-
-      if (line.includes("{")) {
-        const parts = line.split("{");
-        const pathPart = parts[0].trim();
-        if (pathPart) {
-          pathStack.push(pathPart);
-        }
-        const inner = parts.slice(1).join("{").trim();
-        if (inner && inner !== "}") {
-          line = inner;
-        } else {
-          continue;
-        }
-      }
-
-      if (line.endsWith(";")) {
-        const leaf = line.substring(0, line.length - 1).trim();
-        if (leaf) {
-          const fullPath = [...pathStack, leaf].join(" ");
-          flatLines.push(fullPath);
-        }
-      } else {
-        flatLines.push([...pathStack, line].join(" "));
-      }
-    }
-  } else {
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      if (line.startsWith("set ")) {
-        flatLines.push(line.substring(4).trim());
-      } else {
-        flatLines.push(line);
-      }
+    if (!line) continue;
+    const hnMatch = line.match(/^(?:hostname|host-name|sysname|device-name)\s+(\S+)/i) ||
+                    line.match(/set\s+(?:system\s+)?host-name\s+(\S+)/i);
+    if (hnMatch) {
+      cfg.hostname = hnMatch[1].replace(/[;"]/g, "").trim();
+      break;
     }
   }
 
   const interfaceMap = new globalThis.Map<string, Partial<InterfaceInfo>>();
   const getInterface = (name: string): Partial<InterfaceInfo> => {
     if (!interfaceMap.has(name)) {
-      const isVlan = name.match(/^(vlan|irb)/i);
       interfaceMap.set(name, {
         name: name,
         description: "",
@@ -443,127 +258,75 @@ function parseJuniperConfig(raw: string): ParsedConfig {
         ip: "",
         vlanAccess: null,
         vlanTrunkAllowed: [],
-        mode: isVlan ? "routed" : "unknown",
+        mode: "unknown",
         mac: "",
         mtu: 1500,
-        type: isVlan ? "SVI" : name.match(/^(ge|xe|et|ae|fe|port)/i)?.[1] || "Other",
+        type: name.toLowerCase().includes("vlan") ? "SVI" : "Other",
       });
     }
     return interfaceMap.get(name)!;
   };
 
-  for (const line of flatLines) {
-    const hnMatch = line.match(/(?:system\s+)?host-name\s+(\S+)/i);
-    if (hnMatch) {
-      cfg.hostname = hnMatch[1].replace(/["';]/g, "").trim();
-      continue;
+  let activeIface: Partial<InterfaceInfo> | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const ifMatch = line.match(/^(?:interface|interfaces|port)\s+(\S+)/i) ||
+                    line.match(/set\s+(?:network\s+)?interface\s+(\S+)/i) ||
+                    line.match(/(?:interface|port)\s+["']?([a-zA-Z0-9\/\-\.]+)/i);
+    
+    if (ifMatch && !line.includes("vlan-id") && !line.includes("description") && !line.includes("ip address")) {
+      const ifName = ifMatch[1].replace(/[;":]/g, "").trim();
+      if (!["global", "system", "router", "route", "ospf", "bgp", "vlan", "vlans"].includes(ifName.toLowerCase())) {
+        activeIface = getInterface(ifName);
+      }
     }
 
-    const vlanIdMatch = line.match(/^vlans\s+(\S+)\s+vlan-id\s+(\d+)/i);
-    if (vlanIdMatch) {
-      const name = vlanIdMatch[1];
-      const id = parseInt(vlanIdMatch[2]);
-      const existing = cfg.vlans.find(v => v.id === id);
-      if (existing) {
-        existing.name = name;
-      } else {
-        cfg.vlans.push({ id, name });
+    if (activeIface) {
+      const ipMatch = line.match(/(?:ip\s+)?address\s+([\d.]+)\s+([\d.]+)/i) ||
+                      line.match(/(?:ip\s+)?address\s+([\d.]+)\/(\d+)/i) ||
+                      line.match(/ip\s+([\d.]+)\/(\d+)/i);
+      if (ipMatch) {
+        if (ipMatch[2].includes(".")) {
+          activeIface.ip = `${ipMatch[1]}/${cidrFromMask(ipMatch[2])}`;
+        } else {
+          activeIface.ip = `${ipMatch[1]}/${ipMatch[2]}`;
+        }
+        activeIface.mode = "routed";
+        if (!cfg.managementIp) {
+          cfg.managementIp = ipMatch[1];
+        }
       }
-      continue;
+
+      const vlanMatch = line.match(/(?:vlan|vlan-id|access\s+vlan)\s+(\d+)/i);
+      if (vlanMatch) {
+        const vlanId = parseInt(vlanMatch[1]);
+        activeIface.vlanAccess = vlanId;
+        activeIface.mode = "access";
+        if (!cfg.vlans.some(v => v.id === vlanId)) {
+          cfg.vlans.push({ id: vlanId, name: `VLAN ${vlanId}` });
+        }
+      }
+
+      const descMatch = line.match(/(?:description|desc|alias|comment)\s+["']?(.+?)["']?$/i);
+      if (descMatch) {
+        activeIface.description = descMatch[1].replace(/[;"]/g, "").trim();
+      }
     }
 
-    const vlanDescMatch = line.match(/^vlans\s+(\S+)\s+description\s+["']?(.+?)["']?$/i);
-    if (vlanDescMatch) {
-      const name = vlanDescMatch[1];
-      const desc = vlanDescMatch[2];
-      const existing = cfg.vlans.find(v => v.name === name || v.id.toString() === name);
-      if (existing) {
-        existing.name = `${desc} (VLAN ${existing.id})`;
-      }
-      continue;
-    }
-
-    if (line.match(/^protocols\s+ospf/i)) {
-      if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
-    }
-    if (line.match(/^protocols\s+bgp/i)) {
-      if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
-    }
-    if (line.match(/^routing-options\s+static/i) || line.match(/^static\s+route/i)) {
-      if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
-    }
-
-    const ifMatch = line.match(/^interfaces\s+(\S+)/i);
-    if (ifMatch) {
-      const ifName = ifMatch[1];
-      const iface = getInterface(ifName);
-
-      const descM = line.match(/description\s+["']?(.+?)["']?$/i);
-      if (descM) {
-        iface.description = descM[1].trim();
-      }
-
-      if (line.match(/\bdisable\b/i)) {
-        iface.status = "adminDown";
-      }
-
-      const speedM = line.match(/speed\s+(\S+)/i);
-      if (speedM) {
-        iface.speed = speedM[1].replace(/[mGg]/g, "");
-      }
-
-      const modeM = line.match(/(?:interface-mode|port-mode)\s+(access|trunk)/i);
-      if (modeM) {
-        iface.mode = modeM[1].toLowerCase() as "access" | "trunk";
-      }
-
-      const membersM = line.match(/vlan\s+members\s+\[?\s*([^\]]+?)\s*\]?$/i);
-      if (membersM) {
-        const val = membersM[1].trim();
-        const vlanNames = val.split(/\s+/);
-        vlanNames.forEach(vName => {
-          const id = parseInt(vName);
-          if (!isNaN(id)) {
-            if (iface.mode === "access") {
-              iface.vlanAccess = id;
-            } else {
-              if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(id)) {
-                iface.vlanTrunkAllowed.push(id);
-              }
-            }
-          } else {
-            const matchingVlan = cfg.vlans.find(v => v.name === vName);
-            if (matchingVlan) {
-              if (iface.mode === "access") {
-                iface.vlanAccess = matchingVlan.id;
-              } else {
-                if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(matchingVlan.id)) {
-                  iface.vlanTrunkAllowed.push(matchingVlan.id);
-                }
-              }
-            } else {
-              const numMatch = vName.match(/\d+/);
-              if (numMatch) {
-                const parsedId = parseInt(numMatch[0]);
-                if (iface.mode === "access") {
-                  iface.vlanAccess = parsedId;
-                } else {
-                  if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(parsedId)) {
-                    iface.vlanTrunkAllowed.push(parsedId);
-                  }
-                }
-              }
-            }
-          }
-        });
-      }
-
-      const ipM = line.match(/address\s+([\d.]+)\/(\d+)/i);
-      if (ipM) {
-        iface.ip = `${ipM[1]}/${ipM[2]}`;
+    if (!activeIface) {
+      const standAloneMatch = line.match(/(?:interface|port)\s+(\S+)\s+(?:ip\s+)?address\s+([\d.]+)\/(\d+)/i);
+      if (standAloneMatch) {
+        const ifName = standAloneMatch[1];
+        const ip = standAloneMatch[2];
+        const cidr = standAloneMatch[3];
+        const iface = getInterface(ifName);
+        iface.ip = `${ip}/${cidr}`;
         iface.mode = "routed";
         if (!cfg.managementIp) {
-          cfg.managementIp = ipM[1];
+          cfg.managementIp = ip;
         }
       }
     }
@@ -573,97 +336,99 @@ function parseJuniperConfig(raw: string): ParsedConfig {
     cfg.interfaces.push(finalizeInterface(iface));
   });
 
+  if (cfg.interfaces.length === 0) {
+    cfg.interfaces.push({
+      name: "eth0",
+      description: "Default Fallback Interface",
+      speed: "auto",
+      duplex: "auto",
+      status: "up",
+      ip: "192.168.1.1/24",
+      vlanAccess: null,
+      vlanTrunkAllowed: [],
+      mode: "routed",
+      mac: "",
+      mtu: 1500,
+      type: "Other",
+    });
+    cfg.managementIp = "192.168.1.1";
+  }
+
   return cfg;
 }
 
-function parseFortiGateConfig(raw: string): ParsedConfig {
+async function parseRunningConfigAsync(
+  raw: string,
+  onProgress: (percent: number) => void
+): Promise<ParsedConfig> {
+  const vendor = detectVendor(raw);
   const lines = raw.split("\n");
+  const totalLines = lines.length;
+  const CHUNK_SIZE = 400;
+
   const cfg: ParsedConfig = {
     hostname: "",
     managementIp: "",
-    brand: "FortiGate",
-    model: "FortiGate 401E",
+    brand: vendor === "Unknown" ? "Generic" : vendor,
+    model: "Fallback Scanner",
     routingProtocols: [],
     vlans: [],
     interfaces: [],
   };
 
-  const fgModelMatch = raw.match(/#config-version=([A-Za-z0-9\-]+)/i) ||
-                       raw.match(/#model\s*[:=]\s*(\S+)/i) ||
-                       raw.match(/\b(FortiGate-\d+[A-Z]*|FG-\d+[A-Z]*|FortiGate\s+\d+[A-Z]*)\b/i);
-  if (fgModelMatch) {
-    const m = (fgModelMatch[1] || fgModelMatch[0]).trim();
-    if (m.toUpperCase().startsWith("FG") && !m.toUpperCase().startsWith("FGR")) {
-      cfg.model = `FortiGate ${m.substring(2)}`;
-    } else if (m.toUpperCase().startsWith("FORTIGATE-")) {
-      cfg.model = `FortiGate ${m.substring(10)}`;
+  if (vendor === "Cisco") {
+    cfg.brand = "Cisco";
+    cfg.model = "Catalyst 9300";
+    const ciscoModelMatch = raw.match(/(?:Catalyst|Nexus|ISR|ASR|Cisco\s+Catalyst|Cisco\s+Nexus|Cisco\s+ISR|Cisco\s+ASR)\s*(\d+[a-zA-Z0-9\-]*)/i);
+    if (ciscoModelMatch) {
+      cfg.model = ciscoModelMatch[0];
     } else {
-      cfg.model = m;
+      const genericMatch = raw.match(/(?:Model|Device|Hardware|Platform|Switch|Router)\s*:\s*([a-zA-Z0-9\-]+)/i);
+      if (genericMatch) {
+        cfg.model = genericMatch[1];
+      }
+    }
+  } else if (vendor === "Juniper") {
+    cfg.brand = "Juniper";
+    cfg.model = "SRX300";
+    const juniperModelMatch = raw.match(/model\s+(\S+);/i) || 
+                              raw.match(/\b(SRX\d+|EX\d+|MX\d+|QFX\d+|PTX\d+|ACX\d+)\b/i) ||
+                              raw.match(/(?:SRX|EX|MX|QFX|PTX|ACX)-\d+[a-zA-Z0-9\-]*/i);
+    if (juniperModelMatch) {
+      cfg.model = (juniperModelMatch[1] || juniperModelMatch[0]).replace(/[;"]/g, "").trim();
+    }
+  } else if (vendor === "FortiGate") {
+    cfg.brand = "FortiGate";
+    cfg.model = "FortiGate 401E";
+    const fgModelMatch = raw.match(/#config-version=([A-Za-z0-9\-]+)/i) ||
+                         raw.match(/#model\s*[:=]\s*(\S+)/i) ||
+                         raw.match(/\b(FortiGate-\d+[A-Z]*|FG-\d+[A-Z]*|FortiGate\s+\d+[A-Z]*)\b/i);
+    if (fgModelMatch) {
+      const m = (fgModelMatch[1] || fgModelMatch[0]).trim();
+      if (m.toUpperCase().startsWith("FG") && !m.toUpperCase().startsWith("FGR")) {
+        cfg.model = `FortiGate ${m.substring(2)}`;
+      } else if (m.toUpperCase().startsWith("FORTIGATE-")) {
+        cfg.model = `FortiGate ${m.substring(10)}`;
+      } else {
+        cfg.model = m;
+      }
+    }
+  } else if (vendor === "PaloAlto") {
+    cfg.brand = "Palo Alto";
+    cfg.model = "PA-3220";
+    const modelMatch = raw.match(/#\s*model\s*[:=]\s*(\S+)/i) || 
+                       raw.match(/model\s+(\S+)/i) || 
+                       raw.match(/\b(PA-\d+|PAN-OS)\b/i);
+    if (modelMatch) {
+      cfg.model = modelMatch[1] || modelMatch[0];
     }
   }
 
-  let inSystemGlobal = false;
-  let inSystemInterface = false;
-  let currentInterface: Partial<InterfaceInfo> | null = null;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    if (line.startsWith('config system global')) {
-      inSystemGlobal = true;
-      inSystemInterface = false;
-      continue;
-    }
-    if (line.startsWith('config system interface')) {
-      inSystemGlobal = false;
-      inSystemInterface = true;
-      continue;
-    }
-    if (line.startsWith('config router ospf')) {
-      inSystemGlobal = false;
-      inSystemInterface = false;
-      if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
-      continue;
-    }
-    if (line.startsWith('config router static')) {
-      inSystemGlobal = false;
-      inSystemInterface = false;
-      if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
-      continue;
-    }
-    if (line.startsWith('config router bgp')) {
-      inSystemGlobal = false;
-      inSystemInterface = false;
-      if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
-      continue;
-    }
-    if (line === 'end') {
-      inSystemGlobal = false;
-      inSystemInterface = false;
-      if (currentInterface?.name) {
-        cfg.interfaces.push(finalizeInterface(currentInterface));
-        currentInterface = null;
-      }
-      continue;
-    }
-
-    if (inSystemGlobal && line.startsWith('set hostname')) {
-      const match = line.match(/^set\s+hostname\s+["']?(.+?)["']?$/);
-      if (match) {
-        cfg.hostname = match[1].trim();
-      }
-      continue;
-    }
-
-    if (inSystemInterface) {
-      if (line.startsWith('edit')) {
-        if (currentInterface?.name) {
-          cfg.interfaces.push(finalizeInterface(currentInterface));
-        }
-        const match = line.match(/^edit\s+["']?(.+?)["']?$/);
-        const name = match ? match[1] : "Unknown";
-        currentInterface = {
+  if (vendor === "PaloAlto") {
+    const interfaceMap = new globalThis.Map<string, Partial<InterfaceInfo>>();
+    const getInterface = (name: string): Partial<InterfaceInfo> => {
+      if (!interfaceMap.has(name)) {
+        interfaceMap.set(name, {
           name: name,
           description: "",
           speed: "auto",
@@ -675,71 +440,542 @@ function parseFortiGateConfig(raw: string): ParsedConfig {
           mode: "unknown",
           mac: "",
           mtu: 1500,
-          type: name.match(/^(port|wan|lan|dmz|ssl|ssl-vlan|vlan)/i)?.[1] || "Other",
-        };
-        continue;
+          type: name.match(/vlan/i) ? "SVI" : "Other",
+        });
       }
+      return interfaceMap.get(name)!;
+    };
 
-      if (currentInterface) {
-        if (line.startsWith('set alias')) {
-          const match = line.match(/^set\s+alias\s+["']?(.+?)["']?$/);
-          if (match) currentInterface.description = match[1].trim();
+    for (let i = 0; i < totalLines; i += CHUNK_SIZE) {
+      const end = Math.min(i + CHUNK_SIZE, totalLines);
+      for (let j = i; j < end; j++) {
+        const line = lines[j].trim();
+        if (!line) continue;
+
+        const hnMatch = line.match(/set\s+deviceconfig\s+system\s+hostname\s+(\S+)/i);
+        if (hnMatch) {
+          cfg.hostname = hnMatch[1].trim();
+          continue;
         }
-        else if (line.startsWith('set ip')) {
-          const match = line.match(/^set\s+ip\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)/);
-          if (match) {
-            const ip = match[1];
-            const netmask = match[2];
-            currentInterface.ip = `${ip}/${cidrFromMask(netmask)}`;
-            currentInterface.mode = "routed";
-            if (!cfg.managementIp) {
-              cfg.managementIp = ip;
+
+        const mgmtIpMatch = line.match(/set\s+deviceconfig\s+system\s+ip-address\s+(\S+)/i);
+        if (mgmtIpMatch) {
+          cfg.managementIp = mgmtIpMatch[1];
+          continue;
+        }
+
+        const ifMatch = line.match(/set\s+network\s+interface\s+(\S+)\s+(\S+)/i);
+        if (ifMatch) {
+          const ifType = ifMatch[1];
+          const ifName = ifMatch[2];
+          let finalName = ifName;
+          if (ifType === "vlan" && line.includes("unit ")) {
+            const unitMatch = line.match(/unit\s+(\S+)/i);
+            if (unitMatch) {
+              finalName = unitMatch[1];
             }
           }
-        }
-        else if (line.startsWith('set status')) {
-          const match = line.match(/^set\s+status\s+(up|down)/i);
-          if (match) currentInterface.status = match[1].toLowerCase() as "up" | "down";
-        }
-        else if (line.startsWith('set vlanid')) {
-          const match = line.match(/^set\s+vlanid\s+(\d+)/);
-          if (match) {
-            const vlanId = parseInt(match[1]);
-            currentInterface.vlanAccess = vlanId;
-            currentInterface.mode = "access";
-            if (!cfg.vlans.some(v => v.id === vlanId)) {
-              cfg.vlans.push({ id: vlanId, name: currentInterface.name || `VLAN ${vlanId}` });
+          const iface = getInterface(finalName);
+          iface.type = ifType === "vlan" || finalName.startsWith("vlan") ? "SVI" : "Other";
+
+          const ipMatch = line.match(/ip\s+([\d.]+)\/(\d+)/i) || line.match(/ip\s+([\d.]+)\s+netmask\s+([\d.]+)/i);
+          if (ipMatch) {
+            if (ipMatch[2].includes(".")) {
+              iface.ip = `${ipMatch[1]}/${cidrFromMask(ipMatch[2])}`;
+            } else {
+              iface.ip = `${ipMatch[1]}/${ipMatch[2]}`;
+            }
+            iface.mode = "routed";
+            if (!cfg.managementIp && iface.type !== "SVI") {
+              cfg.managementIp = ipMatch[1];
             }
           }
+
+          const commentMatch = line.match(/comment\s+["']?(.+?)["']?$/i);
+          if (commentMatch) iface.description = commentMatch[1].trim();
+
+          const mtuMatch = line.match(/mtu\s+(\d+)/i);
+          if (mtuMatch) iface.mtu = parseInt(mtuMatch[1]);
+
+          if (line.includes("layer3")) iface.mode = "routed";
+          else if (line.includes("layer2")) iface.mode = "access";
+          continue;
         }
-        else if (line === 'next') {
-          cfg.interfaces.push(finalizeInterface(currentInterface));
-          currentInterface = null;
+
+        const zoneMatch = line.match(/set\s+zone\s+(\S+)\s+network\s+(?:layer3|layer2)\s+(.+)/i);
+        if (zoneMatch) {
+          const zoneName = zoneMatch[1];
+          const memberStr = zoneMatch[2];
+          const members = memberStr.replace(/[\[\]]/g, "").split(/\s+/).map(s => s.trim()).filter(Boolean);
+          members.forEach(member => {
+            const iface = getInterface(member);
+            iface.description = iface.description 
+              ? `${iface.description} (Zone: ${zoneName})` 
+              : `Zone: ${zoneName}`;
+          });
+          continue;
+        }
+
+        if (line.match(/virtual-router\s+\S+\s+protocol\s+(\S+)/i)) {
+          const proto = line.match(/virtual-router\s+\S+\s+protocol\s+(\S+)/i)?.[1].toUpperCase() || "";
+          if (["OSPF", "BGP", "RIP"].includes(proto) && !cfg.routingProtocols.includes(proto)) {
+            cfg.routingProtocols.push(proto);
+          }
+        }
+      }
+      onProgress(Math.round((end / totalLines) * 100));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    interfaceMap.forEach(iface => {
+      cfg.interfaces.push(finalizeInterface(iface));
+      if (iface.name?.startsWith("vlan.")) {
+        const vlanIdStr = iface.name.split(".")[1];
+        const vlanId = parseInt(vlanIdStr);
+        if (!isNaN(vlanId) && !cfg.vlans.some(v => v.id === vlanId)) {
+          cfg.vlans.push({ id: vlanId, name: `VLAN ${vlanId}` });
+        }
+      }
+    });
+
+  } else if (vendor === "Juniper") {
+    const flatLines: string[] = [];
+    const isBracketed = raw.includes("{") && raw.includes("}");
+
+    if (isBracketed) {
+      const pathStack: string[] = [];
+      for (const rawLine of lines) {
+        let line = rawLine.replace(/#.*/g, "").trim();
+        line = line.replace(/\/\*.*?\*\//g, "").trim();
+        if (!line) continue;
+
+        if (line.startsWith("}")) {
+          pathStack.pop();
+          const rest = line.substring(1).trim();
+          if (rest && rest !== ";") {
+            line = rest;
+          } else {
+            continue;
+          }
+        }
+
+        if (line.includes("{")) {
+          const parts = line.split("{");
+          const pathPart = parts[0].trim();
+          if (pathPart) {
+            pathStack.push(pathPart);
+          }
+          const inner = parts.slice(1).join("{").trim();
+          if (inner && inner !== "}") {
+            line = inner;
+          } else {
+            continue;
+          }
+        }
+
+        if (line.endsWith(";")) {
+          const leaf = line.substring(0, line.length - 1).trim();
+          if (leaf) {
+            const fullPath = [...pathStack, leaf].join(" ");
+            flatLines.push(fullPath);
+          }
+        } else {
+          flatLines.push([...pathStack, line].join(" "));
+        }
+      }
+    } else {
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (line.startsWith("set ")) {
+          flatLines.push(line.substring(4).trim());
+        } else {
+          flatLines.push(line);
         }
       }
     }
-  }
 
-  if (currentInterface?.name) {
-    cfg.interfaces.push(finalizeInterface(currentInterface));
+    const totalFlat = flatLines.length;
+    const interfaceMap = new globalThis.Map<string, Partial<InterfaceInfo>>();
+    const getInterface = (name: string): Partial<InterfaceInfo> => {
+      if (!interfaceMap.has(name)) {
+        const isVlan = name.match(/^(vlan|irb)/i);
+        interfaceMap.set(name, {
+          name: name,
+          description: "",
+          speed: "auto",
+          duplex: "auto",
+          status: "up",
+          ip: "",
+          vlanAccess: null,
+          vlanTrunkAllowed: [],
+          mode: isVlan ? "routed" : "unknown",
+          mac: "",
+          mtu: 1500,
+          type: isVlan ? "SVI" : name.match(/^(ge|xe|et|ae|fe|port)/i)?.[1] || "Other",
+        });
+      }
+      return interfaceMap.get(name)!;
+    };
+
+    for (let i = 0; i < totalFlat; i += CHUNK_SIZE) {
+      const end = Math.min(i + CHUNK_SIZE, totalFlat);
+      for (let j = i; j < end; j++) {
+        const line = flatLines[j];
+        
+        const hnMatch = line.match(/(?:system\s+)?host-name\s+(\S+)/i);
+        if (hnMatch) {
+          cfg.hostname = hnMatch[1].replace(/["';]/g, "").trim();
+          continue;
+        }
+
+        const vlanIdMatch = line.match(/^vlans\s+(\S+)\s+vlan-id\s+(\d+)/i);
+        if (vlanIdMatch) {
+          const name = vlanIdMatch[1];
+          const id = parseInt(vlanIdMatch[2]);
+          const existing = cfg.vlans.find(v => v.id === id);
+          if (existing) {
+            existing.name = name;
+          } else {
+            cfg.vlans.push({ id, name });
+          }
+          continue;
+        }
+
+        const vlanDescMatch = line.match(/^vlans\s+(\S+)\s+description\s+["']?(.+?)["']?$/i);
+        if (vlanDescMatch) {
+          const name = vlanDescMatch[1];
+          const desc = vlanDescMatch[2];
+          const existing = cfg.vlans.find(v => v.name === name || v.id.toString() === name);
+          if (existing) {
+            existing.name = `${desc} (VLAN ${existing.id})`;
+          }
+          continue;
+        }
+
+        if (line.match(/^protocols\s+ospf/i)) {
+          if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
+        }
+        if (line.match(/^protocols\s+bgp/i)) {
+          if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
+        }
+        if (line.match(/^routing-options\s+static/i) || line.match(/^static\s+route/i)) {
+          if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
+        }
+
+        const ifMatch = line.match(/^interfaces\s+(\S+)/i);
+        if (ifMatch) {
+          const ifName = ifMatch[1];
+          const iface = getInterface(ifName);
+
+          if (line.includes("family ethernet-switching")) {
+            if (iface.mode === "unknown") {
+              iface.mode = "access";
+            }
+          }
+
+          const descM = line.match(/description\s+["']?(.+?)["']?$/i);
+          if (descM) iface.description = descM[1].trim();
+
+          if (line.match(/\bdisable\b/i)) iface.status = "adminDown";
+
+          const speedM = line.match(/speed\s+(\S+)/i);
+          if (speedM) iface.speed = speedM[1].replace(/[mGg]/g, "");
+
+          const modeM = line.match(/(?:interface-mode|port-mode)\s+(access|trunk)/i);
+          if (modeM) iface.mode = modeM[1].toLowerCase() as "access" | "trunk";
+
+          const membersM = line.match(/vlan\s+members\s+\[?\s*([^\]]+?)\s*\]?$/i);
+          if (membersM) {
+            const val = membersM[1].trim();
+            const vlanNames = val.split(/\s+/);
+            vlanNames.forEach(vName => {
+              const id = parseInt(vName);
+              if (!isNaN(id)) {
+                if (iface.mode === "access") iface.vlanAccess = id;
+                else if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(id)) iface.vlanTrunkAllowed.push(id);
+              } else {
+                const matchingVlan = cfg.vlans.find(v => v.name === vName);
+                if (matchingVlan) {
+                  if (iface.mode === "access") iface.vlanAccess = matchingVlan.id;
+                  else if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(matchingVlan.id)) iface.vlanTrunkAllowed.push(matchingVlan.id);
+                } else {
+                  const numMatch = vName.match(/\d+/);
+                  if (numMatch) {
+                    const parsedId = parseInt(numMatch[0]);
+                    if (iface.mode === "access") iface.vlanAccess = parsedId;
+                    else if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(parsedId)) iface.vlanTrunkAllowed.push(parsedId);
+                  }
+                }
+              }
+            });
+          }
+
+          const ipM = line.match(/address\s+([\d.]+)\/(\d+)/i);
+          if (ipM) {
+            iface.ip = `${ipM[1]}/${ipM[2]}`;
+            iface.mode = "routed";
+            if (!cfg.managementIp) cfg.managementIp = ipM[1];
+          }
+        }
+      }
+      onProgress(Math.round((end / totalFlat) * 100));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    interfaceMap.forEach(iface => {
+      cfg.interfaces.push(finalizeInterface(iface));
+    });
+
+  } else if (vendor === "FortiGate") {
+    let inSystemGlobal = false;
+    let inSystemInterface = false;
+    let currentInterface: Partial<InterfaceInfo> | null = null;
+
+    for (let i = 0; i < totalLines; i += CHUNK_SIZE) {
+      const end = Math.min(i + CHUNK_SIZE, totalLines);
+      for (let j = i; j < end; j++) {
+        const line = lines[j].trim();
+        if (!line) continue;
+
+        if (line.startsWith('config system global')) {
+          inSystemGlobal = true;
+          inSystemInterface = false;
+          continue;
+        }
+        if (line.startsWith('config system interface')) {
+          inSystemGlobal = false;
+          inSystemInterface = true;
+          continue;
+        }
+        if (line.startsWith('config router ospf')) {
+          inSystemGlobal = false;
+          inSystemInterface = false;
+          if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
+          continue;
+        }
+        if (line.startsWith('config router static')) {
+          inSystemGlobal = false;
+          inSystemInterface = false;
+          if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
+          continue;
+        }
+        if (line.startsWith('config router bgp')) {
+          inSystemGlobal = false;
+          inSystemInterface = false;
+          if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
+          continue;
+        }
+        if (line === 'end') {
+          inSystemGlobal = false;
+          inSystemInterface = false;
+          if (currentInterface?.name) {
+            cfg.interfaces.push(finalizeInterface(currentInterface));
+            currentInterface = null;
+          }
+          continue;
+        }
+
+        if (inSystemGlobal && line.startsWith('set hostname')) {
+          const match = line.match(/^set\s+hostname\s+["']?(.+?)["']?$/);
+          if (match) cfg.hostname = match[1].trim();
+          continue;
+        }
+
+        if (inSystemInterface) {
+          if (line.startsWith('edit')) {
+            if (currentInterface?.name) {
+              cfg.interfaces.push(finalizeInterface(currentInterface));
+            }
+            const match = line.match(/^edit\s+["']?(.+?)["']?$/);
+            const name = match ? match[1] : "Unknown";
+            currentInterface = {
+              name: name,
+              description: "",
+              speed: "auto",
+              duplex: "auto",
+              status: "up",
+              ip: "",
+              vlanAccess: null,
+              vlanTrunkAllowed: [],
+              mode: "unknown",
+              mac: "",
+              mtu: 1500,
+              type: name.match(/^(port|wan|lan|dmz|ssl|ssl-vlan|vlan)/i)?.[1] || "Other",
+            };
+            continue;
+          }
+
+          if (currentInterface) {
+            if (line.startsWith('set alias')) {
+              const match = line.match(/^set\s+alias\s+["']?(.+?)["']?$/);
+              if (match) currentInterface.description = match[1].trim();
+            }
+            else if (line.startsWith('set ip')) {
+              const match = line.match(/^set\s+ip\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)/);
+              if (match) {
+                const ip = match[1];
+                const netmask = match[2];
+                currentInterface.ip = `${ip}/${cidrFromMask(netmask)}`;
+                currentInterface.mode = "routed";
+                if (!cfg.managementIp) cfg.managementIp = ip;
+              }
+            }
+            else if (line.startsWith('set status')) {
+              const match = line.match(/^set\s+status\s+(up|down)/i);
+              if (match) currentInterface.status = match[1].toLowerCase() as "up" | "down";
+            }
+            else if (line.startsWith('set vlanid')) {
+              const match = line.match(/^set\s+vlanid\s+(\d+)/);
+              if (match) {
+                const vlanId = parseInt(match[1]);
+                currentInterface.vlanAccess = vlanId;
+                currentInterface.mode = "access";
+                if (!cfg.vlans.some(v => v.id === vlanId)) {
+                  cfg.vlans.push({ id: vlanId, name: currentInterface.name || `VLAN ${vlanId}` });
+                }
+              }
+            }
+            else if (line === 'next') {
+              cfg.interfaces.push(finalizeInterface(currentInterface));
+              currentInterface = null;
+            }
+          }
+        }
+      }
+      onProgress(Math.round((end / totalLines) * 100));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    if (currentInterface?.name) {
+      cfg.interfaces.push(finalizeInterface(currentInterface));
+    }
+
+  } else {
+    let currentInterface: Partial<InterfaceInfo> | null = null;
+
+    for (let i = 0; i < totalLines; i += CHUNK_SIZE) {
+      const end = Math.min(i + CHUNK_SIZE, totalLines);
+      for (let j = i; j < end; j++) {
+        const line = lines[j].trim();
+        if (!line || line === "!" || line === "end") {
+          if (currentInterface?.name) {
+            cfg.interfaces.push(finalizeInterface(currentInterface));
+          }
+          currentInterface = null;
+          continue;
+        }
+
+        const hnMatch = line.match(/^hostname\s+(.+)/i);
+        if (hnMatch) { cfg.hostname = hnMatch[1].trim(); continue; }
+
+        const vlanMatch = line.match(/^vlan\s+(\d+)/i);
+        if (vlanMatch) {
+          const id = parseInt(vlanMatch[1]);
+          const nameLine = lines[j + 1]?.trim() || "";
+          const nameMatch = nameLine.match(/^name\s+(.+)/i);
+          cfg.vlans.push({ id, name: nameMatch ? nameMatch[1].trim() : `VLAN ${id}` });
+          continue;
+        }
+
+        if (line.match(/^router\s+(ospf|bgp|eigrp|rip)\s+/i)) {
+          const proto = line.match(/^router\s+(ospf|bgp|eigrp|rip)/i)?.[1].toUpperCase() || "";
+          if (!cfg.routingProtocols.includes(proto)) cfg.routingProtocols.push(proto);
+          continue;
+        }
+        if (line.match(/^ip\s+route\s+/i)) {
+          if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
+          continue;
+        }
+
+        const ifMatch = line.match(/^interface\s+(.+)/i);
+        if (ifMatch) {
+          if (currentInterface?.name) {
+            cfg.interfaces.push(finalizeInterface(currentInterface));
+          }
+          const ifName = ifMatch[1].trim();
+          const isVlan = ifName.match(/^Vlan(\d+)/i);
+          currentInterface = {
+            name: ifName,
+            description: "",
+            speed: "auto",
+            duplex: "auto",
+            status: "up",
+            ip: "",
+            vlanAccess: null,
+            vlanTrunkAllowed: [],
+            mode: isVlan ? "routed" : "unknown",
+            mac: "",
+            mtu: 1500,
+            type: isVlan ? "SVI" : ifName.match(/^(Gigabit|Fast|TenGigabit|Ethernet)/i)?.[1] || "Other",
+          };
+          continue;
+        }
+
+        if (!currentInterface) continue;
+
+        const descMatch = line.match(/^description\s+(.+)/i);
+        if (descMatch) { currentInterface.description = descMatch[1].trim(); continue; }
+
+        const speedMatch = line.match(/^speed\s+([\d]+)/i);
+        if (speedMatch) { currentInterface.speed = speedMatch[1]; continue; }
+
+        const duplexMatch = line.match(/^duplex\s+(full|half|auto)/i);
+        if (duplexMatch) { currentInterface.duplex = duplexMatch[1].toLowerCase(); continue; }
+
+        if (line.match(/^shutdown/i)) { currentInterface.status = "adminDown"; continue; }
+        if (line.match(/^no shutdown/i)) { currentInterface.status = "up"; continue; }
+
+        const ipMatch = line.match(/^ip\s+address\s+([\d.]+)\s+([\d.]+)/i);
+        if (ipMatch) {
+          currentInterface.ip = `${ipMatch[1]}/${cidrFromMask(ipMatch[2])}`;
+          if (currentInterface.name?.match(/^Vlan1/i)) {
+            cfg.managementIp = ipMatch[1];
+          }
+          continue;
+        }
+
+        if (line.match(/^switchport\s+mode\s+access/i)) { currentInterface.mode = "access"; continue; }
+        if (line.match(/^switchport\s+mode\s+trunk/i)) { currentInterface.mode = "trunk"; continue; }
+
+        const accessVlan = line.match(/^switchport\s+access\s+vlan\s+(\d+)/i);
+        if (accessVlan) { currentInterface.vlanAccess = parseInt(accessVlan[1]); continue; }
+
+        const trunkVlan = line.match(/^switchport\s+trunk\s+allowed\s+vlan\s+(.+)/i);
+        if (trunkVlan) {
+          const vlanStr = trunkVlan[1].trim();
+          if (vlanStr.toLowerCase() === "all") {
+            currentInterface.vlanTrunkAllowed = [1, 10, 20, 30, 100, 200, 300];
+          } else {
+            currentInterface.vlanTrunkAllowed = vlanStr.split(",").map(v => parseInt(v.trim())).filter(n => !isNaN(n));
+          }
+          continue;
+        }
+
+        const macMatch = line.match(/^mac-address\s+([\da-fA-F.]+)/i);
+        if (macMatch) { currentInterface.mac = macMatch[1]; continue; }
+
+        const mtuMatch = line.match(/^mtu\s+(\d+)/i);
+        if (mtuMatch) { currentInterface.mtu = parseInt(mtuMatch[1]); }
+      }
+      onProgress(Math.round((end / totalLines) * 100));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    if (currentInterface?.name) {
+      cfg.interfaces.push(finalizeInterface(currentInterface));
+    }
+
+    if (cfg.interfaces.length === 0 && vendor === "Unknown") {
+      const genericCfg = parseGenericConfig(raw);
+      cfg.hostname = genericCfg.hostname || cfg.hostname;
+      cfg.managementIp = genericCfg.managementIp || cfg.managementIp;
+      cfg.interfaces = genericCfg.interfaces;
+      cfg.vlans = genericCfg.vlans;
+      cfg.brand = "Generic";
+      cfg.model = "Fallback Tokenizer";
+    }
   }
 
   return cfg;
-}
-
-function parseRunningConfig(raw: string): ParsedConfig {
-  const vendor = detectVendor(raw);
-  
-  switch (vendor) {
-    case "Cisco":
-      return parseCiscoConfig(raw);
-    case "Juniper":
-      return parseJuniperConfig(raw);
-    case "FortiGate":
-      return parseFortiGateConfig(raw);
-    default:
-      return parseCiscoConfig(raw);
-  }
 }
 
 function finalizeInterface(iface: Partial<InterfaceInfo>): InterfaceInfo {
@@ -1624,37 +1860,67 @@ export default function RunningConfigDecoderClient() {
   const [isDragging, setIsDragging] = useState(false);
   const [fileMeta, setFileMeta] = useState<{ name: string; size: number } | null>(null);
 
-    const parsed = useMemo(() => {
-      if (!config.trim()) return null;
-      try {
-        return parseRunningConfig(config);
-      } catch {
-        return null;
+  const [parsed, setParsed] = useState<ParsedConfig | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseProgress, setParseProgress] = useState(0);
+
+  useEffect(() => {
+    if (!config.trim()) {
+      setParsed(null);
+      setIsParsing(false);
+      setParseProgress(0);
+      return;
+    }
+
+    let isCurrent = true;
+    setIsParsing(true);
+    setParseProgress(0);
+
+    parseRunningConfigAsync(config, (progress) => {
+      if (isCurrent) {
+        setParseProgress(progress);
       }
-    }, [config]);
-
-    const vendor = useMemo(() => {
-      if (!config.trim()) return "Unknown";
-      return detectVendor(config);
-    }, [config]);
-
-    const vendorBadge = useMemo(() => {
-      switch (vendor) {
-        case "Cisco":
-          return <span className="text-cyan-400 border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Cisco IOS</span>;
-        case "Juniper":
-          return <span className="text-purple-400 border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Juniper JunOS</span>;
-        case "FortiGate":
-          return <span className="text-emerald-400 border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">FortiOS</span>;
-        default:
-          return <span className="text-muted/50 border border-white/10 bg-white/5 px-2 py-0.5 rounded-full whitespace-nowrap">Unknown Vendor</span>;
+    }).then((res) => {
+      if (isCurrent) {
+        setParsed(res);
+        setIsParsing(false);
       }
-    }, [vendor]);
+    }).catch(() => {
+      if (isCurrent) {
+        setParsed(null);
+        setIsParsing(false);
+      }
+    });
 
-    const topologyNodes = useMemo(() => {
-      if (!parsed) return [];
-      return buildTopology(parsed);
-    }, [parsed]);
+    return () => {
+      isCurrent = false;
+    };
+  }, [config]);
+
+  const vendor = useMemo(() => {
+    if (!config.trim()) return "Unknown";
+    return detectVendor(config);
+  }, [config]);
+
+  const vendorBadge = useMemo(() => {
+    switch (vendor) {
+      case "Cisco":
+        return <span className="text-cyan-400 border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Cisco IOS</span>;
+      case "Juniper":
+        return <span className="text-purple-400 border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Juniper JunOS</span>;
+      case "FortiGate":
+        return <span className="text-emerald-400 border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">FortiOS</span>;
+      case "PaloAlto":
+        return <span className="text-orange-400 border border-orange-400/30 bg-orange-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Palo Alto PAN-OS</span>;
+      default:
+        return <span className="text-muted/50 border border-white/10 bg-white/5 px-2 py-0.5 rounded-full whitespace-nowrap">Unknown Vendor</span>;
+    }
+  }, [vendor]);
+
+  const topologyNodes = useMemo(() => {
+    if (!parsed) return [];
+    return buildTopology(parsed);
+  }, [parsed]);
 
   const loadSample = () => {
     setConfig(SAMPLE_CONFIG);
@@ -1783,8 +2049,25 @@ export default function RunningConfigDecoderClient() {
           </div>
         </div>
 
+        {/* PROGRESS LOADER FOR ASYNC PARSING */}
+        {config && isParsing && (
+          <GlassCard className="py-20 flex flex-col items-center gap-6 text-center border-white/5 bg-black/40 animate-fadeIn">
+            <div className="relative size-16">
+              <div className="absolute inset-0 rounded-full border-4 border-accent/10 border-t-accent animate-spin" />
+              <div className="absolute inset-2 rounded-full border-4 border-purple-500/10 border-b-purple-500 animate-spin" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-black uppercase tracking-widest text-accent">Ingesting Configuration</h3>
+              <p className="text-[10px] text-muted/50 font-black uppercase tracking-wider">Parsing configuration streams asynchronously... {parseProgress}%</p>
+            </div>
+            <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-accent to-purple-500 transition-all duration-300" style={{ width: `${parseProgress}%` }} />
+            </div>
+          </GlassCard>
+        )}
+
         {/* POST-ANALYSIS DASHBOARD */}
-        {config && (
+        {config && !isParsing && (
           <div className="flex flex-col gap-6 animate-fadeIn">
 
             {/* WORKSPACE TABS */}
