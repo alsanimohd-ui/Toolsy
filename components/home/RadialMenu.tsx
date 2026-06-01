@@ -117,9 +117,9 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
   const R = 22;
   const rad = ((pos.angle - 90) * Math.PI) / 180;
   
-  // Calculate dynamic radial offset for fanning labels outwards in a curved ring
-  const labelOffsetX = 34 * Math.cos(rad);
-  const labelOffsetY = 34 * Math.sin(rad);
+  // Calculate dynamic radial offset for fanning labels outwards cleanly (R = 22 + 16px gap + 12px half-dimension = 50px radial offset)
+  const labelOffsetX = 50 * Math.cos(rad);
+  const labelOffsetY = 50 * Math.sin(rad);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -215,7 +215,7 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
               opacity: isVisible ? 1 : 0,
               scale: isVisible ? (hovered ? 1.05 : 1) : 0.8,
             }}
-            className="px-2.5 py-0.5 rounded bg-black/75 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center"
+            className="px-3 py-1 rounded-md bg-black/80 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center transition-all duration-200 ease-in-out"
             style={{
               boxShadow: hovered ? `0 0 12px ${color}2b` : "none",
               borderColor: hovered ? `${color}66` : "rgba(255,255,255,0.08)"
