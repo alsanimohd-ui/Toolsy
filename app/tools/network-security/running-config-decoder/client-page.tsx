@@ -23,7 +23,6 @@ import {
   LayoutGrid,
   Share2,
   Monitor,
-  Wifi,
   Radio,
   Zap,
   Layers,
@@ -94,11 +93,6 @@ const TABS: TabDef[] = [
   { id: "SCHEMA", label: "Visual Schema", icon: Map },
 ];
 
-/* ─────────────────────────────────────────────
-    Multi-Vendor Config Parser (regex-only, offline)
-    ───────────────────────────────────────────── */
-
-type VendorType = "Cisco" | "Juniper" | "FortiGate" | "PaloAlto" | "Unknown";
 
 const SAMPLE_CONFIG = `! Device: Cisco Catalyst 9300
 ! Software: IOS-XE 17.3.1
@@ -182,87 +176,15 @@ ntp server pool.ntp.org
 !
 end`;
 
-function detectVendor(raw: string): VendorType {
-  const lower = raw.toLowerCase();
-  
-  // 1. Palo Alto check first - check for Palo Alto structural nodes or PAN-OS markers to prevent Juniper matching loops
-  if (lower.includes('deviceconfig system') ||
-      lower.includes('deviceconfig { system') ||
-      lower.includes('set deviceconfig system') ||
-      lower.includes('pan-os') ||
-      lower.includes('pa-') ||
-      lower.includes('rulebase {') ||
-      lower.includes('security { rules') ||
-      lower.includes('set rulebase') ||
-      lower.includes('set network interface') ||
-      lower.includes('set zone') ||
-      lower.includes('set network virtual-router')) {
-    return "PaloAlto";
-  }
-
-  // 2. FortiGate (FortiOS) check second - strict vendor lock
-  if (lower.includes('config system global') ||
-      lower.includes('config system interface') ||
-      lower.includes('config vpn ssl') ||
-      lower.includes('config vpn ipsec') ||
-      lower.includes('config system sdwan') ||
-      lower.includes('config router ospf') ||
-      lower.includes('config router static') ||
-      lower.includes('config router bgp')) {
-    return "FortiGate";
-  }
-
-  // 3. Juniper check third
-  if (lower.includes('set protocols') ||
-      lower.includes('set routing-options') ||
-      lower.includes('protocols {') ||
-      lower.includes('interfaces {') ||
-      lower.includes('vlans {') ||
-      lower.includes('system {') ||
-      (lower.includes('set hostname') && !lower.includes('config system')) ||
-      (lower.includes('set interfaces') && !lower.includes('config system'))) {
-    return "Juniper";
-  }
-  
-  // 4. Cisco
-  if (lower.includes('hostname ') ||
-      lower.includes('interface ') ||
-      lower.includes('switchport') ||
-      lower.includes('router ospf') ||
-      lower.includes('ip route')) {
-    return "Cisco";
-  }
-  
-  return "Unknown";
-}
-
-function extractFortiGateBlock(rawContent: string, blockName: string): string {
-  let result = "";
-  let index = 0;
-  while (true) {
-    const start = rawContent.indexOf(blockName, index);
-    if (start === -1) break;
-    const end = rawContent.indexOf("end", start);
-    if (end === -1) {
-      result += rawContent.substring(start);
-      break;
-    }
-    result += rawContent.substring(start, end + 3) + "\n";
-    index = end + 3;
-  }
-  return result;
-}
 
 async function parseUniversalConfigAsync(
   raw: string,
   onProgress: (percent: number) => void
 ): Promise<ParsedConfig> {
-  const vendor = detectVendor(raw);
-  
   const cfg: ParsedConfig = {
     hostname: "",
     managementIp: "",
-    brand: vendor === "Unknown" ? "Generic Device" : (vendor === "PaloAlto" ? "Palo Alto" : vendor),
+    brand: "",
     model: "",
     deviceType: "Switch/Router",
     osVersion: "",
@@ -271,165 +193,81 @@ async function parseUniversalConfigAsync(
     interfaces: [],
   };
 
-  // Device Type determination
-  const isFirewall = vendor === "FortiGate" || 
-                     vendor === "PaloAlto" || 
-                     raw.toLowerCase().includes("vpn") || 
-                     raw.toLowerCase().includes("policy") || 
-                     raw.toLowerCase().includes("firewall");
+  // Device Type determination - purely dynamic / brand-agnostic
+  const lowerRawText = raw.toLowerCase();
+  const isFirewall = lowerRawText.includes("vpn") || 
+                     lowerRawText.includes("policy") || 
+                     lowerRawText.includes("firewall") ||
+                     lowerRawText.includes("security") ||
+                     lowerRawText.includes("rules");
   cfg.deviceType = isFirewall ? "Firewall" : "Switch/Router";
 
-  // Model detection logic (runs on raw configuration)
-  let detectedModel = "";
-  if (vendor === "Cisco") {
-    const ciscoModelMatch = raw.match(/(?:Catalyst|Nexus|ISR|ASR|Cisco\s+Catalyst|Cisco\s+Nexus|Cisco\s+ISR|Cisco\s+ASR)\s*([0-9a-zA-Z\-]+)/i);
-    if (ciscoModelMatch) {
-      detectedModel = ciscoModelMatch[0];
-    } else {
-      const modelMatch = raw.match(/(?:Model|Device|Hardware|Platform|Switch|Router)\s*:\s*([a-zA-Z0-9\-]+)/i);
-      if (modelMatch) {
-        detectedModel = modelMatch[1];
-      }
-    }
-  } else if (vendor === "Juniper") {
-    const juniperModelMatch = raw.match(/model\s+(\S+);/i) || 
-                              raw.match(/\b(SRX\d+|EX\d+|MX\d+|QFX\d+|PTX\d+|ACX\d+)\b/i);
-    if (juniperModelMatch) {
-      detectedModel = (juniperModelMatch[1] || juniperModelMatch[0]).replace(/[;"]/g, "").trim();
-    } else {
-      detectedModel = "";
-    }
-  } else if (vendor === "FortiGate") {
-    const fgVersionMatch = raw.match(/#config-version=([A-Za-z0-9\-]+)-v?([0-9\.]+)/i);
-    if (fgVersionMatch) {
-      const m = fgVersionMatch[1].trim();
-      if (m.toUpperCase().startsWith("FG") && !m.toUpperCase().startsWith("FGR")) {
-        detectedModel = `FortiGate ${m.substring(2)}`;
-      } else if (m.toUpperCase().startsWith("FORTIGATE-")) {
-        detectedModel = `FortiGate ${m.substring(10)}`;
-      } else {
-        detectedModel = m;
-      }
-      cfg.osVersion = "v" + fgVersionMatch[2];
-    } else {
-      const fgModelMatch = raw.match(/#model\s*[:=]\s*(\S+)/i) ||
-                           raw.match(/\b(FortiGate-\d+[A-Z]*|FG-\d+[A-Z]*|FortiGate\s+\d+[A-Z]*)\b/i);
-      if (fgModelMatch) {
-        const m = (fgModelMatch[1] || fgModelMatch[0]).trim();
-        if (m.toUpperCase().startsWith("FG") && !m.toUpperCase().startsWith("FGR")) {
-          detectedModel = `FortiGate ${m.substring(2)}`;
-        } else if (m.toUpperCase().startsWith("FORTIGATE-")) {
-          detectedModel = `FortiGate ${m.substring(10)}`;
-        } else {
-          detectedModel = m;
-        }
-      } else {
-        detectedModel = "";
-      }
-    }
-  } else if (vendor === "PaloAlto") {
-    const modelMatch = raw.match(/#\s*model\s*[:=]\s*(\S+)/i) || 
-                       raw.match(/model\s+(\S+)/i) || 
-                       raw.match(/\b(PA-\d+|PAN-OS)\b/i);
-    if (modelMatch) {
-      detectedModel = modelMatch[1] || modelMatch[0];
-    } else {
-      detectedModel = "";
-    }
-  }
+  // Dynamic Brand & Model determination - brand-agnostic and generic
+  let brand = "";
+  let model = "";
 
-  // Palo Alto signature check & dynamic enforcement
-  const lowerRaw = raw.toLowerCase();
-  const hasPaloAltoSignature = lowerRaw.includes("pa-") || lowerRaw.includes("pan-os");
-  
-  if (vendor === "PaloAlto" || hasPaloAltoSignature) {
-    cfg.brand = "Palo Alto";
-    cfg.deviceType = "Firewall";
-    detectedModel = "Palo Alto PA-Series";
-    cfg.osVersion = "PAN-OS";
-    
-    const specificPaMatch = raw.match(/\b(PA-\d+)\b/i);
-    if (specificPaMatch) {
-      detectedModel = `Palo Alto ${specificPaMatch[1].toUpperCase()}`;
-    }
-    
-    const versionMatch = raw.match(/sw-version\s+(\S+)/i) || raw.match(/software-version\s+(\S+)/i);
-    if (versionMatch) {
-      cfg.osVersion = `PAN-OS ${versionMatch[1].replace(/[;"]/g, "").trim()}`;
-    }
-  }
-  cfg.model = detectedModel || "Generic Device";
-
-  // Fast-Pass System Info (scan only first 1000 lines)
   const totalRawLines = raw.split("\n");
   const first1000Lines = totalRawLines.slice(0, 1000);
-  
+
+  for (let i = 0; i < Math.min(first1000Lines.length, 100); i++) {
+    const line = first1000Lines[i].trim();
+    if (!line) continue;
+    const brandMatch = line.match(/(?:brand|vendor|make|manufacturer|device\s+vendor)\s*[:=]\s*["']?([a-zA-Z0-9\-_ ]+)/i);
+    if (brandMatch) {
+      brand = brandMatch[1].trim();
+    }
+    const modelMatch = line.match(/(?:model|platform|hardware|device\s+model|chassis)\s*[:=]\s*["']?([a-zA-Z0-9\-_ ]+)/i);
+    if (modelMatch) {
+      model = modelMatch[1].trim();
+    }
+  }
+
+  if (!brand) {
+    if (lowerRawText.includes("cisco")) brand = "Cisco";
+    else if (lowerRawText.includes("fortigate") || lowerRawText.includes("fortios")) brand = "FortiGate";
+    else if (lowerRawText.includes("juniper") || lowerRawText.includes("junos")) brand = "Juniper";
+    else if (lowerRawText.includes("palo alto") || lowerRawText.includes("paloalto") || lowerRawText.includes("pan-os")) brand = "Palo Alto";
+    else brand = "Generic Device";
+  }
+
+  if (!model) {
+    const modelMatch = raw.match(/\b(catalyst\s+\d+|nexus\s+\d+|srx\d+|pa-\d+|fortigate\s+\d+|ex\d+|mx\d+)\b/i);
+    if (modelMatch) {
+      model = modelMatch[1].trim();
+    } else {
+      model = "";
+    }
+  }
+
+  cfg.brand = brand || "Generic Device";
+  cfg.model = model || "";
+
+  // Dynamic Hostname & Version extraction from standard assignment patterns
   let hostname = "";
-  let osVersion = cfg.osVersion || "";
-  let systemInfoFrozen = false;
-  let inSystemGlobal = false;
-  let inDeviceConfigSystem = false;
+  let osVersion = "";
 
   for (let i = 0; i < first1000Lines.length; i++) {
-    if (systemInfoFrozen) break;
-
     const line = first1000Lines[i].trim();
     if (!line) continue;
 
-    // Scan for version string (e.g. v7.4.9 or v7.2.5 or 17.3.1)
-    if (osVersion === "Unknown") {
-      const versionMatch = line.match(/\bv([0-9]+\.[0-9]+\.[0-9]+)\b/) || line.match(/version\s+([vV]?\d+\.\d+(?:\.\d+)?)/i);
-      if (versionMatch) {
-        osVersion = versionMatch[1].startsWith("v") || versionMatch[1].startsWith("V") ? versionMatch[1] : "v" + versionMatch[1];
-      }
-    }
-
-    // FortiGate context tracking inside first 1000 lines
-    if (vendor === "FortiGate") {
-      if (line.startsWith("config system global")) {
-        inSystemGlobal = true;
-        continue;
-      }
-      if (inSystemGlobal && line.startsWith("set hostname")) {
-        const match = line.match(/^set\s+hostname\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
-        if (match) {
-          hostname = match[1];
-          systemInfoFrozen = true;
-        }
-        continue;
-      }
-      if (inSystemGlobal && (line === "end" || line === "next" || line.startsWith("config "))) {
-        inSystemGlobal = false;
-      }
-    }
-
-    // Palo Alto context tracking inside first 1000 lines
-    if (vendor === "PaloAlto") {
-      if (line.includes("deviceconfig system") || line.includes("deviceconfig { system")) {
-        inDeviceConfigSystem = true;
-      }
-      if (inDeviceConfigSystem || line.includes("deviceconfig system hostname")) {
-        const match = line.match(/hostname\s+["']?([a-zA-Z0-9\-_]+)["']?/i) ||
-                      line.match(/set\s+deviceconfig\s+system\s+hostname\s+(\S+)/i);
-        if (match) {
-          hostname = match[1].replace(/[;"]/g, "").trim();
-          systemInfoFrozen = true;
-        }
-      }
-    }
-
-    // Cisco / Juniper / Generic Hostname
+    // Hostname dynamic extraction from any standard assignment patterns
     if (!hostname) {
-      const hnMatch = line.match(/^(?:hostname|host-name|sysname|device-name)\s+(\S+)/i) ||
-                      line.match(/set\s+(?:system\s+)?host-name\s+(\S+)/i) ||
-                      line.match(/set\s+hostname\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
+      const hnMatch = line.match(/(?:^|\b)(?:hostname|sysname|host-name|device-name|set\s+hostname|set\s+host-name|set\s+sysname)\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
       if (hnMatch) {
         hostname = hnMatch[1].replace(/[;"]/g, "").trim();
-        systemInfoFrozen = true;
       }
     }
 
-    // Routing protocols detection (first 1000 lines)
+    // Version dynamic extraction next to any top-level header token containing version or v[0-9]
+    if (!osVersion) {
+      const verMatch = line.match(/(?:^|\b)(?:version|sw-version|software-version|fw-version|firmware-version|os-version|config-version|release|os)\s*[:=]?\s*["']?([a-zA-Z0-9\-_.]+)/i) ||
+                       line.match(/\b(v[0-9]+\.[0-9]+(?:\.[0-9]+)*[a-zA-Z0-9\-_.]*)\b/i);
+      if (verMatch) {
+        osVersion = verMatch[1].replace(/[;"]/g, "").trim();
+      }
+    }
+
+    // Routing protocols detection
     if (line.match(/router\s+ospf/i) || line.match(/protocols\s+ospf/i) || line.match(/protocol\s+ospf/i)) {
       if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
     }
@@ -447,54 +285,51 @@ async function parseUniversalConfigAsync(
     }
   }
 
-  cfg.hostname = hostname || "TopoMap-Device";
-  cfg.osVersion = osVersion;
+  cfg.hostname = hostname || "";
+  cfg.osVersion = osVersion || "";
 
-  // Selective Block-Splitting (Massive File Performance Optimization)
+  // Selective Block-Splitting (Massive File Performance Optimization - brand-agnostic)
   const chunks: string[] = [];
-  
-  if (vendor === "FortiGate") {
-    chunks.push(extractFortiGateBlock(raw, "config system interface"));
-    chunks.push(extractFortiGateBlock(raw, "config system zone"));
-    chunks.push(extractFortiGateBlock(raw, "config router"));
-    chunks.push(extractFortiGateBlock(raw, "config system sdwan"));
-    chunks.push(extractFortiGateBlock(raw, "config vpn ipsec"));
-    chunks.push(extractFortiGateBlock(raw, "config vpn ssl"));
-  } else if (vendor === "PaloAlto" || vendor === "Juniper") {
-    const filteredLines: string[] = [];
-    for (let i = 0; i < totalRawLines.length; i++) {
-      const line = totalRawLines[i];
-      const lower = line.toLowerCase();
-      if (
-        lower.includes("interface") ||
-        lower.includes("zone") ||
-        lower.includes("vlan") ||
-        lower.includes("virtual-router") ||
-        lower.includes("routing-options") ||
-        lower.includes("protocols")
-      ) {
+  const filteredLines: string[] = [];
+  let skipBlock = false;
+
+  for (let i = 0; i < totalRawLines.length; i++) {
+    const line = totalRawLines[i];
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+
+    // Check for massive security policies/rules/address blocks that cause bottlenecks
+    if (lower.startsWith("config firewall policy") || 
+        lower.startsWith("config firewall address") || 
+        lower.startsWith("set security policies") || 
+        lower.startsWith("set rulebase security rules")) {
+      skipBlock = true;
+      continue;
+    }
+
+    if (skipBlock && (trimmed === "end" || trimmed === "!" || trimmed === "}")) {
+      skipBlock = false;
+      continue;
+    }
+
+    if (!skipBlock) {
+      if (lower.includes("interface") || 
+          lower.includes("zone") || 
+          lower.includes("vlan") || 
+          lower.includes("route") || 
+          lower.includes("routing") || 
+          lower.includes("protocol") || 
+          lower.includes("vpn") || 
+          lower.includes("tunnel") || 
+          lower.includes("st0") || 
+          lower.includes("hostname") ||
+          lower.includes("sysname") ||
+          lower.includes("host-name")) {
         filteredLines.push(line);
       }
     }
-    chunks.push(filteredLines.join("\n"));
-  } else {
-    const filteredLines: string[] = [];
-    let inInterface = false;
-    for (let i = 0; i < totalRawLines.length; i++) {
-      const line = totalRawLines[i];
-      const trimmed = line.trim();
-      if (trimmed.startsWith("interface ") || trimmed.startsWith("router ") || trimmed.startsWith("ip route ") || trimmed.startsWith("vlan ")) {
-        inInterface = true;
-      }
-      if (inInterface || trimmed.toLowerCase().includes("vlan")) {
-        filteredLines.push(line);
-      }
-      if (inInterface && trimmed === "!") {
-        inInterface = false;
-      }
-    }
-    chunks.push(filteredLines.join("\n"));
   }
+  chunks.push(filteredLines.join("\n"));
 
   const combinedRaw = chunks.join("\n");
   const lines = combinedRaw.split("\n");
@@ -776,103 +611,51 @@ async function parseUniversalConfigAsync(
     await new Promise(resolve => setTimeout(resolve, 0));
   }
 
-  // Post-processing for VPN and SD-WAN interfaces (FortiGate & general)
-  if (vendor === "FortiGate") {
-    // Extract VPN ipsec interfaces
-    const ipsecPhase1 = extractFortiGateBlock(raw, "config vpn ipsec phase1-interface");
-    if (ipsecPhase1) {
-      const ipsecLines = ipsecPhase1.split("\n");
-      let inPhase1Block = false;
-      for (const line of ipsecLines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("config vpn ipsec phase1-interface")) {
-          inPhase1Block = true;
-          continue;
-        }
-        if (inPhase1Block && trimmed === "end") {
-          inPhase1Block = false;
-        }
-        if (inPhase1Block) {
-          const match = trimmed.match(/^edit\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
-          if (match) {
-            const vpnName = match[1];
-            const iface = getInterface(vpnName);
-            iface.type = "VPN Tunnel";
-            iface.status = "up";
-            iface.description = "IPsec VPN Tunnel Interface";
-            iface.mode = "routed";
-          }
-        }
-      }
-    }
-
-    // SSL VPN interface
-    if (raw.includes("config vpn ssl settings")) {
-      const sslIface = getInterface("ssl.root");
-      sslIface.type = "VPN Tunnel";
-      sslIface.status = "up";
-      sslIface.description = "SSL VPN Tunnel root interface";
-      sslIface.mode = "routed";
-    }
-
-    // SD-WAN Members
-    const sdwanBlock = extractFortiGateBlock(raw, "config system sdwan");
-    if (sdwanBlock) {
-      const sdwanLines = sdwanBlock.split("\n");
-      let inMembersBlock = false;
-      for (const line of sdwanLines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("config members")) {
-          inMembersBlock = true;
-          continue;
-        }
-        if (inMembersBlock && (trimmed === "end" || trimmed.startsWith("config "))) {
-          inMembersBlock = false;
-        }
-        if (inMembersBlock) {
-          const match = trimmed.match(/^set\s+interface\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
-          if (match) {
-            const memberName = match[1];
-            const iface = getInterface(memberName);
-            iface.type = "SD-WAN Member";
-            iface.description = iface.description 
-              ? (iface.description.includes("SD-WAN Member") ? iface.description : `${iface.description} (SD-WAN Member)`)
-              : "SD-WAN Member Interface";
-          }
-        }
-      }
-    }
-  }
-
-  // General scan for VPN Tunnels and SD-WAN Members (all vendors)
-  const linesToScan = raw.split("\n");
-  for (let i = 0; i < linesToScan.length; i++) {
-    const line = linesToScan[i].trim();
+  // 1. Dynamic virtual/tunnel interface discovery engine (fully brand-agnostic)
+  const rawLines = raw.split("\n");
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i].trim();
     if (!line) continue;
 
-    const tunnelMatch = line.match(/(?:interface|interfaces)\s+(tunnel\.\d+|st0\.\d+|tunnel\d+|st0)\b/i) || 
-                        line.match(/(?:set\s+network\s+interface\s+tunnel\s+member\s+)(\S+)/i) ||
-                        line.match(/set\s+interfaces\s+(st0)\s+unit\s+(\d+)/i) ||
-                        line.match(/set\s+interfaces\s+(tunnel)\s+unit\s+(\d+)/i);
-    if (tunnelMatch) {
-      let vpnName = tunnelMatch[1];
-      if (tunnelMatch[2]) {
-        vpnName = `${tunnelMatch[1]}.${tunnelMatch[2]}`;
-      }
-      const iface = getInterface(vpnName);
-      iface.type = "VPN Tunnel";
-      iface.status = "up";
-      iface.description = iface.description || `Virtual VPN Tunnel (${vpnName})`;
-      iface.mode = "routed";
-    }
+    const lower = line.toLowerCase();
 
-    const sdwanMatch = line.match(/(?:sdwan|sd-wan)\s+interface\s+["']?([a-zA-Z0-9\-_]+)["']?/i) ||
-                       line.match(/set\s+network\s+sdwan\s+interface\s+(\S+)/i);
-    if (sdwanMatch) {
-      const memberName = sdwanMatch[1];
-      const iface = getInterface(memberName);
-      iface.type = "SD-WAN Member";
-      iface.description = iface.description || "Virtual SD-WAN Interface";
+    // Dynamically identify virtual interfaces from generic assignment and initialization structures
+    const isVirtual = lower.includes("tunnel") || 
+                      lower.includes("st0") || 
+                      lower.includes("vpn") || 
+                      lower.includes("phase1-interface") ||
+                      lower.includes("config members") ||
+                      lower.includes("members ") ||
+                      lower.includes("member ");
+
+    if (isVirtual) {
+      // Find or assign virtual interface name dynamically
+      const nameMatch = line.match(/(?:tunnel\.\d+|st0\.\d+|tunnel\d+|st0|ipsec\d+|vpn\d+|ssl\.root)/i) ||
+                        line.match(/(?:edit|set\s+interface|set\s+member|interface)\s+["']?([a-zA-Z0-9\-_./]+)["']?/i);
+      
+      let vName = "";
+      if (nameMatch) {
+        vName = nameMatch[1] || nameMatch[0];
+      }
+
+      if (!vName && lower.includes("st0")) vName = "st0";
+      if (!vName && lower.includes("tunnel")) vName = "tunnel0";
+
+      if (vName) {
+        const EXCLUDED_KEYWORDS = new Set([
+          "global", "system", "router", "route", "ospf", "bgp", "vlan", "vlans", 
+          "zone", "security", "address", "service", "policy", "group", "member", 
+          "vdom", "firewall", "nat", "dhcp", "dns", "ntp", "snmp", "static", "user", 
+          "admin", "map", "key", "mode", "option", "type", "description", "config"
+        ]);
+        if (!EXCLUDED_KEYWORDS.has(vName.toLowerCase()) && !/^\d+$/.test(vName)) {
+          const iface = getInterface(vName);
+          iface.type = lower.includes("sdwan") || lower.includes("sd-wan") || lower.includes("members") || lower.includes("member") ? "SD-WAN Member" : "VPN Tunnel";
+          iface.status = "up";
+          iface.description = iface.description || `Universal Virtual Interface (${vName})`;
+          iface.mode = "routed";
+        }
+      }
     }
   }
 
@@ -2047,25 +1830,17 @@ export default function RunningConfigDecoderClient() {
     };
   }, [config]);
 
-  const vendor = useMemo(() => {
-    if (!config.trim()) return "Unknown";
-    return detectVendor(config);
-  }, [config]);
 
   const vendorBadge = useMemo(() => {
-    switch (vendor) {
-      case "Cisco":
-        return <span className="text-cyan-400 border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Cisco IOS</span>;
-      case "Juniper":
-        return <span className="text-purple-400 border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Juniper JunOS</span>;
-      case "FortiGate":
-        return <span className="text-emerald-400 border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">FortiOS</span>;
-      case "PaloAlto":
-        return <span className="text-orange-400 border border-orange-400/30 bg-orange-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Palo Alto PAN-OS</span>;
-      default:
-        return <span className="text-muted/50 border border-white/10 bg-white/5 px-2 py-0.5 rounded-full whitespace-nowrap">Unknown Vendor</span>;
+    if (parsed && parsed.brand) {
+      return (
+        <span className="text-cyan-400 border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">
+          {parsed.brand} {parsed.osVersion ? `(${parsed.osVersion})` : ""}
+        </span>
+      );
     }
-  }, [vendor]);
+    return <span className="text-muted/50 border border-white/10 bg-white/5 px-2 py-0.5 rounded-full whitespace-nowrap">Universal Profile</span>;
+  }, [parsed]);
 
   const topologyNodes = useMemo(() => {
     if (!parsed) return [];
@@ -2112,24 +1887,14 @@ export default function RunningConfigDecoderClient() {
 
   const statsCards = useMemo(() => {
     if (!parsed) return [];
-    const list = [
+    return [
       { label: "Interfaces", value: portCounts.total, icon: Monitor, color: "text-blue-400" },
       { label: "Active Ports", value: portCounts.up, icon: Activity, color: "text-emerald-400" },
       { label: "VLANs Defined", value: parsed.vlans.length, icon: Layers, color: "text-purple-400" },
-      { label: "Protocols", value: parsed.routingProtocols.length, icon: Radio, color: "text-accent" },
+      { label: "VPN Tunnels", value: portCounts.vpn, icon: Shield, color: "text-rose-400" },
+      { label: "Virtual Members", value: portCounts.sdwan, icon: Cpu, color: "text-amber-400" },
+      { label: "Trunk / Access Links", value: portCounts.trunk + portCounts.access, icon: Share2, color: "text-cyan-400" }
     ];
-    if (parsed.deviceType === "Firewall") {
-      list.push(
-        { label: "VPN Tunnels", value: portCounts.vpn, icon: Shield, color: "text-rose-400" },
-        { label: "SD-WAN Members", value: portCounts.sdwan, icon: Cpu, color: "text-amber-400" }
-      );
-    } else {
-      list.push(
-        { label: "Trunk Links", value: portCounts.trunk, icon: Share2, color: "text-amber-400" },
-        { label: "Access Ports", value: portCounts.access, icon: Wifi, color: "text-cyan-400" }
-      );
-    }
-    return list;
   }, [parsed, portCounts]);
 
   return (
