@@ -115,7 +115,7 @@ function MethodSelector({
   };
 
   return (
-    <div className="relative min-w-[160px] z-[60]">
+    <div className="relative min-w-[160px] z-[60] !overflow-visible">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full flex items-center justify-between gap-4 px-6 py-5 bg-black/60 border-y-2 border-l-2 border-r-0 border-white/5 rounded-l-2xl rounded-r-none font-black uppercase tracking-[0.2em] text-sm transition-all hover:bg-black/80 group ${isOpen ? "border-accent/40 bg-black/90" : ""}`}
@@ -507,8 +507,8 @@ export default function ApiRequestLabClient() {
 
         {/* URL BAR (REST & GraphQL only) */}
         {requestMode !== "websocket" && (
-          <GlassCard className="p-4 flex flex-col md:flex-row items-stretch md:items-center gap-4 border-l-4 border-l-accent bg-accent/[0.02]">
-            <div className="relative flex items-center gap-0 w-full z-10">
+          <GlassCard className="!overflow-visible p-4 flex flex-col md:flex-row items-stretch md:items-center gap-4 border-l-4 border-l-accent bg-accent/[0.02]">
+            <div className="relative flex items-center gap-0 w-full z-10 !overflow-visible">
               <MethodSelector value={method} onChange={setMethod} />
               <div className="relative flex-1">
                 <input 
