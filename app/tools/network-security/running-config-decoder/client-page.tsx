@@ -29,6 +29,8 @@ import {
   Layers,
   Map,
   CheckCircle2,
+  Shield,
+  Cpu,
 } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
 
@@ -41,6 +43,8 @@ interface ParsedConfig {
   managementIp: string;
   brand: string;
   model: string;
+  deviceType: "Firewall" | "Switch/Router";
+  osVersion: string;
   routingProtocols: string[];
   vlans: { id: number; name: string }[];
   interfaces: InterfaceInfo[];
@@ -181,37 +185,39 @@ end`;
 function detectVendor(raw: string): VendorType {
   const lower = raw.toLowerCase();
   
-  // Check for Juniper patterns
-  if (lower.includes('set hostname') || 
-      lower.includes('set vlans') || 
-      lower.includes('set interfaces') ||
-      lower.includes('set protocols') ||
-      lower.includes('set routing-options') ||
-      lower.includes('interfaces {') ||
-      lower.includes('protocols {') ||
-      lower.includes('vlans {') ||
-      lower.includes('system {')) {
-    return "Juniper";
-  }
-  
-  // Check for FortiGate patterns
+  // 1. FortiGate (FortiOS) check first - strict vendor lock
   if (lower.includes('config system global') ||
       lower.includes('config system interface') ||
+      lower.includes('config vpn ssl') ||
+      lower.includes('config vpn ipsec') ||
+      lower.includes('config system sdwan') ||
       lower.includes('config router ospf') ||
       lower.includes('config router static') ||
       lower.includes('config router bgp')) {
     return "FortiGate";
   }
 
-  // Check for Palo Alto patterns
+  // 2. Palo Alto check second
   if (lower.includes('set deviceconfig system') ||
       lower.includes('set network interface') ||
       lower.includes('set zone') ||
       lower.includes('set network virtual-router')) {
     return "PaloAlto";
   }
+
+  // 3. Juniper check third
+  if (lower.includes('set protocols') ||
+      lower.includes('set routing-options') ||
+      lower.includes('protocols {') ||
+      lower.includes('interfaces {') ||
+      lower.includes('vlans {') ||
+      lower.includes('system {') ||
+      (lower.includes('set hostname') && !lower.includes('config system')) ||
+      (lower.includes('set interfaces') && !lower.includes('config system'))) {
+    return "Juniper";
+  }
   
-  // Default to Cisco for backward compatibility
+  // 4. Cisco
   if (lower.includes('hostname ') ||
       lower.includes('interface ') ||
       lower.includes('switchport') ||
@@ -221,6 +227,23 @@ function detectVendor(raw: string): VendorType {
   }
   
   return "Unknown";
+}
+
+function extractFortiGateBlock(rawContent: string, blockName: string): string {
+  let result = "";
+  let index = 0;
+  while (true) {
+    const start = rawContent.indexOf(blockName, index);
+    if (start === -1) break;
+    const end = rawContent.indexOf("end", start);
+    if (end === -1) {
+      result += rawContent.substring(start);
+      break;
+    }
+    result += rawContent.substring(start, end + 3) + "\n";
+    index = end + 3;
+  }
+  return result;
 }
 
 async function parseUniversalConfigAsync(
@@ -234,10 +257,20 @@ async function parseUniversalConfigAsync(
     managementIp: "",
     brand: vendor === "Unknown" ? "Generic" : (vendor === "PaloAlto" ? "Palo Alto" : vendor),
     model: "Fallback Scanner",
+    deviceType: "Switch/Router",
+    osVersion: "Unknown",
     routingProtocols: [],
     vlans: [],
     interfaces: [],
   };
+
+  // Device Type determination
+  const isFirewall = vendor === "FortiGate" || 
+                     vendor === "PaloAlto" || 
+                     raw.toLowerCase().includes("vpn") || 
+                     raw.toLowerCase().includes("policy") || 
+                     raw.toLowerCase().includes("firewall");
+  cfg.deviceType = isFirewall ? "Firewall" : "Switch/Router";
 
   // Model detection logic (runs on raw configuration)
   let detectedModel = "Fallback Scanner";
@@ -260,11 +293,9 @@ async function parseUniversalConfigAsync(
       detectedModel = "SRX300";
     }
   } else if (vendor === "FortiGate") {
-    const fgModelMatch = raw.match(/#config-version=([A-Za-z0-9\-]+)/i) ||
-                         raw.match(/#model\s*[:=]\s*(\S+)/i) ||
-                         raw.match(/\b(FortiGate-\d+[A-Z]*|FG-\d+[A-Z]*|FortiGate\s+\d+[A-Z]*)\b/i);
-    if (fgModelMatch) {
-      const m = (fgModelMatch[1] || fgModelMatch[0]).trim();
+    const fgVersionMatch = raw.match(/#config-version=([A-Za-z0-9\-]+)-v?([0-9\.]+)/i);
+    if (fgVersionMatch) {
+      const m = fgVersionMatch[1].trim();
       if (m.toUpperCase().startsWith("FG") && !m.toUpperCase().startsWith("FGR")) {
         detectedModel = `FortiGate ${m.substring(2)}`;
       } else if (m.toUpperCase().startsWith("FORTIGATE-")) {
@@ -272,8 +303,22 @@ async function parseUniversalConfigAsync(
       } else {
         detectedModel = m;
       }
+      cfg.osVersion = "v" + fgVersionMatch[2];
     } else {
-      detectedModel = "FortiGate 401E";
+      const fgModelMatch = raw.match(/#model\s*[:=]\s*(\S+)/i) ||
+                           raw.match(/\b(FortiGate-\d+[A-Z]*|FG-\d+[A-Z]*|FortiGate\s+\d+[A-Z]*)\b/i);
+      if (fgModelMatch) {
+        const m = (fgModelMatch[1] || fgModelMatch[0]).trim();
+        if (m.toUpperCase().startsWith("FG") && !m.toUpperCase().startsWith("FGR")) {
+          detectedModel = `FortiGate ${m.substring(2)}`;
+        } else if (m.toUpperCase().startsWith("FORTIGATE-")) {
+          detectedModel = `FortiGate ${m.substring(10)}`;
+        } else {
+          detectedModel = m;
+        }
+      } else {
+        detectedModel = "FortiGate 401E";
+      }
     }
   } else if (vendor === "PaloAlto") {
     const modelMatch = raw.match(/#\s*model\s*[:=]\s*(\S+)/i) || 
@@ -292,6 +337,7 @@ async function parseUniversalConfigAsync(
   const first1000Lines = totalRawLines.slice(0, 1000);
   
   let hostname = "";
+  let osVersion = cfg.osVersion || "Unknown";
   let systemInfoFrozen = false;
   let inSystemGlobal = false;
   let inDeviceConfigSystem = false;
@@ -301,6 +347,14 @@ async function parseUniversalConfigAsync(
 
     const line = first1000Lines[i].trim();
     if (!line) continue;
+
+    // Scan for version string (e.g. v7.4.9 or v7.2.5 or 17.3.1)
+    if (osVersion === "Unknown") {
+      const versionMatch = line.match(/\bv([0-9]+\.[0-9]+\.[0-9]+)\b/) || line.match(/version\s+([vV]?\d+\.\d+(?:\.\d+)?)/i);
+      if (versionMatch) {
+        osVersion = versionMatch[1].startsWith("v") || versionMatch[1].startsWith("V") ? versionMatch[1] : "v" + versionMatch[1];
+      }
+    }
 
     // FortiGate context tracking inside first 1000 lines
     if (vendor === "FortiGate") {
@@ -366,31 +420,18 @@ async function parseUniversalConfigAsync(
   }
 
   cfg.hostname = hostname || "TopoMap-Device";
+  cfg.osVersion = osVersion;
 
   // Selective Block-Splitting (Massive File Performance Optimization)
   const chunks: string[] = [];
   
   if (vendor === "FortiGate") {
-    const extractFortiGateBlock = (rawContent: string, blockName: string): string => {
-      let result = "";
-      let index = 0;
-      while (true) {
-        const start = rawContent.indexOf(blockName, index);
-        if (start === -1) break;
-        const end = rawContent.indexOf("end", start);
-        if (end === -1) {
-          result += rawContent.substring(start);
-          break;
-        }
-        result += rawContent.substring(start, end + 3) + "\n";
-        index = end + 3;
-      }
-      return result;
-    };
-
     chunks.push(extractFortiGateBlock(raw, "config system interface"));
     chunks.push(extractFortiGateBlock(raw, "config system zone"));
     chunks.push(extractFortiGateBlock(raw, "config router"));
+    chunks.push(extractFortiGateBlock(raw, "config system sdwan"));
+    chunks.push(extractFortiGateBlock(raw, "config vpn ipsec"));
+    chunks.push(extractFortiGateBlock(raw, "config vpn ssl"));
   } else if (vendor === "PaloAlto" || vendor === "Juniper") {
     const filteredLines: string[] = [];
     for (let i = 0; i < totalRawLines.length; i++) {
@@ -707,8 +748,69 @@ async function parseUniversalConfigAsync(
     await new Promise(resolve => setTimeout(resolve, 0));
   }
 
-  // Finalize all interfaces from interfaceMap
+  // Post-processing for VPN and SD-WAN interfaces (FortiGate & general)
+  if (vendor === "FortiGate") {
+    // Extract VPN ipsec interfaces
+    const ipsecPhase1 = extractFortiGateBlock(raw, "config vpn ipsec phase1-interface");
+    if (ipsecPhase1) {
+      const ipsecLines = ipsecPhase1.split("\n");
+      for (const line of ipsecLines) {
+        const match = line.trim().match(/^edit\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
+        if (match) {
+          const vpnName = match[1];
+          const iface = getInterface(vpnName);
+          iface.type = "VPN Tunnel";
+          iface.status = "up";
+          iface.description = "IPsec VPN Tunnel Interface";
+          iface.mode = "routed";
+        }
+      }
+    }
+
+    // SSL VPN interface
+    if (raw.includes("config vpn ssl settings")) {
+      const sslIface = getInterface("ssl.root");
+      sslIface.type = "VPN Tunnel";
+      sslIface.status = "up";
+      sslIface.description = "SSL VPN Tunnel root interface";
+      sslIface.mode = "routed";
+    }
+
+    // SD-WAN Members
+    const sdwanBlock = extractFortiGateBlock(raw, "config system sdwan");
+    if (sdwanBlock) {
+      const sdwanLines = sdwanBlock.split("\n");
+      for (const line of sdwanLines) {
+        const match = line.trim().match(/set\s+interface\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
+        if (match) {
+          const memberName = match[1];
+          const iface = getInterface(memberName);
+          iface.type = "SD-WAN Member";
+          iface.description = iface.description 
+            ? `${iface.description} (SD-WAN Member)` 
+            : "SD-WAN Member Interface";
+        }
+      }
+    }
+  }
+
+  // Finalize all interfaces from interfaceMap and tag types
   interfaceMap.forEach(iface => {
+    const name = (iface.name || "").toLowerCase();
+    
+    // Tag types properly
+    if (iface.type === "Other" || !iface.type) {
+      if (name.includes("tunnel") || name.includes("vpn") || name === "ssl.root") {
+        iface.type = "VPN Tunnel";
+      } else if (name.includes("sdwan") || name.includes("sd-wan")) {
+        iface.type = "SD-WAN Member";
+      } else if (name.startsWith("vlan") || name.startsWith("irb") || name.includes("vlan")) {
+        iface.type = "SVI";
+      } else {
+        iface.type = "Physical Port";
+      }
+    }
+
     cfg.interfaces.push(finalizeInterface(iface));
     // Also parse vlan IDs from interface names like irb.100 or vlan.200
     if (iface.name?.includes(".")) {
@@ -743,7 +845,7 @@ async function parseUniversalConfigAsync(
       mode: "routed",
       mac: "",
       mtu: 1500,
-      type: "Other",
+      type: "Physical Port",
     });
     cfg.managementIp = "192.168.1.1";
   }
@@ -1761,14 +1863,38 @@ export default function RunningConfigDecoderClient() {
   };
 
   const portCounts = useMemo(() => {
-    if (!parsed) return { total: 0, up: 0, down: 0, trunk: 0, access: 0 };
+    if (!parsed) return { total: 0, up: 0, down: 0, trunk: 0, access: 0, vpn: 0, sdwan: 0 };
     const total = parsed.interfaces.length;
     const up = parsed.interfaces.filter(i => i.status === "up").length;
     const down = parsed.interfaces.filter(i => i.status === "adminDown").length;
     const trunk = parsed.interfaces.filter(i => i.mode === "trunk").length;
     const access = parsed.interfaces.filter(i => i.mode === "access").length;
-    return { total, up, down, trunk, access };
+    const vpn = parsed.interfaces.filter(i => i.type === "VPN Tunnel").length;
+    const sdwan = parsed.interfaces.filter(i => i.type === "SD-WAN Member").length;
+    return { total, up, down, trunk, access, vpn, sdwan };
   }, [parsed]);
+
+  const statsCards = useMemo(() => {
+    if (!parsed) return [];
+    const list = [
+      { label: "Interfaces", value: portCounts.total, icon: Monitor, color: "text-blue-400" },
+      { label: "Active Ports", value: portCounts.up, icon: Activity, color: "text-emerald-400" },
+      { label: "VLANs Defined", value: parsed.vlans.length, icon: Layers, color: "text-purple-400" },
+      { label: "Protocols", value: parsed.routingProtocols.length, icon: Radio, color: "text-accent" },
+    ];
+    if (parsed.deviceType === "Firewall") {
+      list.push(
+        { label: "VPN Tunnels", value: portCounts.vpn, icon: Shield, color: "text-rose-400" },
+        { label: "SD-WAN Members", value: portCounts.sdwan, icon: Cpu, color: "text-amber-400" }
+      );
+    } else {
+      list.push(
+        { label: "Trunk Links", value: portCounts.trunk, icon: Share2, color: "text-amber-400" },
+        { label: "Access Ports", value: portCounts.access, icon: Wifi, color: "text-cyan-400" }
+      );
+    }
+    return list;
+  }, [parsed, portCounts]);
 
   return (
     <ToolContainer categoryId="network-security">
@@ -1921,14 +2047,7 @@ export default function RunningConfigDecoderClient() {
                   <>
                     {/* Stats Bar */}
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                      {[
-                        { label: "Interfaces", value: portCounts.total, icon: Monitor, color: "text-blue-400" },
-                        { label: "Active Ports", value: portCounts.up, icon: Activity, color: "text-emerald-400" },
-                        { label: "VLANs Defined", value: parsed.vlans.length, icon: Layers, color: "text-purple-400" },
-                        { label: "Trunk Links", value: portCounts.trunk, icon: Share2, color: "text-amber-400" },
-                        { label: "Access Ports", value: portCounts.access, icon: Wifi, color: "text-cyan-400" },
-                        { label: "Protocols", value: parsed.routingProtocols.length, icon: Radio, color: "text-accent" },
-                      ].map((s, i) => (
+                      {statsCards.map((s, i) => (
                         <GlassCard key={i} className="p-4 flex flex-col gap-1 border-white/5">
                           <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-muted/60">
                             <s.icon className="size-3.5" />
@@ -1951,26 +2070,40 @@ export default function RunningConfigDecoderClient() {
                           </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                         <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
                           <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Hostname</label>
                           <div className="flex items-center gap-3">
                             <Fingerprint className="size-4 text-accent" />
-                            <span className="text-lg font-black text-foreground tracking-tight">{parsed.hostname || "Unnamed Device"}</span>
+                            <span className="text-[13px] font-black text-foreground truncate">{parsed.hostname || "Unnamed Device"}</span>
                           </div>
                         </div>
                         <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
-                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Device Model</label>
+                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Device Type</label>
+                          <div className="flex items-center gap-3">
+                            <Activity className="size-4 text-cyan-400" />
+                            <span className="text-[13px] font-black text-foreground truncate">{parsed.deviceType || "Switch/Router"}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Hardware Model</label>
                           <div className="flex items-center gap-3">
                             <Server className="size-4 text-purple-400" />
-                            <span className="text-lg font-black text-foreground tracking-tight">{parsed.brand && parsed.model ? `${parsed.brand} ${parsed.model}` : "Unknown Device"}</span>
+                            <span className="text-[13px] font-black text-foreground truncate">{parsed.brand && parsed.model ? `${parsed.brand} ${parsed.model}` : "Unknown Device"}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Operating System Version</label>
+                          <div className="flex items-center gap-3">
+                            <Cpu className="size-4 text-amber-400" />
+                            <span className="text-[13px] font-black text-foreground truncate">{parsed.osVersion || "Not Detected"}</span>
                           </div>
                         </div>
                         <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
                           <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Management IP</label>
                           <div className="flex items-center gap-3">
                             <Globe className="size-4 text-emerald-400" />
-                            <span className="text-lg font-black text-emerald-400 font-mono tracking-tight">{parsed.managementIp || "Not Configured"}</span>
+                            <span className="text-[13px] font-black text-emerald-400 font-mono truncate">{parsed.managementIp || "Not Configured"}</span>
                           </div>
                         </div>
                       </div>
@@ -2058,7 +2191,7 @@ export default function RunningConfigDecoderClient() {
                       <div>Description</div>
                       <div>Speed</div>
                       <div>Status</div>
-                      <div>Mode</div>
+                      <div>Mode / Type</div>
                       <div>VLAN</div>
                     </div>
                     <div className="flex flex-col max-h-[600px] overflow-y-auto custom-scrollbar">
@@ -2082,8 +2215,8 @@ export default function RunningConfigDecoderClient() {
                                 {intf.status === "adminDown" ? "DOWN" : intf.status.toUpperCase()}
                               </span>
                             </div>
-                            <div className={`text-[9px] font-black uppercase tracking-wider ${intf.mode === "trunk" ? "text-amber-400" : intf.mode === "access" ? "text-cyan-400" : "text-muted/40"}`}>
-                              {intf.mode}
+                            <div className={`text-[9px] font-black uppercase tracking-wider ${intf.type === "VPN Tunnel" ? "text-rose-400" : intf.type === "SD-WAN Member" ? "text-amber-400" : intf.mode === "trunk" ? "text-amber-400" : intf.mode === "access" ? "text-cyan-400" : "text-muted/40"}`}>
+                              {intf.type === "VPN Tunnel" || intf.type === "SD-WAN Member" ? intf.type : intf.mode}
                             </div>
                             <div className="flex items-center gap-1 flex-wrap">
                               {intf.vlanAccess !== null ? (
