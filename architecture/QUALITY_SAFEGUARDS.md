@@ -14,7 +14,7 @@
 | Threat Inspector | No (IOC extraction) | Only VT hash/report lookups on user button click | Raw file content never uploaded |
 | Port Checker | No | Only port probes from local API route | Config/scan data never leaves |
 | PCAP Analyzer | No | Zero | Full offline packet triage |
-| NetGlyph // Configuration Workspace | No | Zero | Regex-only multi-vendor config parser |
+| TopoMap | No | Zero | Regex-only multi-vendor config parser |
 | QR Generator | No | Zero | Client-side QR rendering |
 | Log Analyzer | No | Zero | Regex-only log parsing |
 | Regex Studio | No | Zero | Client-side engine only |
@@ -131,7 +131,7 @@ Any new motion layers added to tool pages MUST:
 
 ## 8. Spacing Standardization (Post-Refactor)
 
-All 6 refactored tools + Core Encoder + NetGlyph // Configuration Workspace adhere to:
+All 6 refactored tools + Core Encoder + TopoMap adhere to:
 
 | Context | Value |
 |---------|-------|

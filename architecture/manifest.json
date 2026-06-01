@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-01T08:33:03.094Z",
+  "generatedAt": "2026-06-01T08:33:09.827Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -106,7 +106,7 @@
         "isExternal": false
       },
       {
-        "name": "NetGlyph // Configuration Workspace",
+        "name": "TopoMap",
         "slug": "running-config-decoder",
         "categoryId": "network-security",
         "description": "Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline.",

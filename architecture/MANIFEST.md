@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-06-01T08:33:03.099Z_
+_Generated: 2026-06-01T08:33:09.832Z_
 
 ---
 
@@ -39,7 +39,7 @@ _Generated: 2026-06-01T08:33:03.099Z_
 | Threat Inspector | `threat-inspector` | Local-first file analysis & VirusTotal reputation check. Extract IOCs and detect threats securely. |
 | Port Checker | `port-checker` | Instantly check the connectivity status, latency, and service of any port on any host. |
 | PCAP Analyzer | `pcap-analyzer` | High-performance forensic workstation with virtualized stream analysis and local packet triage. |
-| NetGlyph // Configuration Workspace | `running-config-decoder` | Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline. |
+| TopoMap | `running-config-decoder` | Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline. |
 
 #### Data & Analytics (3)
 | Name | Slug | Description |

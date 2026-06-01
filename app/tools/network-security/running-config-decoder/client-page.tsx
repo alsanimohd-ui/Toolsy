@@ -39,6 +39,8 @@ import GlassCard from "@/components/ui/GlassCard";
 interface ParsedConfig {
   hostname: string;
   managementIp: string;
+  brand: string;
+  model: string;
   routingProtocols: string[];
   vlans: { id: number; name: string }[];
   interfaces: InterfaceInfo[];
@@ -65,6 +67,9 @@ interface VlanTopologyNode {
   type: "switch" | "vlan" | "router" | "host";
   group: string;
   connections: string[];
+  ip?: string;
+  subnetMask?: string;
+  portIndex?: string;
 }
 
 /* ─────────────────────────────────────────────
@@ -91,7 +96,9 @@ const TABS: TabDef[] = [
 
 type VendorType = "Cisco" | "Juniper" | "FortiGate" | "Unknown";
 
-const SAMPLE_CONFIG = `hostname Core-Switch-01
+const SAMPLE_CONFIG = `! Device: Cisco Catalyst 9300
+! Software: IOS-XE 17.3.1
+hostname Core-Switch-01
 !
 interface Vlan1
  ip address 192.168.1.1 255.255.255.0
@@ -213,10 +220,22 @@ function parseCiscoConfig(raw: string): ParsedConfig {
   const cfg: ParsedConfig = {
     hostname: "",
     managementIp: "",
+    brand: "Cisco",
+    model: "Catalyst 9300",
     routingProtocols: [],
     vlans: [],
     interfaces: [],
   };
+
+  const ciscoModelMatch = raw.match(/(?:Catalyst|Nexus|ISR|ASR|Cisco\s+Catalyst|Cisco\s+Nexus|Cisco\s+ISR|Cisco\s+ASR)\s*(\d+[a-zA-Z0-9\-]*)/i);
+  if (ciscoModelMatch) {
+    cfg.model = ciscoModelMatch[0];
+  } else {
+    const genericMatch = raw.match(/(?:Model|Device|Hardware|Platform|Switch|Router)\s*:\s*([a-zA-Z0-9\-]+)/i);
+    if (genericMatch) {
+      cfg.model = genericMatch[1];
+    }
+  }
 
   let currentInterface: Partial<InterfaceInfo> | null = null;
 
@@ -340,10 +359,19 @@ function parseJuniperConfig(raw: string): ParsedConfig {
   const cfg: ParsedConfig = {
     hostname: "",
     managementIp: "",
+    brand: "Juniper",
+    model: "SRX300",
     routingProtocols: [],
     vlans: [],
     interfaces: [],
   };
+
+  const juniperModelMatch = raw.match(/model\s+(\S+);/i) || 
+                            raw.match(/\b(SRX\d+|EX\d+|MX\d+|QFX\d+|PTX\d+|ACX\d+)\b/i) ||
+                            raw.match(/(?:SRX|EX|MX|QFX|PTX|ACX)-\d+[a-zA-Z0-9\-]*/i);
+  if (juniperModelMatch) {
+    cfg.model = (juniperModelMatch[1] || juniperModelMatch[0]).replace(/[;"]/g, "").trim();
+  }
 
   const flatLines: string[] = [];
   const lines = raw.split("\n");
@@ -553,10 +581,26 @@ function parseFortiGateConfig(raw: string): ParsedConfig {
   const cfg: ParsedConfig = {
     hostname: "",
     managementIp: "",
+    brand: "FortiGate",
+    model: "FortiGate 401E",
     routingProtocols: [],
     vlans: [],
     interfaces: [],
   };
+
+  const fgModelMatch = raw.match(/#config-version=([A-Za-z0-9\-]+)/i) ||
+                       raw.match(/#model\s*[:=]\s*(\S+)/i) ||
+                       raw.match(/\b(FortiGate-\d+[A-Z]*|FG-\d+[A-Z]*|FortiGate\s+\d+[A-Z]*)\b/i);
+  if (fgModelMatch) {
+    const m = (fgModelMatch[1] || fgModelMatch[0]).trim();
+    if (m.toUpperCase().startsWith("FG") && !m.toUpperCase().startsWith("FGR")) {
+      cfg.model = `FortiGate ${m.substring(2)}`;
+    } else if (m.toUpperCase().startsWith("FORTIGATE-")) {
+      cfg.model = `FortiGate ${m.substring(10)}`;
+    } else {
+      cfg.model = m;
+    }
+  }
 
   let inSystemGlobal = false;
   let inSystemInterface = false;
@@ -728,20 +772,75 @@ function cidrFromMask(mask: string): number {
    Topology Builder (pure function)
    ───────────────────────────────────────────── */
 
+function maskFromCidr(cidr: number): string {
+  const bits = Math.min(Math.max(cidr, 0), 32);
+  const octets = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    const shift = 24 - i * 8;
+    if (bits > shift) {
+      const localBits = Math.min(bits - shift, 8);
+      octets[i] = 256 - Math.pow(2, 8 - localBits);
+    }
+  }
+  return octets.join(".");
+}
+
 function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
   const nodes: VlanTopologyNode[] = [];
   const nodeMap = new Set<string>();
 
   // Root switch node
   const switchId = "sw-core";
-  nodes.push({ id: switchId, label: cfg.hostname || "Core-Switch", type: "switch", group: "infra", connections: [] });
+  let swIp = "";
+  let swMask = "";
+  if (cfg.managementIp) {
+    swIp = cfg.managementIp;
+    const mgmtIface = cfg.interfaces.find(i => i.ip && i.ip.startsWith(cfg.managementIp));
+    if (mgmtIface) {
+      const [, cidrPart] = mgmtIface.ip.split("/");
+      swMask = maskFromCidr(parseInt(cidrPart || "24"));
+    } else {
+      swMask = "255.255.255.0";
+    }
+  }
+
+  nodes.push({
+    id: switchId,
+    label: cfg.hostname || "Core-Switch",
+    type: "switch",
+    group: "infra",
+    connections: [],
+    ip: swIp || undefined,
+    subnetMask: swMask || undefined,
+    portIndex: "Mgmt"
+  });
   nodeMap.add(switchId);
 
   // VLAN nodes
   for (const vlan of cfg.vlans) {
     const vlanId = `vlan-${vlan.id}`;
+    
+    // Find matching SVI interface to assign IP / Mask
+    const svi = cfg.interfaces.find(i => i.type === "SVI" && (i.name.toLowerCase() === `vlan${vlan.id}` || i.name.toLowerCase() === `vlan ${vlan.id}` || i.name.toLowerCase() === `irb.${vlan.id}`));
+    let ip = "";
+    let mask = "";
+    if (svi && svi.ip) {
+      const [ipPart, cidrPart] = svi.ip.split("/");
+      ip = ipPart;
+      mask = maskFromCidr(parseInt(cidrPart || "24"));
+    }
+
     if (!nodeMap.has(vlanId)) {
-      nodes.push({ id: vlanId, label: `${vlan.name} (VLAN ${vlan.id})`, type: "vlan", group: "vlan", connections: [switchId] });
+      nodes.push({
+        id: vlanId,
+        label: `${vlan.name} (VLAN ${vlan.id})`,
+        type: "vlan",
+        group: "vlan",
+        connections: [switchId],
+        ip: ip || undefined,
+        subnetMask: mask || undefined,
+        portIndex: svi ? svi.name : undefined
+      });
       nodeMap.add(vlanId);
       const swNode = nodes.find(n => n.id === switchId);
       if (swNode && !swNode.connections.includes(vlanId)) swNode.connections.push(vlanId);
@@ -753,8 +852,27 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
   for (const intf of cfg.interfaces) {
     if (intf.vlanAccess !== null && !seenVlans.has(intf.vlanAccess)) {
       const vlanId = `vlan-${intf.vlanAccess}`;
+      
+      const svi = cfg.interfaces.find(i => i.type === "SVI" && (i.name.toLowerCase() === `vlan${intf.vlanAccess}` || i.name.toLowerCase() === `vlan ${intf.vlanAccess}` || i.name.toLowerCase() === `irb.${intf.vlanAccess}`));
+      let ip = "";
+      let mask = "";
+      if (svi && svi.ip) {
+        const [ipPart, cidrPart] = svi.ip.split("/");
+        ip = ipPart;
+        mask = maskFromCidr(parseInt(cidrPart || "24"));
+      }
+
       if (!nodeMap.has(vlanId)) {
-        nodes.push({ id: vlanId, label: `Inferred VLAN ${intf.vlanAccess}`, type: "vlan", group: "vlan", connections: [switchId] });
+        nodes.push({
+          id: vlanId,
+          label: `Inferred VLAN ${intf.vlanAccess}`,
+          type: "vlan",
+          group: "vlan",
+          connections: [switchId],
+          ip: ip || undefined,
+          subnetMask: mask || undefined,
+          portIndex: svi ? svi.name : undefined
+        });
         nodeMap.add(vlanId);
         const swNode = nodes.find(n => n.id === switchId);
         if (swNode && !swNode.connections.includes(vlanId)) swNode.connections.push(vlanId);
@@ -777,8 +895,39 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
   // Router node if routing enabled or static routes
   if (cfg.routingProtocols.length > 0) {
     const routerId = "router-core";
+    let rIp = "";
+    let rMask = "";
+    let rPort = "";
+
+    // Try to find router-id or routed interface
+    const routed = cfg.interfaces.find(i => i.mode === "routed" && i.ip && i.type !== "SVI");
+    if (routed) {
+      const [ipPart, cidrPart] = routed.ip.split("/");
+      rIp = ipPart;
+      rMask = maskFromCidr(parseInt(cidrPart || "24"));
+      rPort = routed.name;
+    } else if (cfg.managementIp) {
+      // Default router gateway is often .254 or similar on the management subnet
+      const octets = cfg.managementIp.split(".");
+      if (octets.length === 4) {
+        octets[3] = "254";
+        rIp = octets.join(".");
+        rMask = "255.255.255.0";
+        rPort = "Core-Link";
+      }
+    }
+
     if (!nodeMap.has(routerId)) {
-      nodes.push({ id: routerId, label: "Core Router", type: "router", group: "infra", connections: [switchId] });
+      nodes.push({
+        id: routerId,
+        label: "Core Router",
+        type: "router",
+        group: "infra",
+        connections: [switchId],
+        ip: rIp || undefined,
+        subnetMask: rMask || undefined,
+        portIndex: rPort || undefined
+      });
       nodeMap.add(routerId);
       const swNode = nodes.find(n => n.id === switchId);
       if (swNode && !swNode.connections.includes(routerId)) swNode.connections.push(routerId);
@@ -786,17 +935,44 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
   }
 
   // Host nodes from access ports
+  let hostCount = 0;
   for (const intf of cfg.interfaces) {
-    if (intf.mode === "access" && intf.status === "up") {
+    if ((intf.mode === "access" || intf.mode === "unknown" || intf.mode === "routed") && intf.status === "up" && intf.type !== "SVI") {
       const hostId = `host-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
       if (!nodeMap.has(hostId)) {
         const vlanTag = intf.vlanAccess ? ` (VLAN ${intf.vlanAccess})` : "";
+        
+        let hostIp = "";
+        let hostMask = "";
+        
+        if (intf.ip) {
+          const [ipPart, cidrPart] = intf.ip.split("/");
+          hostIp = ipPart;
+          hostMask = maskFromCidr(parseInt(cidrPart || "24"));
+        } else if (intf.vlanAccess !== null) {
+          // Try to find SVI for this VLAN to base the host IP on
+          const parentSvi = cfg.interfaces.find(i => i.type === "SVI" && (i.name.toLowerCase() === `vlan${intf.vlanAccess}` || i.name.toLowerCase() === `vlan ${intf.vlanAccess}` || i.name.toLowerCase() === `irb.${intf.vlanAccess}`));
+          if (parentSvi && parentSvi.ip) {
+            const [sviIp, sviCidr] = parentSvi.ip.split("/");
+            const octets = sviIp.split(".");
+            if (octets.length === 4) {
+              hostCount++;
+              octets[3] = (50 + hostCount).toString();
+              hostIp = octets.join(".");
+              hostMask = maskFromCidr(parseInt(sviCidr || "24"));
+            }
+          }
+        }
+
         nodes.push({
           id: hostId,
           label: `${intf.name}${vlanTag}`,
           type: "host",
           group: intf.vlanAccess ? `vlan-${intf.vlanAccess}` : "default",
           connections: [switchId],
+          ip: hostIp || undefined,
+          subnetMask: hostMask || undefined,
+          portIndex: intf.name
         });
         nodeMap.add(hostId);
       }
@@ -816,6 +992,7 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [zoom, setZoom] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [viewMode, setViewMode] = useState<"RADIAL" | "TREE">("RADIAL");
 
   const dragInfo = useRef<{
     isPanning: boolean;
@@ -845,45 +1022,96 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
 
     const newPositions: Record<string, { x: number; y: number }> = {};
 
-    if (switches.length > 0) {
-      newPositions[switches[0].id] = { x: cx, y: cy };
+    if (viewMode === "TREE") {
+      // 1. Routers at the top
+      routers.forEach((r, i) => {
+        newPositions[r.id] = {
+          x: cx + (i - (routers.length - 1) / 2) * 180,
+          y: 80
+        };
+      });
+
+      // 2. Core switch in the middle-top
+      if (switches.length > 0) {
+        newPositions[switches[0].id] = { x: cx, y: 180 };
+      }
+
+      // 3. VLANs spaced out horizontally below switch
+      const vlanY = 320;
+      vlans.forEach((v, i) => {
+        const xPos = cx + (i - (vlans.length - 1) / 2) * (width / Math.max(vlans.length, 1) - 40);
+        newPositions[v.id] = {
+          x: xPos,
+          y: vlanY
+        };
+      });
+
+      // 4. Hosts spaced out below their parent VLANs
+      const hostY = 480;
+      vlans.forEach((vlanNode) => {
+        const vlanHosts = hosts.filter(h => h.group === vlanNode.id);
+        const parentPos = newPositions[vlanNode.id] || { x: cx, y: vlanY };
+        
+        vlanHosts.forEach((hostNode, idx) => {
+          const offset = (idx - (vlanHosts.length - 1) / 2) * 80;
+          newPositions[hostNode.id] = {
+            x: parentPos.x + offset,
+            y: hostY
+          };
+        });
+      });
+
+      // Unassociated hosts (directly connected to switch)
+      const orphanHosts = hosts.filter(h => h.group !== "vlan-" && !vlans.some(v => v.id === h.group));
+      orphanHosts.forEach((h, idx) => {
+        const offset = (idx - (orphanHosts.length - 1) / 2) * 80;
+        newPositions[h.id] = {
+          x: cx + offset,
+          y: hostY
+        };
+      });
+    } else {
+      // RADIAL VIEW
+      if (switches.length > 0) {
+        newPositions[switches[0].id] = { x: cx, y: cy };
+      }
+
+      routers.forEach((r, i) => {
+        newPositions[r.id] = {
+          x: cx + (i - (routers.length - 1) / 2) * 150,
+          y: cy - 180
+        };
+      });
+
+      const vRadius = 160;
+      vlans.forEach((v, i) => {
+        const angle = (i / (vlans.length || 1)) * 2 * Math.PI - Math.PI / 2;
+        newPositions[v.id] = {
+          x: cx + vRadius * Math.cos(angle),
+          y: cy + vRadius * Math.sin(angle)
+        };
+      });
+
+      hosts.forEach((h) => {
+        const parentId = h.group;
+        const parentPos = newPositions[parentId] || newPositions[switches[0]?.id] || { x: cx, y: cy };
+
+        const siblings = hosts.filter(host => host.group === h.group);
+        const index = siblings.findIndex(s => s.id === h.id);
+        const hRadius = 95;
+
+        const angleOffset = Math.atan2(parentPos.y - cy, parentPos.x - cx);
+        const spread = Math.PI / 1.5;
+        const startAngle = angleOffset - spread / 2;
+        const step = siblings.length > 1 ? spread / (siblings.length - 1) : 0;
+        const angle = startAngle + index * step;
+
+        newPositions[h.id] = {
+          x: parentPos.x + hRadius * Math.cos(angle),
+          y: parentPos.y + hRadius * Math.sin(angle)
+        };
+      });
     }
-
-    routers.forEach((r, i) => {
-      newPositions[r.id] = {
-        x: cx + (i - (routers.length - 1) / 2) * 150,
-        y: cy - 180
-      };
-    });
-
-    const vRadius = 160;
-    vlans.forEach((v, i) => {
-      const angle = (i / (vlans.length || 1)) * 2 * Math.PI - Math.PI / 2;
-      newPositions[v.id] = {
-        x: cx + vRadius * Math.cos(angle),
-        y: cy + vRadius * Math.sin(angle)
-      };
-    });
-
-    hosts.forEach((h) => {
-      const parentId = h.group;
-      const parentPos = newPositions[parentId] || newPositions[switches[0]?.id] || { x: cx, y: cy };
-
-      const siblings = hosts.filter(host => host.group === h.group);
-      const index = siblings.findIndex(s => s.id === h.id);
-      const hRadius = 90;
-
-      const angleOffset = Math.atan2(parentPos.y - cy, parentPos.x - cx);
-      const spread = Math.PI / 1.5;
-      const startAngle = angleOffset - spread / 2;
-      const step = siblings.length > 1 ? spread / (siblings.length - 1) : 0;
-      const angle = startAngle + index * step;
-
-      newPositions[h.id] = {
-        x: parentPos.x + hRadius * Math.cos(angle),
-        y: parentPos.y + hRadius * Math.sin(angle)
-      };
-    });
 
     nodes.forEach(n => {
       if (!newPositions[n.id]) {
@@ -894,7 +1122,7 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
     setPositions(newPositions);
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
-  }, [nodes]);
+  }, [nodes, viewMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1085,24 +1313,40 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
     }
 
     const label = node.label;
-    ctx.font = "bold 9px monospace";
-    const textWidth = ctx.measureText(label).width;
+    const linesToDraw: string[] = [label];
+    if (node.portIndex && node.type !== "switch") {
+      linesToDraw.push(`Port: ${node.portIndex}`);
+    }
+    if (node.ip) {
+      if (node.subnetMask) {
+        linesToDraw.push(`${node.ip} / ${node.subnetMask}`);
+      } else {
+        linesToDraw.push(node.ip);
+      }
+    }
 
-    ctx.fillStyle = "rgba(0,0,0,0.9)";
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.font = "bold 9px monospace";
+    let maxWidth = 0;
+    linesToDraw.forEach(ln => {
+      const w = ctx.measureText(ln).width;
+      if (w > maxWidth) maxWidth = w;
+    });
+
+    ctx.fillStyle = "rgba(10, 10, 15, 0.95)";
+    ctx.strokeStyle = isHovered ? color : "rgba(255, 255, 255, 0.08)";
     ctx.lineWidth = 1;
-    
-    ctx.beginPath();
-    const px = 6;
-    const py = 3;
-    const ly = radius + 12;
-    
-    const rx = -textWidth / 2 - px;
-    const ry = ly - 6 - py;
-    const rw = textWidth + px * 2;
-    const rh = 12 + py * 2;
-    const rr = 4;
-    
+
+    const px = 8;
+    const py = 6;
+    const lineSpacing = 12;
+    const startY = radius + 12;
+
+    const rw = maxWidth + px * 2;
+    const rh = linesToDraw.length * lineSpacing + py * 2 - 4;
+    const rx = -maxWidth / 2 - px;
+    const ry = startY - py;
+    const rr = 6;
+
     ctx.beginPath();
     ctx.moveTo(rx + rr, ry);
     ctx.lineTo(rx + rw - rr, ry);
@@ -1114,14 +1358,24 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
     ctx.lineTo(rx, ry + rr);
     ctx.arcTo(rx, ry, rx + rr, ry, rr);
     ctx.closePath();
-    
+
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(label, 0, ly);
+
+    linesToDraw.forEach((ln, idx) => {
+      const ly = startY + idx * lineSpacing;
+      if (idx === 0) {
+        ctx.fillStyle = color;
+        ctx.font = "bold 9px monospace";
+      } else {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.font = "8px monospace";
+      }
+      ctx.fillText(ln, 0, ly);
+    });
 
     ctx.restore();
   };
@@ -1308,7 +1562,7 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
 
     const dataUrl = tempCanvas.toDataURL("image/png");
     const link = document.createElement("a");
-    link.download = "NetGlyph_Topology.png";
+    link.download = "TopoMap_Topology.png";
     link.href = dataUrl;
     document.body.appendChild(link);
     link.click();
@@ -1317,6 +1571,21 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
 
   return (
     <div className="relative w-full overflow-hidden bg-black/40 border border-white/5 rounded-2xl flex flex-col items-center justify-center p-0 min-h-[600px] select-none">
+      <div className="absolute top-4 left-4 z-10 flex gap-1 bg-black/60 p-1 border border-white/10 rounded-lg">
+        <button
+          onClick={() => setViewMode("RADIAL")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === "RADIAL" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-white/5"}`}
+        >
+          Radial
+        </button>
+        <button
+          onClick={() => setViewMode("TREE")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === "TREE" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-white/5"}`}
+        >
+          Tree
+        </button>
+      </div>
+
       <div className="absolute top-4 right-4 z-10 flex gap-2">
         <button
           onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }}
@@ -1420,7 +1689,7 @@ export default function RunningConfigDecoderClient() {
   return (
     <ToolContainer categoryId="network-security">
       <ToolHeader
-        title="NetGlyph // Configuration Workspace"
+        title="TopoMap"
         description="Enterprise-grade local configuration parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline."
         categoryId="network-security"
       />
@@ -1581,12 +1850,19 @@ export default function RunningConfigDecoderClient() {
                           </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                         <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
                           <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Hostname</label>
                           <div className="flex items-center gap-3">
                             <Fingerprint className="size-4 text-accent" />
                             <span className="text-lg font-black text-foreground tracking-tight">{parsed.hostname || "Unnamed Device"}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Device Model</label>
+                          <div className="flex items-center gap-3">
+                            <Server className="size-4 text-purple-400" />
+                            <span className="text-lg font-black text-foreground tracking-tight">{parsed.brand && parsed.model ? `${parsed.brand} ${parsed.model}` : "Unknown Device"}</span>
                           </div>
                         </div>
                         <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
