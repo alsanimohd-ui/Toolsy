@@ -115,8 +115,14 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
   const ToolIcon = toolIcons[tool.slug] || defaultCategoryIcons[tool.categoryId] || Code2;
 
   const R = 22;
+  const rad = ((pos.angle - 90) * Math.PI) / 180;
+  
+  // Calculate dynamic radial offset for fanning labels outwards in a curved ring
+  const labelOffsetX = 34 * Math.cos(rad);
+  const labelOffsetY = 34 * Math.sin(rad);
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!isVisible) return;
     // External tools (e.g. jsonlego) open in a new tab
     if (tool.route.startsWith("http")) {
@@ -135,30 +141,32 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
       animate={{
         opacity: isVisible ? 1 : 0,
         scale: isVisible ? 1 : 0.6,
-        rotate: isVisible ? 0 : -20,
+        // Dynamically translate node from category arc (ARC_R) outward to node orbit (NODE_R)
+        x: isVisible ? 0 : polar(CX, CY, ARC_R, pos.angle).x - pos.x,
+        y: isVisible ? 0 : polar(CX, CY, ARC_R, pos.angle).y - pos.y,
       }}
       transition={{
         ...SPRING,
-        delay: isVisible ? idx * 0.08 : 0,
+        delay: isVisible ? idx * 0.05 : 0,
       }}
       style={{ pointerEvents: isVisible ? "auto" : "none", cursor: isVisible ? "pointer" : "default" }}
     >
-      {/* Invisible larger hit area for the node itself */}
-      <circle cx={pos.x} cy={pos.y} r={R + 25} fill="transparent" />
+      {/* Hitbox circle for easier grabbing */}
+      <circle cx={pos.x} cy={pos.y} r={R + 25} fill="transparent" className="cursor-pointer" />
 
-      {/* Glow behind icon */}
+      {/* Sci-Fi Glow behind icon */}
       <motion.circle
         cx={pos.x}
         cy={pos.y}
-        r={R + 6}
+        r={R + 8}
         fill={color}
-        animate={{ opacity: hovered ? 0.3 : 0 }}
-        style={{ filter: "blur(12px)" }}
+        animate={{ opacity: hovered ? 0.35 : 0 }}
+        style={{ filter: "blur(14px)" }}
       />
       
-      {/* Connector line from arc to node */}
+      {/* Dynamic connector line from arc to node */}
       <motion.path
-        d={`M ${polar(CX, CY, ARC_OUTER + 10, pos.angle).x} ${polar(CX, CY, ARC_OUTER + 10, pos.angle).y} L ${pos.x} ${pos.y}`}
+        d={`M ${polar(CX, CY, ARC_OUTER, pos.angle).x} ${polar(CX, CY, ARC_OUTER, pos.angle).y} L ${pos.x} ${pos.y}`}
         stroke={color}
         strokeWidth={1.5}
         strokeDasharray="2 4"
@@ -168,7 +176,7 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
         }}
       />
 
-      {/* Node Circle */}
+      {/* Node Circle base */}
       <circle cx={pos.x} cy={pos.y} r={R} fill="rgba(10,10,15,0.95)" />
       <motion.circle
         cx={pos.x}
@@ -184,33 +192,39 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
         transition={SPRING}
       />
 
-      {/* Icon */}
-      <foreignObject x={pos.x - R} y={pos.y - R} width={R * 2} height={R * 2} className="pointer-events-none">
+      {/* Interactive Tool Icon */}
+      <foreignObject x={pos.x - R} y={pos.y - R} width={R * 2} height={R * 2} className="pointer-events-auto cursor-pointer" onClick={handleClick}>
         <div className="flex h-full w-full items-center justify-center">
-          <ToolIcon size={20} color={hovered ? "#fff" : color} strokeWidth={1.5} className="transition-colors" />
+          <ToolIcon size={20} color={hovered ? "#fff" : color} strokeWidth={1.5} className="transition-colors duration-200" />
         </div>
       </foreignObject>
 
-      {/* Tool Name Label - Accompanying the icon */}
+      {/* Fanned-out Tool Name Label */}
       <foreignObject 
-        x={pos.x - 60} 
-        y={pos.y + R + 10} 
+        x={pos.x + labelOffsetX - 60} 
+        y={pos.y + labelOffsetY - 16} 
         width={120} 
-        height={40} 
-        className="overflow-visible pointer-events-none"
+        height={32} 
+        className="overflow-visible pointer-events-auto cursor-pointer"
+        onClick={handleClick}
       >
-        <div className="flex flex-col items-center justify-start w-full">
+        <div className="flex items-center justify-center w-full h-full">
           <motion.div
-            initial={{ opacity: 0, y: 5 }}
+            initial={{ opacity: 0, scale: 0.8 }}
             animate={{ 
-              opacity: isVisible ? (hovered ? 1 : 0.7) : 0,
-              y: hovered ? 0 : 2 
+              opacity: isVisible ? 1 : 0,
+              scale: isVisible ? (hovered ? 1.05 : 1) : 0.8,
             }}
-            className="px-2 py-1 rounded bg-black/40 backdrop-blur-sm border border-white/5"
+            className="px-2.5 py-0.5 rounded bg-black/75 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center"
+            style={{
+              boxShadow: hovered ? `0 0 12px ${color}2b` : "none",
+              borderColor: hovered ? `${color}66` : "rgba(255,255,255,0.08)"
+            }}
+            transition={SPRING}
           >
             <span 
-              className="text-[10px] font-black text-white uppercase tracking-wider text-center leading-tight whitespace-nowrap"
-              style={{ textShadow: hovered ? `0 0 10px ${color}` : "none" }}
+              className="text-[9px] font-black text-white uppercase tracking-widest text-center leading-none whitespace-nowrap"
+              style={{ textShadow: hovered ? `0 0 8px ${color}` : "none" }}
             >
               {tool.name}
             </span>

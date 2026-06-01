@@ -13,7 +13,22 @@ export default function HomePage() {
   const [activeSegment, setActiveSegment] = useState<CategoryId | null>(null);
 
   return (
-    <main className="toolsy-home-shell">
+    <main className="toolsy-home-shell relative overflow-hidden bg-[#020205]">
+      {/* Premium Sci-Fi Grid Mesh Pattern */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] opacity-40 z-0 pointer-events-none" />
+
+      {/* Drifting Soft Ambient Sci-Fi Glowing Bursts */}
+      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden animate-ambient-drift">
+        {/* Deep Red Glow - Behind Network Security Arc Sector (top right) */}
+        <div className="absolute top-[15%] right-[15%] w-[38rem] h-[38rem] rounded-full bg-[#ef4444]/6 blur-[130px]" />
+        
+        {/* Blue Glow - Behind Data & Analytics Arc Sector (bottom left) */}
+        <div className="absolute bottom-[15%] left-[15%] w-[38rem] h-[38rem] rounded-full bg-[#3b82f6]/6 blur-[130px]" />
+        
+        {/* Purple Glow - Behind Dev & Automation Arc Sector (top left) */}
+        <div className="absolute top-[15%] left-[15%] w-[38rem] h-[38rem] rounded-full bg-[#8b5cf6]/6 blur-[130px]" />
+      </div>
+
       {/* ═══════════════════════════════════════════════════ */}
       {/* MAIN HERO STAGE                                     */}
       {/* ═══════════════════════════════════════════════════ */}
