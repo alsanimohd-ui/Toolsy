@@ -1050,21 +1050,38 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     const newVelocities: Record<string, { vx: number; vy: number }> = {};
 
     if (viewMode === "TREE") {
-      // 1. Routers at the top
+      // 1. Routers at the top level
       routers.forEach((r, i) => {
         newPositions[r.id] = {
           x: cx + (i - (routers.length - 1) / 2) * 180,
-          y: 80
+          y: 70
         };
       });
 
-      // 2. Core switch in the middle-top
+      // 2. Core switch at level 2
       if (switches.length > 0) {
-        newPositions[switches[0].id] = { x: cx, y: 180 };
+        newPositions[switches[0].id] = { x: cx, y: 160 };
       }
 
-      // 3. VLANs spaced out horizontally below switch
-      const vlanY = 320;
+      // 3. VPN & SD-WAN peripheral interface nodes flanking the Core Switch
+      const vpns = nodes.filter(n => n.type === "vpn");
+      vpns.forEach((v, i) => {
+        newPositions[v.id] = {
+          x: cx - 200 - i * 65,
+          y: 160
+        };
+      });
+
+      const sdwans = nodes.filter(n => n.type === "sdwan");
+      sdwans.forEach((s, i) => {
+        newPositions[s.id] = {
+          x: cx + 200 + i * 65,
+          y: 160
+        };
+      });
+
+      // 4. VLANs spaced out horizontally at level 3
+      const vlanY = 300;
       vlans.forEach((v, i) => {
         const xPos = cx + (i - (vlans.length - 1) / 2) * (width / Math.max(vlans.length, 1) - 40);
         newPositions[v.id] = {
@@ -1073,8 +1090,8 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         };
       });
 
-      // 4. Hosts spaced out below their parent VLANs
-      const hostY = 480;
+      // 5. Hosts spaced out below their parent VLANs at level 4
+      const hostY = 460;
       vlans.forEach((vlanNode) => {
         const vlanHosts = hosts.filter(h => h.group === vlanNode.id);
         const parentPos = newPositions[vlanNode.id] || { x: cx, y: vlanY };
@@ -1088,7 +1105,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         });
       });
 
-      // Unassociated hosts (directly connected to switch)
+      // Orphan hosts (connected directly to the core switch)
       const orphanHosts = hosts.filter(h => h.group !== "vlan-" && !vlans.some(v => v.id === h.group));
       orphanHosts.forEach((h, idx) => {
         const offset = (idx - (orphanHosts.length - 1) / 2) * 80;
@@ -1098,19 +1115,23 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         };
       });
     } else {
-      // RADIAL VIEW
+      // RADIAL VIEW MODE
+      // 1. Core switch aligned perfectly at center hub
       if (switches.length > 0) {
         newPositions[switches[0].id] = { x: cx, y: cy };
       }
 
+      // 2. Routers radiating upwards
       routers.forEach((r, i) => {
+        const angle = -Math.PI / 2 + (i - (routers.length - 1) / 2) * 0.35;
         newPositions[r.id] = {
-          x: cx + (i - (routers.length - 1) / 2) * 150,
-          y: cy - 180
+          x: cx + 130 * Math.cos(angle),
+          y: cy + 130 * Math.sin(angle)
         };
       });
 
-      const vRadius = 160;
+      // 3. VLANs distributed uniformly in an inner circle
+      const vRadius = 150;
       vlans.forEach((v, i) => {
         const angle = (i / (vlans.length || 1)) * 2 * Math.PI - Math.PI / 2;
         newPositions[v.id] = {
@@ -1119,16 +1140,17 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         };
       });
 
+      // 4. Hosts radiating outwards from their parent VLANs
       hosts.forEach((h) => {
         const parentId = h.group;
         const parentPos = newPositions[parentId] || newPositions[switches[0]?.id] || { x: cx, y: cy };
 
         const siblings = hosts.filter(host => host.group === h.group);
         const index = siblings.findIndex(s => s.id === h.id);
-        const hRadius = 95;
+        const hRadius = 85;
 
         const angleOffset = Math.atan2(parentPos.y - cy, parentPos.x - cx);
-        const spread = Math.PI / 1.5;
+        const spread = Math.PI / 2.8;
         const startAngle = angleOffset - spread / 2;
         const step = siblings.length > 1 ? spread / (siblings.length - 1) : 0;
         const angle = startAngle + index * step;
@@ -1138,11 +1160,27 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
           y: parentPos.y + hRadius * Math.sin(angle)
         };
       });
+
+      // 5. VPN and SD-WAN security endpoints radiating in the bottom sector
+      const securityNodes = nodes.filter(n => n.type === "vpn" || n.type === "sdwan");
+      const secRadius = 190;
+      const secStart = Math.PI * 0.35;
+      const secEnd = Math.PI * 0.65;
+      const secSpread = secEnd - secStart;
+      const secStep = securityNodes.length > 1 ? secSpread / (securityNodes.length - 1) : 0;
+      securityNodes.forEach((node, idx) => {
+        const angle = secStart + idx * secStep;
+        newPositions[node.id] = {
+          x: cx + secRadius * Math.cos(angle),
+          y: cy + secRadius * Math.sin(angle)
+        };
+      });
     }
 
+    // Static horizontal & vertical bounding safety protection
     nodes.forEach(n => {
       if (!newPositions[n.id]) {
-        newPositions[n.id] = { x: cx + (Math.random() - 0.5) * 200, y: cy + (Math.random() - 0.5) * 200 };
+        newPositions[n.id] = { x: cx, y: cy + 120 };
       }
       newVelocities[n.id] = { vx: 0, vy: 0 };
     });
@@ -1289,16 +1327,13 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
           alphaRef.current = 0; // Lock the layout
         }
       } else {
-        // Alpha is 0 (stabilized) - keep node locked to fixed dragging coordinates if active
-        const nodeId = dragInfo.current.draggedNodeId;
-        if (nodeId) {
-          const fixed = fixedRef.current[nodeId];
-          const pos = positionsRef.current[nodeId];
-          if (fixed && pos) {
-            pos.x = fixed.fx;
-            pos.y = fixed.fy;
+        // Alpha is 0 (stabilized) - keep all pinned nodes statically locked to their positions
+        nodes.forEach(n => {
+          const fixed = fixedRef.current[n.id];
+          if (fixed) {
+            positionsRef.current[n.id] = { x: fixed.fx, y: fixed.fy };
           }
-        }
+        });
       }
 
       // 2. Draw loop on canvas
@@ -1670,10 +1705,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
   };
 
   const handleMouseUp = () => {
-    if (dragInfo.current.draggedNodeId) {
-      const nodeId = dragInfo.current.draggedNodeId;
-      fixedRef.current[nodeId] = null; // Release the coordinate lock on drag end
-    }
+    // Keep the node pinned in fixedRef so it remains exactly where the user dropped it
     dragInfo.current.isPanning = false;
     dragInfo.current.draggedNodeId = null;
   };
