@@ -132,7 +132,7 @@ function MethodSelector({
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute left-0 top-full mt-2 w-full min-w-[180px] bg-black/90 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-50"
+              className="absolute left-0 top-full mt-2 w-full min-w-[180px] bg-black/90 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-[9999]"
             >
               <div className="p-2 flex flex-col gap-1">
                 {METHODS.map((m) => {
@@ -508,7 +508,7 @@ export default function ApiRequestLabClient() {
         {/* URL BAR (REST & GraphQL only) */}
         {requestMode !== "websocket" && (
           <GlassCard className="p-4 flex flex-col md:flex-row items-stretch md:items-center gap-4 border-l-4 border-l-accent bg-accent/[0.02]">
-            <div className="flex items-center gap-0 w-full">
+            <div className="relative flex items-center gap-0 w-full z-10">
               <MethodSelector value={method} onChange={setMethod} />
               <div className="relative flex-1">
                 <input 
