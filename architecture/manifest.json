@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-31T13:39:40.339Z",
+  "generatedAt": "2026-06-01T08:25:02.934Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -106,7 +106,7 @@
         "isExternal": false
       },
       {
-        "name": "Running-Config Decoder",
+        "name": "NetGlyph // Configuration Workspace",
         "slug": "running-config-decoder",
         "categoryId": "network-security",
         "description": "Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline.",

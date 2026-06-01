@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   ToolContainer,
   ToolHeader,
@@ -26,11 +26,9 @@ import {
   Wifi,
   Radio,
   Zap,
-  Router,
   Layers,
   Map,
   CheckCircle2,
-  ArrowRight,
 } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
 
@@ -88,8 +86,10 @@ const TABS: TabDef[] = [
 ];
 
 /* ─────────────────────────────────────────────
-   Cisco Config Parser (regex-only, offline)
-   ───────────────────────────────────────────── */
+    Multi-Vendor Config Parser (regex-only, offline)
+    ───────────────────────────────────────────── */
+
+type VendorType = "Cisco" | "Juniper" | "FortiGate" | "Unknown";
 
 const SAMPLE_CONFIG = `hostname Core-Switch-01
 !
@@ -171,7 +171,44 @@ ntp server pool.ntp.org
 !
 end`;
 
-function parseRunningConfig(raw: string): ParsedConfig {
+function detectVendor(raw: string): VendorType {
+  const lower = raw.toLowerCase();
+  
+  // Check for Juniper patterns
+  if (lower.includes('set hostname') || 
+      lower.includes('set vlans') || 
+      lower.includes('set interfaces') ||
+      lower.includes('set protocols') ||
+      lower.includes('set routing-options') ||
+      lower.includes('interfaces {') ||
+      lower.includes('protocols {') ||
+      lower.includes('vlans {') ||
+      lower.includes('system {')) {
+    return "Juniper";
+  }
+  
+  // Check for FortiGate patterns
+  if (lower.includes('config system global') ||
+      lower.includes('config system interface') ||
+      lower.includes('config router ospf') ||
+      lower.includes('config router static') ||
+      lower.includes('config router bgp')) {
+    return "FortiGate";
+  }
+  
+  // Default to Cisco for backward compatibility
+  if (lower.includes('hostname ') ||
+      lower.includes('interface ') ||
+      lower.includes('switchport') ||
+      lower.includes('router ospf') ||
+      lower.includes('ip route')) {
+    return "Cisco";
+  }
+  
+  return "Unknown";
+}
+
+function parseCiscoConfig(raw: string): ParsedConfig {
   const lines = raw.split("\n");
   const cfg: ParsedConfig = {
     hostname: "",
@@ -299,6 +336,368 @@ function parseRunningConfig(raw: string): ParsedConfig {
   return cfg;
 }
 
+function parseJuniperConfig(raw: string): ParsedConfig {
+  const cfg: ParsedConfig = {
+    hostname: "",
+    managementIp: "",
+    routingProtocols: [],
+    vlans: [],
+    interfaces: [],
+  };
+
+  const flatLines: string[] = [];
+  const lines = raw.split("\n");
+  const isBracketed = raw.includes("{") && raw.includes("}");
+
+  if (isBracketed) {
+    const pathStack: string[] = [];
+    for (const rawLine of lines) {
+      let line = rawLine.replace(/#.*/g, "").trim();
+      line = line.replace(/\/\*.*?\*\//g, "").trim();
+      if (!line) continue;
+
+      if (line.startsWith("}")) {
+        pathStack.pop();
+        const rest = line.substring(1).trim();
+        if (rest && rest !== ";") {
+          line = rest;
+        } else {
+          continue;
+        }
+      }
+
+      if (line.includes("{")) {
+        const parts = line.split("{");
+        const pathPart = parts[0].trim();
+        if (pathPart) {
+          pathStack.push(pathPart);
+        }
+        const inner = parts.slice(1).join("{").trim();
+        if (inner && inner !== "}") {
+          line = inner;
+        } else {
+          continue;
+        }
+      }
+
+      if (line.endsWith(";")) {
+        const leaf = line.substring(0, line.length - 1).trim();
+        if (leaf) {
+          const fullPath = [...pathStack, leaf].join(" ");
+          flatLines.push(fullPath);
+        }
+      } else {
+        flatLines.push([...pathStack, line].join(" "));
+      }
+    }
+  } else {
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      if (line.startsWith("set ")) {
+        flatLines.push(line.substring(4).trim());
+      } else {
+        flatLines.push(line);
+      }
+    }
+  }
+
+  const interfaceMap = new globalThis.Map<string, Partial<InterfaceInfo>>();
+  const getInterface = (name: string): Partial<InterfaceInfo> => {
+    if (!interfaceMap.has(name)) {
+      const isVlan = name.match(/^(vlan|irb)/i);
+      interfaceMap.set(name, {
+        name: name,
+        description: "",
+        speed: "auto",
+        duplex: "auto",
+        status: "up",
+        ip: "",
+        vlanAccess: null,
+        vlanTrunkAllowed: [],
+        mode: isVlan ? "routed" : "unknown",
+        mac: "",
+        mtu: 1500,
+        type: isVlan ? "SVI" : name.match(/^(ge|xe|et|ae|fe|port)/i)?.[1] || "Other",
+      });
+    }
+    return interfaceMap.get(name)!;
+  };
+
+  for (const line of flatLines) {
+    const hnMatch = line.match(/(?:system\s+)?host-name\s+(\S+)/i);
+    if (hnMatch) {
+      cfg.hostname = hnMatch[1].replace(/["';]/g, "").trim();
+      continue;
+    }
+
+    const vlanIdMatch = line.match(/^vlans\s+(\S+)\s+vlan-id\s+(\d+)/i);
+    if (vlanIdMatch) {
+      const name = vlanIdMatch[1];
+      const id = parseInt(vlanIdMatch[2]);
+      const existing = cfg.vlans.find(v => v.id === id);
+      if (existing) {
+        existing.name = name;
+      } else {
+        cfg.vlans.push({ id, name });
+      }
+      continue;
+    }
+
+    const vlanDescMatch = line.match(/^vlans\s+(\S+)\s+description\s+["']?(.+?)["']?$/i);
+    if (vlanDescMatch) {
+      const name = vlanDescMatch[1];
+      const desc = vlanDescMatch[2];
+      const existing = cfg.vlans.find(v => v.name === name || v.id.toString() === name);
+      if (existing) {
+        existing.name = `${desc} (VLAN ${existing.id})`;
+      }
+      continue;
+    }
+
+    if (line.match(/^protocols\s+ospf/i)) {
+      if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
+    }
+    if (line.match(/^protocols\s+bgp/i)) {
+      if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
+    }
+    if (line.match(/^routing-options\s+static/i) || line.match(/^static\s+route/i)) {
+      if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
+    }
+
+    const ifMatch = line.match(/^interfaces\s+(\S+)/i);
+    if (ifMatch) {
+      const ifName = ifMatch[1];
+      const iface = getInterface(ifName);
+
+      const descM = line.match(/description\s+["']?(.+?)["']?$/i);
+      if (descM) {
+        iface.description = descM[1].trim();
+      }
+
+      if (line.match(/\bdisable\b/i)) {
+        iface.status = "adminDown";
+      }
+
+      const speedM = line.match(/speed\s+(\S+)/i);
+      if (speedM) {
+        iface.speed = speedM[1].replace(/[mGg]/g, "");
+      }
+
+      const modeM = line.match(/(?:interface-mode|port-mode)\s+(access|trunk)/i);
+      if (modeM) {
+        iface.mode = modeM[1].toLowerCase() as "access" | "trunk";
+      }
+
+      const membersM = line.match(/vlan\s+members\s+\[?\s*([^\]]+?)\s*\]?$/i);
+      if (membersM) {
+        const val = membersM[1].trim();
+        const vlanNames = val.split(/\s+/);
+        vlanNames.forEach(vName => {
+          const id = parseInt(vName);
+          if (!isNaN(id)) {
+            if (iface.mode === "access") {
+              iface.vlanAccess = id;
+            } else {
+              if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(id)) {
+                iface.vlanTrunkAllowed.push(id);
+              }
+            }
+          } else {
+            const matchingVlan = cfg.vlans.find(v => v.name === vName);
+            if (matchingVlan) {
+              if (iface.mode === "access") {
+                iface.vlanAccess = matchingVlan.id;
+              } else {
+                if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(matchingVlan.id)) {
+                  iface.vlanTrunkAllowed.push(matchingVlan.id);
+                }
+              }
+            } else {
+              const numMatch = vName.match(/\d+/);
+              if (numMatch) {
+                const parsedId = parseInt(numMatch[0]);
+                if (iface.mode === "access") {
+                  iface.vlanAccess = parsedId;
+                } else {
+                  if (iface.vlanTrunkAllowed && !iface.vlanTrunkAllowed.includes(parsedId)) {
+                    iface.vlanTrunkAllowed.push(parsedId);
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      const ipM = line.match(/address\s+([\d.]+)\/(\d+)/i);
+      if (ipM) {
+        iface.ip = `${ipM[1]}/${ipM[2]}`;
+        iface.mode = "routed";
+        if (!cfg.managementIp) {
+          cfg.managementIp = ipM[1];
+        }
+      }
+    }
+  }
+
+  interfaceMap.forEach(iface => {
+    cfg.interfaces.push(finalizeInterface(iface));
+  });
+
+  return cfg;
+}
+
+function parseFortiGateConfig(raw: string): ParsedConfig {
+  const lines = raw.split("\n");
+  const cfg: ParsedConfig = {
+    hostname: "",
+    managementIp: "",
+    routingProtocols: [],
+    vlans: [],
+    interfaces: [],
+  };
+
+  let inSystemGlobal = false;
+  let inSystemInterface = false;
+  let currentInterface: Partial<InterfaceInfo> | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    if (line.startsWith('config system global')) {
+      inSystemGlobal = true;
+      inSystemInterface = false;
+      continue;
+    }
+    if (line.startsWith('config system interface')) {
+      inSystemGlobal = false;
+      inSystemInterface = true;
+      continue;
+    }
+    if (line.startsWith('config router ospf')) {
+      inSystemGlobal = false;
+      inSystemInterface = false;
+      if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
+      continue;
+    }
+    if (line.startsWith('config router static')) {
+      inSystemGlobal = false;
+      inSystemInterface = false;
+      if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
+      continue;
+    }
+    if (line.startsWith('config router bgp')) {
+      inSystemGlobal = false;
+      inSystemInterface = false;
+      if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
+      continue;
+    }
+    if (line === 'end') {
+      inSystemGlobal = false;
+      inSystemInterface = false;
+      if (currentInterface?.name) {
+        cfg.interfaces.push(finalizeInterface(currentInterface));
+        currentInterface = null;
+      }
+      continue;
+    }
+
+    if (inSystemGlobal && line.startsWith('set hostname')) {
+      const match = line.match(/^set\s+hostname\s+["']?(.+?)["']?$/);
+      if (match) {
+        cfg.hostname = match[1].trim();
+      }
+      continue;
+    }
+
+    if (inSystemInterface) {
+      if (line.startsWith('edit')) {
+        if (currentInterface?.name) {
+          cfg.interfaces.push(finalizeInterface(currentInterface));
+        }
+        const match = line.match(/^edit\s+["']?(.+?)["']?$/);
+        const name = match ? match[1] : "Unknown";
+        currentInterface = {
+          name: name,
+          description: "",
+          speed: "auto",
+          duplex: "auto",
+          status: "up",
+          ip: "",
+          vlanAccess: null,
+          vlanTrunkAllowed: [],
+          mode: "unknown",
+          mac: "",
+          mtu: 1500,
+          type: name.match(/^(port|wan|lan|dmz|ssl|ssl-vlan|vlan)/i)?.[1] || "Other",
+        };
+        continue;
+      }
+
+      if (currentInterface) {
+        if (line.startsWith('set alias')) {
+          const match = line.match(/^set\s+alias\s+["']?(.+?)["']?$/);
+          if (match) currentInterface.description = match[1].trim();
+        }
+        else if (line.startsWith('set ip')) {
+          const match = line.match(/^set\s+ip\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)/);
+          if (match) {
+            const ip = match[1];
+            const netmask = match[2];
+            currentInterface.ip = `${ip}/${cidrFromMask(netmask)}`;
+            currentInterface.mode = "routed";
+            if (!cfg.managementIp) {
+              cfg.managementIp = ip;
+            }
+          }
+        }
+        else if (line.startsWith('set status')) {
+          const match = line.match(/^set\s+status\s+(up|down)/i);
+          if (match) currentInterface.status = match[1].toLowerCase() as "up" | "down";
+        }
+        else if (line.startsWith('set vlanid')) {
+          const match = line.match(/^set\s+vlanid\s+(\d+)/);
+          if (match) {
+            const vlanId = parseInt(match[1]);
+            currentInterface.vlanAccess = vlanId;
+            currentInterface.mode = "access";
+            if (!cfg.vlans.some(v => v.id === vlanId)) {
+              cfg.vlans.push({ id: vlanId, name: currentInterface.name || `VLAN ${vlanId}` });
+            }
+          }
+        }
+        else if (line === 'next') {
+          cfg.interfaces.push(finalizeInterface(currentInterface));
+          currentInterface = null;
+        }
+      }
+    }
+  }
+
+  if (currentInterface?.name) {
+    cfg.interfaces.push(finalizeInterface(currentInterface));
+  }
+
+  return cfg;
+}
+
+function parseRunningConfig(raw: string): ParsedConfig {
+  const vendor = detectVendor(raw);
+  
+  switch (vendor) {
+    case "Cisco":
+      return parseCiscoConfig(raw);
+    case "Juniper":
+      return parseJuniperConfig(raw);
+    case "FortiGate":
+      return parseFortiGateConfig(raw);
+    default:
+      return parseCiscoConfig(raw);
+  }
+}
+
 function finalizeInterface(iface: Partial<InterfaceInfo>): InterfaceInfo {
   return {
     name: iface.name || "Unknown",
@@ -408,6 +807,545 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
 }
 
 /* ─────────────────────────────────────────────
+   Topology Map Component (Absolute + SVG connectors)
+   ───────────────────────────────────────────── */
+
+function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [zoom, setZoom] = useState<number>(1);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const dragInfo = useRef<{
+    isPanning: boolean;
+    draggedNodeId: string | null;
+    startX: number;
+    startY: number;
+  }>({
+    isPanning: false,
+    draggedNodeId: null,
+    startX: 0,
+    startY: 0,
+  });
+
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  const width = 800;
+  const height = 600;
+
+  useEffect(() => {
+    const cx = width / 2;
+    const cy = height / 2;
+
+    const switches = nodes.filter(n => n.type === 'switch');
+    const vlans = nodes.filter(n => n.type === 'vlan');
+    const hosts = nodes.filter(n => n.type === 'host');
+    const routers = nodes.filter(n => n.type === 'router');
+
+    const newPositions: Record<string, { x: number; y: number }> = {};
+
+    if (switches.length > 0) {
+      newPositions[switches[0].id] = { x: cx, y: cy };
+    }
+
+    routers.forEach((r, i) => {
+      newPositions[r.id] = {
+        x: cx + (i - (routers.length - 1) / 2) * 150,
+        y: cy - 180
+      };
+    });
+
+    const vRadius = 160;
+    vlans.forEach((v, i) => {
+      const angle = (i / (vlans.length || 1)) * 2 * Math.PI - Math.PI / 2;
+      newPositions[v.id] = {
+        x: cx + vRadius * Math.cos(angle),
+        y: cy + vRadius * Math.sin(angle)
+      };
+    });
+
+    hosts.forEach((h) => {
+      const parentId = h.group;
+      const parentPos = newPositions[parentId] || newPositions[switches[0]?.id] || { x: cx, y: cy };
+
+      const siblings = hosts.filter(host => host.group === h.group);
+      const index = siblings.findIndex(s => s.id === h.id);
+      const hRadius = 90;
+
+      const angleOffset = Math.atan2(parentPos.y - cy, parentPos.x - cx);
+      const spread = Math.PI / 1.5;
+      const startAngle = angleOffset - spread / 2;
+      const step = siblings.length > 1 ? spread / (siblings.length - 1) : 0;
+      const angle = startAngle + index * step;
+
+      newPositions[h.id] = {
+        x: parentPos.x + hRadius * Math.cos(angle),
+        y: parentPos.y + hRadius * Math.sin(angle)
+      };
+    });
+
+    nodes.forEach(n => {
+      if (!newPositions[n.id]) {
+        newPositions[n.id] = { x: cx + (Math.random() - 0.5) * 200, y: cy + (Math.random() - 0.5) * 200 };
+      }
+    });
+
+    setPositions(newPositions);
+    setZoom(1);
+    setPanOffset({ x: 0, y: 0 });
+  }, [nodes]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.save();
+      ctx.translate(panOffset.x, panOffset.y);
+      ctx.scale(zoom, zoom);
+
+      drawGrid(ctx);
+
+      nodes.forEach(node => {
+        const start = positions[node.id];
+        if (!start) return;
+
+        node.connections.forEach(targetId => {
+          const end = positions[targetId];
+          if (!end) return;
+
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          const midX = (start.x + end.x) / 2;
+          ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
+          ctx.strokeStyle = node.id === hoveredNodeId || targetId === hoveredNodeId
+            ? "rgba(239, 68, 68, 0.7)"
+            : "rgba(255, 255, 255, 0.15)";
+          ctx.lineWidth = node.id === hoveredNodeId || targetId === hoveredNodeId ? 2.5 : 1.5;
+          
+          if (node.id === hoveredNodeId || targetId === hoveredNodeId) {
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = "rgba(239, 68, 68, 0.5)";
+          } else {
+            ctx.shadowBlur = 0;
+          }
+          
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        });
+      });
+
+      nodes.forEach(node => {
+        const pos = positions[node.id];
+        if (!pos) return;
+
+        const isHovered = node.id === hoveredNodeId;
+        drawNode(ctx, node, pos.x, pos.y, isHovered);
+      });
+
+      ctx.restore();
+    };
+
+    render();
+  }, [nodes, positions, zoom, panOffset, hoveredNodeId]);
+
+  const drawGrid = (ctx: CanvasRenderingContext2D) => {
+    const gridSize = 40;
+    const buffer = 1000;
+    const startX = -buffer;
+    const endX = width + buffer;
+    const startY = -buffer;
+    const endY = height + buffer;
+
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
+    ctx.lineWidth = 1;
+
+    for (let x = startX; x < endX; x += gridSize) {
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
+    }
+    for (let y = startY; y < endY; y += gridSize) {
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
+    }
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(width/2, height/2, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+    ctx.fill();
+  };
+
+  const drawNode = (ctx: CanvasRenderingContext2D, node: VlanTopologyNode, x: number, y: number, isHovered: boolean) => {
+    let color = "#ef4444";
+    let border = "rgba(239, 68, 68, 0.4)";
+
+    if (node.type === "vlan") {
+      color = "#c084fc";
+      border = "rgba(192, 132, 252, 0.4)";
+    } else if (node.type === "router") {
+      color = "#fbbf24";
+      border = "rgba(251, 191, 36, 0.4)";
+    } else if (node.type === "host") {
+      color = "#34d399";
+      border = "rgba(52, 211, 153, 0.3)";
+    }
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    if (isHovered) {
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = color;
+    }
+
+    const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
+    
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fillStyle = isHovered ? "rgba(0, 0, 0, 0.95)" : "rgba(10, 10, 15, 0.95)";
+    ctx.fill();
+
+    ctx.strokeStyle = isHovered ? color : border;
+    ctx.lineWidth = isHovered ? 2.5 : 1.5;
+    ctx.stroke();
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 0;
+
+    if (node.type === "switch") {
+      ctx.beginPath();
+      ctx.moveTo(-12, -4);
+      ctx.lineTo(12, -4);
+      ctx.moveTo(12, -4);
+      ctx.lineTo(8, -7);
+      ctx.moveTo(12, -4);
+      ctx.lineTo(8, -1);
+      ctx.moveTo(12, 4);
+      ctx.lineTo(-12, 4);
+      ctx.moveTo(-12, 4);
+      ctx.lineTo(-8, 1);
+      ctx.moveTo(-12, 4);
+      ctx.lineTo(-8, 7);
+      ctx.stroke();
+    } else if (node.type === "router") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 10, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(0, -6); ctx.lineTo(0, -13);
+      ctx.moveTo(0, -13); ctx.lineTo(-3, -10);
+      ctx.moveTo(0, -13); ctx.lineTo(3, -10);
+      ctx.moveTo(0, 6); ctx.lineTo(0, 13);
+      ctx.moveTo(0, 13); ctx.lineTo(-3, 10);
+      ctx.moveTo(0, 13); ctx.lineTo(3, 10);
+      ctx.moveTo(6, 0); ctx.lineTo(13, 0);
+      ctx.moveTo(13, 0); ctx.lineTo(10, -3);
+      ctx.moveTo(13, 0); ctx.lineTo(10, 3);
+      ctx.moveTo(-6, 0); ctx.lineTo(-13, 0);
+      ctx.moveTo(-13, 0); ctx.lineTo(-10, -3);
+      ctx.moveTo(-13, 0); ctx.lineTo(-10, 3);
+      ctx.stroke();
+    } else if (node.type === "vlan") {
+      for (let i = -1; i <= 1; i++) {
+        const offset = i * 5;
+        ctx.beginPath();
+        ctx.moveTo(0, -3 + offset);
+        ctx.lineTo(10, 1 + offset);
+        ctx.lineTo(0, 5 + offset);
+        ctx.lineTo(-10, 1 + offset);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.rect(-10, -8, 20, 13);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-3, 5);
+      ctx.lineTo(-5, 9);
+      ctx.lineTo(5, 9);
+      ctx.lineTo(3, 5);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const label = node.label;
+    ctx.font = "bold 9px monospace";
+    const textWidth = ctx.measureText(label).width;
+
+    ctx.fillStyle = "rgba(0,0,0,0.9)";
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    
+    ctx.beginPath();
+    const px = 6;
+    const py = 3;
+    const ly = radius + 12;
+    
+    const rx = -textWidth / 2 - px;
+    const ry = ly - 6 - py;
+    const rw = textWidth + px * 2;
+    const rh = 12 + py * 2;
+    const rr = 4;
+    
+    ctx.beginPath();
+    ctx.moveTo(rx + rr, ry);
+    ctx.lineTo(rx + rw - rr, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rr, rr);
+    ctx.lineTo(rx + rw, ry + rh - rr);
+    ctx.arcTo(rx + rw, ry + rh, rx + rw - rr, ry + rh, rr);
+    ctx.lineTo(rx + rr, ry + rh);
+    ctx.arcTo(rx, ry + rh, rx, ry + rh - rr, rr);
+    ctx.lineTo(rx, ry + rr);
+    ctx.arcTo(rx, ry, rx + rr, ry, rr);
+    ctx.closePath();
+    
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, 0, ly);
+
+    ctx.restore();
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+
+    const localX = (clientX - rect.left - panOffset.x) / zoom;
+    const localY = (clientY - rect.top - panOffset.y) / zoom;
+
+    let clickedNodeId: string | null = null;
+    
+    for (const node of nodes) {
+      const pos = positions[node.id];
+      if (!pos) continue;
+      
+      const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
+      const dx = localX - pos.x;
+      const dy = localY - pos.y;
+      
+      if (dx * dx + dy * dy < radius * radius + 100) {
+        clickedNodeId = node.id;
+        break;
+      }
+    }
+
+    if (clickedNodeId) {
+      dragInfo.current = {
+        isPanning: false,
+        draggedNodeId: clickedNodeId,
+        startX: localX - positions[clickedNodeId].x,
+        startY: localY - positions[clickedNodeId].y
+      };
+    } else {
+      dragInfo.current = {
+        isPanning: true,
+        draggedNodeId: null,
+        startX: clientX - panOffset.x,
+        startY: clientY - panOffset.y
+      };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+
+    const localX = (clientX - rect.left - panOffset.x) / zoom;
+    const localY = (clientY - rect.top - panOffset.y) / zoom;
+
+    const info = dragInfo.current;
+
+    if (info.draggedNodeId) {
+      const nodeId = info.draggedNodeId;
+      setPositions(prev => ({
+        ...prev,
+        [nodeId]: {
+          x: localX - info.startX,
+          y: localY - info.startY
+        }
+      }));
+    } else if (info.isPanning) {
+      setPanOffset({
+        x: clientX - info.startX,
+        y: clientY - info.startY
+      });
+    } else {
+      let foundHover: string | null = null;
+      for (const node of nodes) {
+        const pos = positions[node.id];
+        if (!pos) continue;
+        
+        const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
+        const dx = localX - pos.x;
+        const dy = localY - pos.y;
+        
+        if (dx * dx + dy * dy < radius * radius + 100) {
+          foundHover = node.id;
+          break;
+        }
+      }
+      setHoveredNodeId(foundHover);
+    }
+  };
+
+  const handleMouseUp = () => {
+    dragInfo.current.isPanning = false;
+    dragInfo.current.draggedNodeId = null;
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    
+    const zoomIntensity = 0.08;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    const delta = e.deltaY < 0 ? 1 : -1;
+    const newZoom = Math.min(Math.max(zoom * (1 + delta * zoomIntensity), 0.3), 3);
+    
+    const xs = (mouseX - panOffset.x) / zoom;
+    const ys = (mouseY - panOffset.y) / zoom;
+    
+    setZoom(newZoom);
+    setPanOffset({
+      x: mouseX - xs * newZoom,
+      y: mouseY - ys * newZoom
+    });
+  };
+
+  const exportPng = () => {
+    const tempCanvas = document.createElement("canvas");
+    const exportWidth = 1920;
+    const exportHeight = 1080;
+    tempCanvas.width = exportWidth;
+    tempCanvas.height = exportHeight;
+
+    const ctx = tempCanvas.getContext("2d");
+    if (!ctx) return;
+    
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    
+    Object.values(positions).forEach(p => {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    });
+
+    const padding = 150;
+    const graphWidth = maxX - minX || 1;
+    const graphHeight = maxY - minY || 1;
+
+    const scaleX = (exportWidth - padding * 2) / graphWidth;
+    const scaleY = (exportHeight - padding * 2) / graphHeight;
+    const exportScale = Math.min(scaleX, scaleY, 1.5);
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
+    const exportTransX = exportWidth / 2 - centerX * exportScale;
+    const exportTransY = exportHeight / 2 - centerY * exportScale;
+
+    ctx.save();
+    ctx.translate(exportTransX, exportTransY);
+    ctx.scale(exportScale, exportScale);
+
+    nodes.forEach(node => {
+      const start = positions[node.id];
+      if (!start) return;
+
+      node.connections.forEach(targetId => {
+        const end = positions[targetId];
+        if (!end) return;
+
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        const midX = (start.x + end.x) / 2;
+        ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      });
+    });
+
+    nodes.forEach(node => {
+      const pos = positions[node.id];
+      if (!pos) return;
+      drawNode(ctx, node, pos.x, pos.y, false);
+    });
+
+    ctx.restore();
+
+    const dataUrl = tempCanvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.download = "NetGlyph_Topology.png";
+    link.href = dataUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="relative w-full overflow-hidden bg-black/40 border border-white/5 rounded-2xl flex flex-col items-center justify-center p-0 min-h-[600px] select-none">
+      <div className="absolute top-4 right-4 z-10 flex gap-2">
+        <button
+          onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-[9px] font-black text-foreground uppercase tracking-widest transition-all"
+        >
+          Reset View
+        </button>
+        <button
+          onClick={exportPng}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/80 border border-accent/20 text-[9px] font-black text-accent-foreground uppercase tracking-widest transition-all shadow-lg"
+        >
+          Export Topology as PNG
+        </button>
+      </div>
+
+      <canvas
+        ref={canvasRef}
+        className="w-full h-[600px] cursor-grab active:cursor-grabbing"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+      />
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    Running-Config Decoder Component
    ───────────────────────────────────────────── */
 
@@ -417,19 +1355,37 @@ export default function RunningConfigDecoderClient() {
   const [isDragging, setIsDragging] = useState(false);
   const [fileMeta, setFileMeta] = useState<{ name: string; size: number } | null>(null);
 
-  const parsed = useMemo(() => {
-    if (!config.trim()) return null;
-    try {
-      return parseRunningConfig(config);
-    } catch {
-      return null;
-    }
-  }, [config]);
+    const parsed = useMemo(() => {
+      if (!config.trim()) return null;
+      try {
+        return parseRunningConfig(config);
+      } catch {
+        return null;
+      }
+    }, [config]);
 
-  const topologyNodes = useMemo(() => {
-    if (!parsed) return [];
-    return buildTopology(parsed);
-  }, [parsed]);
+    const vendor = useMemo(() => {
+      if (!config.trim()) return "Unknown";
+      return detectVendor(config);
+    }, [config]);
+
+    const vendorBadge = useMemo(() => {
+      switch (vendor) {
+        case "Cisco":
+          return <span className="text-cyan-400 border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Cisco IOS</span>;
+        case "Juniper":
+          return <span className="text-purple-400 border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">Juniper JunOS</span>;
+        case "FortiGate":
+          return <span className="text-emerald-400 border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">FortiOS</span>;
+        default:
+          return <span className="text-muted/50 border border-white/10 bg-white/5 px-2 py-0.5 rounded-full whitespace-nowrap">Unknown Vendor</span>;
+      }
+    }, [vendor]);
+
+    const topologyNodes = useMemo(() => {
+      if (!parsed) return [];
+      return buildTopology(parsed);
+    }, [parsed]);
 
   const loadSample = () => {
     setConfig(SAMPLE_CONFIG);
@@ -464,7 +1420,7 @@ export default function RunningConfigDecoderClient() {
   return (
     <ToolContainer categoryId="network-security">
       <ToolHeader
-        title="Running-Config Decoder & Topology Workspace"
+        title="NetGlyph // Configuration Workspace"
         description="Enterprise-grade local configuration parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline."
         categoryId="network-security"
       />
@@ -618,6 +1574,11 @@ export default function RunningConfigDecoderClient() {
                       <div className="flex items-center justify-between border-b border-white/5 pb-4">
                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
                           <Server className="size-3.5" /> Device Identity
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold">
+                            {vendorBadge}
+                          </div>
                         </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -796,71 +1757,7 @@ export default function RunningConfigDecoderClient() {
                     </div>
 
                     {/* Topology Canvas */}
-                    <div className="relative min-h-[500px] p-8 rounded-2xl bg-black/40 border border-white/5 overflow-hidden">
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(var(--accent-rgb),0.03),transparent_70%)] pointer-events-none" />
-
-                      {/* Core Switch (center) */}
-                      {topologyNodes.filter(n => n.type === "switch").map(node => (
-                        <div key={node.id} className="relative flex justify-center mb-16">
-                          <div className="relative z-10 flex flex-col items-center gap-3 p-6 rounded-2xl bg-accent/10 border-2 border-accent/30 shadow-[0_0_30px_rgba(var(--accent-rgb),0.15)]">
-                            <div className="size-12 rounded-xl bg-accent/20 flex items-center justify-center border border-accent/30">
-                              <Router className="size-6 text-accent" />
-                            </div>
-                            <div className="flex flex-col items-center">
-                              <span className="text-xs font-black text-accent uppercase tracking-widest">{node.label || "Core Switch"}</span>
-                              <span className="text-[8px] font-bold text-accent/60 uppercase tracking-widest">L3 Switch / Router</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* VLAN & Host Clusters */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-4">
-                        {topologyNodes.filter(n => n.type === "vlan").map(node => (
-                          <div key={node.id} className="group flex flex-col items-center gap-2 p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 hover:bg-purple-500/10 hover:border-purple-500/30 transition-all cursor-pointer">
-                            <div className="size-10 rounded-lg bg-purple-500/10 flex items-center justify-center border border-purple-500/20">
-                              <Layers className="size-5 text-purple-400" />
-                            </div>
-                            <span className="text-[10px] font-black text-purple-300 text-center uppercase tracking-tight leading-tight">{node.label}</span>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <ArrowRight className="size-3 text-muted/40" />
-                              <span className="text-[7px] font-bold text-muted/40 uppercase tracking-widest">Connected to Core</span>
-                            </div>
-                          </div>
-                        ))}
-
-                        {/* Host access ports */}
-                        {topologyNodes.filter(n => n.type === "host").map(node => (
-                          <div key={node.id} className="group flex flex-col items-center gap-2 p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-all cursor-pointer">
-                            <div className="size-10 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-                              <Monitor className="size-5 text-emerald-400" />
-                            </div>
-                            <span className="text-[10px] font-black text-emerald-300 text-center uppercase tracking-tight leading-tight">{node.label}</span>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <ArrowRight className="size-3 text-muted/40" />
-                              <span className="text-[7px] font-bold text-muted/40 uppercase tracking-widest">Access Port</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Router node */}
-                      {topologyNodes.filter(n => n.type === "router").map(node => (
-                        <div key={node.id} className="flex justify-center mt-8">
-                          <div className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 hover:bg-amber-500/10 transition-all">
-                            <div className="size-10 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
-                              <Radio className="size-5 text-amber-400" />
-                            </div>
-                            <div className="flex flex-col items-center">
-                              <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider">{node.label}</span>
-                              <span className="text-[7px] font-bold text-amber-400/60 uppercase tracking-widest">
-                                {parsed?.routingProtocols.join(" / ") || "Routing"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <TopologicalMap nodes={topologyNodes} />
 
                     {/* Legend */}
                     <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-black/40 border border-white/5">

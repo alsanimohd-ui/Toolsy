@@ -205,7 +205,7 @@ export const tools: Tool[] = [
     icon: "API",
   },
   {
-    name: "Running-Config Decoder",
+    name: "NetGlyph // Configuration Workspace",
     slug: "running-config-decoder",
     route: getToolPath("network-security", "running-config-decoder"),
     description: "Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline.",
