@@ -1015,10 +1015,8 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [viewMode, setViewMode] = useState<"RADIAL" | "TREE">("RADIAL");
 
-  const positionsRef = useRef<Record<string, { x: number; y: number }>>({});
-  const velocitiesRef = useRef<Record<string, { vx: number; vy: number }>>({});
-  const alphaRef = useRef<number>(1.0);
-  const fixedRef = useRef<Record<string, { fx: number; fy: number } | null>>({});
+  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   const dragInfo = useRef<{
     isPanning: boolean;
@@ -1032,8 +1030,6 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     startY: 0,
   });
 
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-
   const width = 800;
   const height = 600;
 
@@ -1042,15 +1038,14 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
   const hosts = useMemo(() => nodes.filter(n => n.type === 'host'), [nodes]);
   const routers = useMemo(() => nodes.filter(n => n.type === 'router'), [nodes]);
 
+  // Deterministically position all nodes statically upon nodes or viewMode changes (Zero Animation Engine)
   useEffect(() => {
     const cx = width / 2;
     const cy = height / 2;
-
     const newPositions: Record<string, { x: number; y: number }> = {};
-    const newVelocities: Record<string, { vx: number; vy: number }> = {};
 
     if (viewMode === "TREE") {
-      // 1. Routers at the top level
+      // 1. Routers at the top level (Level 1)
       routers.forEach((r, i) => {
         newPositions[r.id] = {
           x: cx + (i - (routers.length - 1) / 2) * 180,
@@ -1058,12 +1053,12 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         };
       });
 
-      // 2. Core switch at level 2
+      // 2. Core switch at Level 2
       if (switches.length > 0) {
         newPositions[switches[0].id] = { x: cx, y: 160 };
       }
 
-      // 3. VPN & SD-WAN peripheral interface nodes flanking the Core Switch
+      // 3. VPN & SD-WAN flanking Core Switch
       const vpns = nodes.filter(n => n.type === "vpn");
       vpns.forEach((v, i) => {
         newPositions[v.id] = {
@@ -1080,7 +1075,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         };
       });
 
-      // 4. VLANs spaced out horizontally at level 3
+      // 4. VLANs spaced horizontally (Level 3)
       const vlanY = 300;
       vlans.forEach((v, i) => {
         const xPos = cx + (i - (vlans.length - 1) / 2) * (width / Math.max(vlans.length, 1) - 40);
@@ -1090,7 +1085,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         };
       });
 
-      // 5. Hosts spaced out below their parent VLANs at level 4
+      // 5. Hosts spaced below parent VLANs (Level 4)
       const hostY = 460;
       vlans.forEach((vlanNode) => {
         const vlanHosts = hosts.filter(h => h.group === vlanNode.id);
@@ -1105,7 +1100,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         });
       });
 
-      // Orphan hosts (connected directly to the core switch)
+      // Orphan hosts below switch
       const orphanHosts = hosts.filter(h => h.group !== "vlan-" && !vlans.some(v => v.id === h.group));
       orphanHosts.forEach((h, idx) => {
         const offset = (idx - (orphanHosts.length - 1) / 2) * 80;
@@ -1116,7 +1111,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
       });
     } else {
       // RADIAL VIEW MODE
-      // 1. Core switch aligned perfectly at center hub
+      // 1. Core switch aligned perfectly at middle hub center
       if (switches.length > 0) {
         newPositions[switches[0].id] = { x: cx, y: cy };
       }
@@ -1177,22 +1172,19 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
       });
     }
 
-    // Static horizontal & vertical bounding safety protection
+    // Boundary containment safety check
     nodes.forEach(n => {
       if (!newPositions[n.id]) {
         newPositions[n.id] = { x: cx, y: cy + 120 };
       }
-      newVelocities[n.id] = { vx: 0, vy: 0 };
     });
 
-    positionsRef.current = newPositions;
-    velocitiesRef.current = newVelocities;
-    fixedRef.current = {};
-    alphaRef.current = 1.0;
+    setNodePositions(newPositions);
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
   }, [nodes, viewMode, switches, vlans, hosts, routers]);
 
+  // Static draw canvas rendering block (0 animation loops)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1204,197 +1196,55 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
 
-    let animationId: number;
+    ctx.clearRect(0, 0, width, height);
 
-    const tick = () => {
-      // 1. Force-directed simulation calculations if cooling alpha is active
-      if (alphaRef.current > 0) {
-        const fx: Record<string, number> = {};
-        const fy: Record<string, number> = {};
-        nodes.forEach(n => {
-          fx[n.id] = 0;
-          fy[n.id] = 0;
-        });
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
 
-        const cx = width / 2;
-        const cy = height / 2;
+    drawGrid(ctx);
 
-        // Centering Gravity Pull
-        nodes.forEach(n => {
-          const pos = positionsRef.current[n.id];
-          if (!pos) return;
-          fx[n.id] += (cx - pos.x) * 0.005;
-          fy[n.id] += (cy - pos.y) * 0.005;
-        });
+    // Render connection lines
+    nodes.forEach(node => {
+      const start = nodePositions[node.id];
+      if (!start) return;
 
-        // Pairwise Repulsion Force (Enforce strict minimum 120px separation)
-        const minDistance = 120;
-        for (let i = 0; i < nodes.length; i++) {
-          for (let j = i + 1; j < nodes.length; j++) {
-            const n1 = nodes[i];
-            const n2 = nodes[j];
-            const p1 = positionsRef.current[n1.id];
-            const p2 = positionsRef.current[n2.id];
-            if (!p1 || !p2) continue;
+      node.connections.forEach(targetId => {
+        const end = nodePositions[targetId];
+        if (!end) return;
 
-            let dx = p2.x - p1.x;
-            let dy = p2.y - p1.y;
-            if (dx === 0 && dy === 0) {
-              dx = Math.random() - 0.5;
-              dy = Math.random() - 0.5;
-            }
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-            if (dist < minDistance) {
-              const overlap = minDistance - dist;
-              // High dynamic force to push them back
-              const force = (overlap / dist) * 0.5;
-              const pushX = dx * force;
-              const pushY = dy * force;
-              fx[n1.id] -= pushX;
-              fy[n1.id] -= pushY;
-              fx[n2.id] += pushX;
-              fy[n2.id] += pushY;
-            } else {
-              // Standard inverse-square repulsion to space them out cleanly
-              const force = 100 / (dist * dist);
-              fx[n1.id] -= dx * force;
-              fy[n1.id] -= dy * force;
-              fx[n2.id] += dx * force;
-              fy[n2.id] += dy * force;
-            }
-          }
-        }
-
-        // Link Attraction Force
-        nodes.forEach(n => {
-          const p1 = positionsRef.current[n.id];
-          if (!p1) return;
-
-          n.connections.forEach(targetId => {
-            const p2 = positionsRef.current[targetId];
-            if (!p2) return;
-
-            const dx = p2.x - p1.x;
-            const dy = p2.y - p1.y;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-            const restLength = 150;
-            const k = 0.03; // Hooke's spring constant
-            const force = (dist - restLength) * k;
-
-            const pullX = (dx / dist) * force;
-            const pullY = (dy / dist) * force;
-
-            fx[n.id] += pullX;
-            fy[n.id] += pullY;
-            fx[targetId] -= pullX;
-            fy[targetId] -= pullY;
-          });
-        });
-
-        // Update positions and apply friction damping
-        nodes.forEach(n => {
-          const fixed = fixedRef.current[n.id];
-          if (n.id === dragInfo.current.draggedNodeId || fixed) {
-            velocitiesRef.current[n.id] = { vx: 0, vy: 0 };
-            if (fixed) {
-              positionsRef.current[n.id] = { x: fixed.fx, y: fixed.fy };
-            }
-            return;
-          }
-
-          const vel = velocitiesRef.current[n.id] || { vx: 0, vy: 0 };
-          vel.vx = (vel.vx + fx[n.id] * alphaRef.current) * 0.82;
-          vel.vy = (vel.vy + fy[n.id] * alphaRef.current) * 0.82;
-
-          velocitiesRef.current[n.id] = vel;
-
-          const pos = positionsRef.current[n.id];
-          if (pos) {
-            pos.x += vel.vx;
-            pos.y += vel.vy;
-
-            // Keep nodes inside canvas frame with a safe buffer boundary
-            pos.x = Math.max(40, Math.min(width - 40, pos.x));
-            pos.y = Math.max(40, Math.min(height - 40, pos.y));
-          }
-        });
-
-        // Decay alpha over time so the simulation stabilizes (settles within 1-2 seconds)
-        alphaRef.current -= 0.012;
-        if (alphaRef.current < 0.005) {
-          alphaRef.current = 0; // Lock the layout
-        }
-      } else {
-        // Alpha is 0 (stabilized) - keep all pinned nodes statically locked to their positions
-        nodes.forEach(n => {
-          const fixed = fixedRef.current[n.id];
-          if (fixed) {
-            positionsRef.current[n.id] = { x: fixed.fx, y: fixed.fy };
-          }
-        });
-      }
-
-      // 2. Draw loop on canvas
-      ctx.clearRect(0, 0, width, height);
-
-      ctx.save();
-      ctx.translate(panOffset.x, panOffset.y);
-      ctx.scale(zoom, zoom);
-
-      drawGrid(ctx);
-
-      // Render connection lines
-      nodes.forEach(node => {
-        const start = positionsRef.current[node.id];
-        if (!start) return;
-
-        node.connections.forEach(targetId => {
-          const end = positionsRef.current[targetId];
-          if (!end) return;
-
-          ctx.beginPath();
-          ctx.moveTo(start.x, start.y);
-          const midX = (start.x + end.x) / 2;
-          ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
-          ctx.strokeStyle = node.id === hoveredNodeId || targetId === hoveredNodeId
-            ? "rgba(239, 68, 68, 0.7)"
-            : "rgba(255, 255, 255, 0.15)";
-          ctx.lineWidth = node.id === hoveredNodeId || targetId === hoveredNodeId ? 2.5 : 1.5;
-          
-          if (node.id === hoveredNodeId || targetId === hoveredNodeId) {
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = "rgba(239, 68, 68, 0.5)";
-          } else {
-            ctx.shadowBlur = 0;
-          }
-          
-          ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        const midX = (start.x + end.x) / 2;
+        ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
+        ctx.strokeStyle = node.id === hoveredNodeId || targetId === hoveredNodeId
+          ? "rgba(239, 68, 68, 0.7)"
+          : "rgba(255, 255, 255, 0.15)";
+        ctx.lineWidth = node.id === hoveredNodeId || targetId === hoveredNodeId ? 2.5 : 1.5;
+        
+        if (node.id === hoveredNodeId || targetId === hoveredNodeId) {
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = "rgba(239, 68, 68, 0.5)";
+        } else {
           ctx.shadowBlur = 0;
-        });
+        }
+        
+        ctx.stroke();
+        ctx.shadowBlur = 0;
       });
+    });
 
-      // Render node icons
-      nodes.forEach(node => {
-        const pos = positionsRef.current[node.id];
-        if (!pos) return;
+    // Render node icons
+    nodes.forEach(node => {
+      const pos = nodePositions[node.id];
+      if (!pos) return;
 
-        const isHovered = node.id === hoveredNodeId;
-        drawNode(ctx, node, pos.x, pos.y, isHovered);
-      });
+      const isHovered = node.id === hoveredNodeId;
+      drawNode(ctx, node, pos.x, pos.y, isHovered);
+    });
 
-      ctx.restore();
-
-      animationId = requestAnimationFrame(tick);
-    };
-
-    tick();
-
-    return () => {
-      cancelAnimationFrame(animationId);
-    };
-  }, [nodes, zoom, panOffset, hoveredNodeId]);
+    ctx.restore();
+  }, [nodes, nodePositions, zoom, panOffset, hoveredNodeId]);
 
   const drawGrid = (ctx: CanvasRenderingContext2D) => {
     const gridSize = 40;
@@ -1404,6 +1254,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     const startY = -buffer;
     const endY = height + buffer;
 
+    ctx.save();
     ctx.beginPath();
     ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
     ctx.lineWidth = 1;
@@ -1422,6 +1273,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     ctx.arc(width/2, height/2, 4, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
     ctx.fill();
+    ctx.restore();
   };
 
   const drawNode = (ctx: CanvasRenderingContext2D, node: VlanTopologyNode, x: number, y: number, isHovered: boolean) => {
@@ -1626,29 +1478,29 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     let clickedNodeId: string | null = null;
     
     for (const node of nodes) {
-      const pos = positionsRef.current[node.id];
+      const pos = nodePositions[node.id];
       if (!pos) continue;
       
       const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
       const dx = localX - pos.x;
       const dy = localY - pos.y;
       
-      if (dx * dx + dy * dy < radius * radius + 100) {
+      // Extended grab boundary for reliable zero-jitter grabs
+      if (dx * dx + dy * dy < radius * radius + 150) {
         clickedNodeId = node.id;
         break;
       }
     }
 
     if (clickedNodeId) {
-      // Relative offset tracking to prevent sudden node snapping
-      const pos = positionsRef.current[clickedNodeId];
+      const pos = nodePositions[clickedNodeId];
+      // Store cursor relative offset from node origin
       dragInfo.current = {
         isPanning: false,
         draggedNodeId: clickedNodeId,
         startX: localX - pos.x,
         startY: localY - pos.y
       };
-      fixedRef.current[clickedNodeId] = { fx: pos.x, fy: pos.y };
     } else {
       dragInfo.current = {
         isPanning: true,
@@ -1673,13 +1525,15 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
     if (info.draggedNodeId) {
       const nodeId = info.draggedNodeId;
-      const dragX = localX - info.startX;
-      const dragY = localY - info.startY;
-      positionsRef.current[nodeId] = {
-        x: dragX,
-        y: dragY
-      };
-      fixedRef.current[nodeId] = { fx: dragX, fy: dragY };
+      // Confine movement to grid bounding box boundary
+      const dragX = Math.max(40, Math.min(width - 40, localX - info.startX));
+      const dragY = Math.max(40, Math.min(height - 40, localY - info.startY));
+      
+      // Update coordinates in React state immediately to trigger instantaneous draw refresh
+      setNodePositions(prev => ({
+        ...prev,
+        [nodeId]: { x: dragX, y: dragY }
+      }));
     } else if (info.isPanning) {
       setPanOffset({
         x: clientX - info.startX,
@@ -1688,24 +1542,25 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     } else {
       let foundHover: string | null = null;
       for (const node of nodes) {
-        const pos = positionsRef.current[node.id];
+        const pos = nodePositions[node.id];
         if (!pos) continue;
         
         const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
         const dx = localX - pos.x;
         const dy = localY - pos.y;
         
-        if (dx * dx + dy * dy < radius * radius + 100) {
+        if (dx * dx + dy * dy < radius * radius + 150) {
           foundHover = node.id;
           break;
         }
       }
-      setHoveredNodeId(foundHover);
+      if (foundHover !== hoveredNodeId) {
+        setHoveredNodeId(foundHover);
+      }
     }
   };
 
   const handleMouseUp = () => {
-    // Keep the node pinned in fixedRef so it remains exactly where the user dropped it
     dragInfo.current.isPanning = false;
     dragInfo.current.draggedNodeId = null;
   };
@@ -1746,7 +1601,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     
-    Object.values(positionsRef.current).forEach(p => {
+    Object.values(nodePositions).forEach(p => {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
       if (p.y < minY) minY = p.y;
@@ -1772,11 +1627,11 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     ctx.scale(exportScale, exportScale);
 
     nodes.forEach(node => {
-      const start = positionsRef.current[node.id];
+      const start = nodePositions[node.id];
       if (!start) return;
 
       node.connections.forEach(targetId => {
-        const end = positionsRef.current[targetId];
+        const end = nodePositions[targetId];
         if (!end) return;
 
         ctx.beginPath();
@@ -1790,7 +1645,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     });
 
     nodes.forEach(node => {
-      const pos = positionsRef.current[node.id];
+      const pos = nodePositions[node.id];
       if (!pos) return;
       drawNode(ctx, node, pos.x, pos.y, false);
     });
