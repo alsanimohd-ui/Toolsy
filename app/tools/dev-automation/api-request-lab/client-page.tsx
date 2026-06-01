@@ -132,7 +132,7 @@ function MethodSelector({
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute left-0 top-full mt-2 w-full min-w-[180px] bg-black/90 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-[9999]"
+              className="absolute left-0 top-full mt-2 w-full min-w-[180px] bg-black/90 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-50"
             >
               <div className="p-2 flex flex-col gap-1">
                 {METHODS.map((m) => {
@@ -456,8 +456,10 @@ export default function ApiRequestLabClient() {
 
       <div className="flex flex-col gap-10 max-w-[96rem] mx-auto w-full pb-32">
         
-        {/* MODE SELECTOR */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-2">
+        {/* UPPER SECTION: CONFIGURE TARGET */}
+        <section className="relative z-30 flex flex-col gap-6">
+          {/* MODE SELECTOR */}
+          <div className="flex flex-wrap items-center justify-between gap-4 px-2">
           <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-accent/70">
             <Globe className="size-4" /> 01. Configure Target
           </div>
@@ -626,10 +628,11 @@ export default function ApiRequestLabClient() {
             </div>
           </div>
         )}
+      </section>
 
         {/* CONFIGURATION SECTION */}
         {showTabs && (
-          <section className="flex flex-col gap-6">
+          <section className="relative z-10 flex flex-col gap-6">
             <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-muted/40 ml-2">
               <Settings2 className="size-4" /> 02. Configuration
             </div>
