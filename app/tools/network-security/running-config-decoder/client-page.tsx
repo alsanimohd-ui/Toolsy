@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, memo } from "react";
 import {
   ToolContainer,
   ToolHeader,
@@ -228,7 +228,6 @@ async function parseUniversalConfigAsync(
   onProgress: (percent: number) => void
 ): Promise<ParsedConfig> {
   const vendor = detectVendor(raw);
-  const lines = raw.split("\n");
   
   const cfg: ParsedConfig = {
     hostname: "",
@@ -240,7 +239,7 @@ async function parseUniversalConfigAsync(
     interfaces: [],
   };
 
-  // Model detection logic
+  // Model detection logic (runs on raw configuration)
   let detectedModel = "Fallback Scanner";
   if (vendor === "Cisco") {
     const ciscoModelMatch = raw.match(/(?:Catalyst|Nexus|ISR|ASR|Cisco\s+Catalyst|Cisco\s+Nexus|Cisco\s+ISR|Cisco\s+ASR)\s*([0-9a-zA-Z\-]+)/i);
@@ -288,8 +287,151 @@ async function parseUniversalConfigAsync(
   }
   cfg.model = detectedModel;
 
-  // Flatten nested/bracketed structures if detected
-  const isBracketed = raw.includes("{") && raw.includes("}");
+  // Fast-Pass System Info (scan only first 1000 lines)
+  const totalRawLines = raw.split("\n");
+  const first1000Lines = totalRawLines.slice(0, 1000);
+  
+  let hostname = "";
+  let systemInfoFrozen = false;
+  let inSystemGlobal = false;
+  let inDeviceConfigSystem = false;
+
+  for (let i = 0; i < first1000Lines.length; i++) {
+    if (systemInfoFrozen) break;
+
+    const line = first1000Lines[i].trim();
+    if (!line) continue;
+
+    // FortiGate context tracking inside first 1000 lines
+    if (vendor === "FortiGate") {
+      if (line.startsWith("config system global")) {
+        inSystemGlobal = true;
+        continue;
+      }
+      if (inSystemGlobal && line.startsWith("set hostname")) {
+        const match = line.match(/^set\s+hostname\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
+        if (match) {
+          hostname = match[1];
+          systemInfoFrozen = true;
+        }
+        continue;
+      }
+      if (inSystemGlobal && (line === "end" || line === "next" || line.startsWith("config "))) {
+        inSystemGlobal = false;
+      }
+    }
+
+    // Palo Alto context tracking inside first 1000 lines
+    if (vendor === "PaloAlto") {
+      if (line.includes("deviceconfig system") || line.includes("deviceconfig { system")) {
+        inDeviceConfigSystem = true;
+      }
+      if (inDeviceConfigSystem || line.includes("deviceconfig system hostname")) {
+        const match = line.match(/hostname\s+["']?([a-zA-Z0-9\-_]+)["']?/i) ||
+                      line.match(/set\s+deviceconfig\s+system\s+hostname\s+(\S+)/i);
+        if (match) {
+          hostname = match[1].replace(/[;"]/g, "").trim();
+          systemInfoFrozen = true;
+        }
+      }
+    }
+
+    // Cisco / Juniper / Generic Hostname
+    if (!hostname) {
+      const hnMatch = line.match(/^(?:hostname|host-name|sysname|device-name)\s+(\S+)/i) ||
+                      line.match(/set\s+(?:system\s+)?host-name\s+(\S+)/i) ||
+                      line.match(/set\s+hostname\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
+      if (hnMatch) {
+        hostname = hnMatch[1].replace(/[;"]/g, "").trim();
+        systemInfoFrozen = true;
+      }
+    }
+
+    // Routing protocols detection (first 1000 lines)
+    if (line.match(/router\s+ospf/i) || line.match(/protocols\s+ospf/i) || line.match(/protocol\s+ospf/i)) {
+      if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
+    }
+    if (line.match(/router\s+bgp/i) || line.match(/protocols\s+bgp/i) || line.match(/protocol\s+bgp/i)) {
+      if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
+    }
+    if (line.match(/router\s+eigrp/i)) {
+      if (!cfg.routingProtocols.includes("EIGRP")) cfg.routingProtocols.push("EIGRP");
+    }
+    if (line.match(/router\s+rip/i) || line.match(/protocols\s+rip/i)) {
+      if (!cfg.routingProtocols.includes("RIP")) cfg.routingProtocols.push("RIP");
+    }
+    if (line.match(/ip\s+route\s+/i) || line.match(/static\s+route/i) || line.match(/routing-options\s+static/i) || line.match(/router\s+static/i)) {
+      if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
+    }
+  }
+
+  cfg.hostname = hostname || "TopoMap-Device";
+
+  // Selective Block-Splitting (Massive File Performance Optimization)
+  const chunks: string[] = [];
+  
+  if (vendor === "FortiGate") {
+    const extractFortiGateBlock = (rawContent: string, blockName: string): string => {
+      let result = "";
+      let index = 0;
+      while (true) {
+        const start = rawContent.indexOf(blockName, index);
+        if (start === -1) break;
+        const end = rawContent.indexOf("end", start);
+        if (end === -1) {
+          result += rawContent.substring(start);
+          break;
+        }
+        result += rawContent.substring(start, end + 3) + "\n";
+        index = end + 3;
+      }
+      return result;
+    };
+
+    chunks.push(extractFortiGateBlock(raw, "config system interface"));
+    chunks.push(extractFortiGateBlock(raw, "config system zone"));
+    chunks.push(extractFortiGateBlock(raw, "config router"));
+  } else if (vendor === "PaloAlto" || vendor === "Juniper") {
+    const filteredLines: string[] = [];
+    for (let i = 0; i < totalRawLines.length; i++) {
+      const line = totalRawLines[i];
+      const lower = line.toLowerCase();
+      if (
+        lower.includes("interface") ||
+        lower.includes("zone") ||
+        lower.includes("vlan") ||
+        lower.includes("virtual-router") ||
+        lower.includes("routing-options") ||
+        lower.includes("protocols")
+      ) {
+        filteredLines.push(line);
+      }
+    }
+    chunks.push(filteredLines.join("\n"));
+  } else {
+    const filteredLines: string[] = [];
+    let inInterface = false;
+    for (let i = 0; i < totalRawLines.length; i++) {
+      const line = totalRawLines[i];
+      const trimmed = line.trim();
+      if (trimmed.startsWith("interface ") || trimmed.startsWith("router ") || trimmed.startsWith("ip route ") || trimmed.startsWith("vlan ")) {
+        inInterface = true;
+      }
+      if (inInterface || trimmed.toLowerCase().includes("vlan")) {
+        filteredLines.push(line);
+      }
+      if (inInterface && trimmed === "!") {
+        inInterface = false;
+      }
+    }
+    chunks.push(filteredLines.join("\n"));
+  }
+
+  const combinedRaw = chunks.join("\n");
+  const lines = combinedRaw.split("\n");
+
+  // Flatten nested/bracketed structures if detected on combinedRaw
+  const isBracketed = combinedRaw.includes("{") && combinedRaw.includes("}");
   const linesToParse: string[] = [];
   if (isBracketed) {
     const pathStack: string[] = [];
@@ -373,16 +515,7 @@ async function parseUniversalConfigAsync(
     for (let j = i; j < end; j++) {
       const line = linesToParse[j];
 
-      // 1. Hostname detection
-      const hnMatch = line.match(/^(?:hostname|host-name|sysname|device-name)\s+(\S+)/i) ||
-                      line.match(/set\s+(?:system\s+)?host-name\s+(\S+)/i) ||
-                      line.match(/set\s+(?:deviceconfig\s+system\s+)?hostname\s+(\S+)/i) ||
-                      line.match(/set\s+hostname\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
-      if (hnMatch) {
-        cfg.hostname = hnMatch[1].replace(/[;"]/g, "").trim();
-      }
-
-      // 2. VLAN detection
+      // VLAN detection inside parser block
       // Match Cisco style: vlan 10
       const ciscoVlanMatch = line.match(/^vlan\s+(\d+)/i);
       if (ciscoVlanMatch) {
@@ -412,24 +545,7 @@ async function parseUniversalConfigAsync(
         }
       }
 
-      // 3. Routing protocols detection
-      if (line.match(/router\s+ospf/i) || line.match(/protocols\s+ospf/i) || line.match(/protocol\s+ospf/i)) {
-        if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
-      }
-      if (line.match(/router\s+bgp/i) || line.match(/protocols\s+bgp/i) || line.match(/protocol\s+bgp/i)) {
-        if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
-      }
-      if (line.match(/router\s+eigrp/i)) {
-        if (!cfg.routingProtocols.includes("EIGRP")) cfg.routingProtocols.push("EIGRP");
-      }
-      if (line.match(/router\s+rip/i) || line.match(/protocols\s+rip/i)) {
-        if (!cfg.routingProtocols.includes("RIP")) cfg.routingProtocols.push("RIP");
-      }
-      if (line.match(/ip\s+route\s+/i) || line.match(/static\s+route/i) || line.match(/routing-options\s+static/i) || line.match(/router\s+static/i)) {
-        if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
-      }
-
-      // 4. FortiGate context tracking
+      // FortiGate context tracking
       if (line.startsWith("config system interface")) {
         inSystemInterface = true;
         activeIface = null;
@@ -447,7 +563,7 @@ async function parseUniversalConfigAsync(
         continue;
       }
 
-      // 5. Interface declaration/context matching
+      // Interface declaration/context matching
       let matchedIfName: string | null = null;
       
       if (inSystemInterface && line.startsWith("edit ")) {
@@ -496,7 +612,7 @@ async function parseUniversalConfigAsync(
         }
       }
 
-      // 6. Apply interface properties
+      // Apply interface properties
       if (activeIface) {
         // IP & Subnet Address
         const ipMatch = line.match(/(?:ip\s+)?address\s+([\d.]+)\s+([\d.]+)/i) ||
@@ -882,7 +998,7 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
    Topology Map Component (Absolute + SVG connectors)
    ───────────────────────────────────────────── */
 
-function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
+const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -907,14 +1023,14 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
   const width = 800;
   const height = 600;
 
+  const switches = useMemo(() => nodes.filter(n => n.type === 'switch'), [nodes]);
+  const vlans = useMemo(() => nodes.filter(n => n.type === 'vlan'), [nodes]);
+  const hosts = useMemo(() => nodes.filter(n => n.type === 'host'), [nodes]);
+  const routers = useMemo(() => nodes.filter(n => n.type === 'router'), [nodes]);
+
   useEffect(() => {
     const cx = width / 2;
     const cy = height / 2;
-
-    const switches = nodes.filter(n => n.type === 'switch');
-    const vlans = nodes.filter(n => n.type === 'vlan');
-    const hosts = nodes.filter(n => n.type === 'host');
-    const routers = nodes.filter(n => n.type === 'router');
 
     const newPositions: Record<string, { x: number; y: number }> = {};
 
@@ -1060,7 +1176,7 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
     setPositions(newPositions);
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
-  }, [nodes, viewMode]);
+  }, [nodes, viewMode, switches, vlans, hosts, routers]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1550,7 +1666,7 @@ function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
       />
     </div>
   );
-}
+});
 
 /* ─────────────────────────────────────────────
    Running-Config Decoder Component
