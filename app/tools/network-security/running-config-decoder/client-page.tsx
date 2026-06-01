@@ -68,7 +68,7 @@ interface InterfaceInfo {
 interface VlanTopologyNode {
   id: string;
   label: string;
-  type: "switch" | "vlan" | "router" | "host";
+  type: "switch" | "vlan" | "router" | "host" | "vpn" | "sdwan";
   group: string;
   connections: string[];
   ip?: string;
@@ -255,10 +255,10 @@ async function parseUniversalConfigAsync(
   const cfg: ParsedConfig = {
     hostname: "",
     managementIp: "",
-    brand: vendor === "Unknown" ? "Generic" : (vendor === "PaloAlto" ? "Palo Alto" : vendor),
-    model: "Fallback Scanner",
+    brand: vendor === "Unknown" ? "Generic Device" : (vendor === "PaloAlto" ? "Palo Alto" : vendor),
+    model: "",
     deviceType: "Switch/Router",
-    osVersion: "Unknown",
+    osVersion: "",
     routingProtocols: [],
     vlans: [],
     interfaces: [],
@@ -273,7 +273,7 @@ async function parseUniversalConfigAsync(
   cfg.deviceType = isFirewall ? "Firewall" : "Switch/Router";
 
   // Model detection logic (runs on raw configuration)
-  let detectedModel = "Fallback Scanner";
+  let detectedModel = "";
   if (vendor === "Cisco") {
     const ciscoModelMatch = raw.match(/(?:Catalyst|Nexus|ISR|ASR|Cisco\s+Catalyst|Cisco\s+Nexus|Cisco\s+ISR|Cisco\s+ASR)\s*([0-9a-zA-Z\-]+)/i);
     if (ciscoModelMatch) {
@@ -290,7 +290,7 @@ async function parseUniversalConfigAsync(
     if (juniperModelMatch) {
       detectedModel = (juniperModelMatch[1] || juniperModelMatch[0]).replace(/[;"]/g, "").trim();
     } else {
-      detectedModel = "SRX300";
+      detectedModel = "";
     }
   } else if (vendor === "FortiGate") {
     const fgVersionMatch = raw.match(/#config-version=([A-Za-z0-9\-]+)-v?([0-9\.]+)/i);
@@ -317,7 +317,7 @@ async function parseUniversalConfigAsync(
           detectedModel = m;
         }
       } else {
-        detectedModel = "FortiGate 401E";
+        detectedModel = "";
       }
     }
   } else if (vendor === "PaloAlto") {
@@ -327,17 +327,38 @@ async function parseUniversalConfigAsync(
     if (modelMatch) {
       detectedModel = modelMatch[1] || modelMatch[0];
     } else {
-      detectedModel = "PA-3220";
+      detectedModel = "";
     }
   }
-  cfg.model = detectedModel;
+
+  // Palo Alto signature check & dynamic enforcement
+  const lowerRaw = raw.toLowerCase();
+  const hasPaloAltoSignature = lowerRaw.includes("pa-") || lowerRaw.includes("pan-os");
+  
+  if (vendor === "PaloAlto" || hasPaloAltoSignature) {
+    cfg.brand = "Palo Alto";
+    cfg.deviceType = "Firewall";
+    detectedModel = "Palo Alto PA-Series";
+    cfg.osVersion = "PAN-OS";
+    
+    const specificPaMatch = raw.match(/\b(PA-\d+)\b/i);
+    if (specificPaMatch) {
+      detectedModel = `Palo Alto ${specificPaMatch[1].toUpperCase()}`;
+    }
+    
+    const versionMatch = raw.match(/sw-version\s+(\S+)/i) || raw.match(/software-version\s+(\S+)/i);
+    if (versionMatch) {
+      cfg.osVersion = `PAN-OS ${versionMatch[1].replace(/[;"]/g, "").trim()}`;
+    }
+  }
+  cfg.model = detectedModel || "Generic Device";
 
   // Fast-Pass System Info (scan only first 1000 lines)
   const totalRawLines = raw.split("\n");
   const first1000Lines = totalRawLines.slice(0, 1000);
   
   let hostname = "";
-  let osVersion = cfg.osVersion || "Unknown";
+  let osVersion = cfg.osVersion || "";
   let systemInfoFrozen = false;
   let inSystemGlobal = false;
   let inDeviceConfigSystem = false;
@@ -794,6 +815,38 @@ async function parseUniversalConfigAsync(
     }
   }
 
+  // General scan for VPN Tunnels and SD-WAN Members (all vendors)
+  const linesToScan = raw.split("\n");
+  for (let i = 0; i < linesToScan.length; i++) {
+    const line = linesToScan[i].trim();
+    if (!line) continue;
+
+    const tunnelMatch = line.match(/(?:interface|interfaces)\s+(tunnel\.\d+|st0\.\d+|tunnel\d+|st0)\b/i) || 
+                        line.match(/(?:set\s+network\s+interface\s+tunnel\s+member\s+)(\S+)/i) ||
+                        line.match(/set\s+interfaces\s+(st0)\s+unit\s+(\d+)/i) ||
+                        line.match(/set\s+interfaces\s+(tunnel)\s+unit\s+(\d+)/i);
+    if (tunnelMatch) {
+      let vpnName = tunnelMatch[1];
+      if (tunnelMatch[2]) {
+        vpnName = `${tunnelMatch[1]}.${tunnelMatch[2]}`;
+      }
+      const iface = getInterface(vpnName);
+      iface.type = "VPN Tunnel";
+      iface.status = "up";
+      iface.description = iface.description || `Virtual VPN Tunnel (${vpnName})`;
+      iface.mode = "routed";
+    }
+
+    const sdwanMatch = line.match(/(?:sdwan|sd-wan)\s+interface\s+["']?([a-zA-Z0-9\-_]+)["']?/i) ||
+                       line.match(/set\s+network\s+sdwan\s+interface\s+(\S+)/i);
+    if (sdwanMatch) {
+      const memberName = sdwanMatch[1];
+      const iface = getInterface(memberName);
+      iface.type = "SD-WAN Member";
+      iface.description = iface.description || "Virtual SD-WAN Interface";
+    }
+  }
+
   // Finalize all interfaces from interfaceMap and tag types
   interfaceMap.forEach(iface => {
     const name = (iface.name || "").toLowerCase();
@@ -1051,7 +1104,7 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
   // Host nodes from access ports
   let hostCount = 0;
   for (const intf of cfg.interfaces) {
-    if ((intf.mode === "access" || intf.mode === "unknown" || intf.mode === "routed") && intf.status === "up" && intf.type !== "SVI") {
+    if ((intf.mode === "access" || intf.mode === "unknown" || intf.mode === "routed") && intf.status === "up" && intf.type !== "SVI" && intf.type !== "VPN Tunnel" && intf.type !== "SD-WAN Member") {
       const hostId = `host-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
       if (!nodeMap.has(hostId)) {
         const vlanTag = intf.vlanAccess ? ` (VLAN ${intf.vlanAccess})` : "";
@@ -1093,6 +1146,49 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
     }
   }
 
+  // VPN Tunnel and SD-WAN Member nodes
+  for (const intf of cfg.interfaces) {
+    if (intf.type === "VPN Tunnel") {
+      const vpnNodeId = `vpn-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
+      if (!nodeMap.has(vpnNodeId)) {
+        const [ipPart, cidrPart] = intf.ip ? intf.ip.split("/") : ["", ""];
+        const mask = cidrPart ? maskFromCidr(parseInt(cidrPart)) : undefined;
+        nodes.push({
+          id: vpnNodeId,
+          label: intf.name,
+          type: "vpn",
+          group: "security",
+          connections: [switchId],
+          ip: ipPart || undefined,
+          subnetMask: mask || undefined,
+          portIndex: intf.name
+        });
+        nodeMap.add(vpnNodeId);
+        const swNode = nodes.find(n => n.id === switchId);
+        if (swNode && !swNode.connections.includes(vpnNodeId)) swNode.connections.push(vpnNodeId);
+      }
+    } else if (intf.type === "SD-WAN Member") {
+      const sdwanNodeId = `sdwan-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
+      if (!nodeMap.has(sdwanNodeId)) {
+        const [ipPart, cidrPart] = intf.ip ? intf.ip.split("/") : ["", ""];
+        const mask = cidrPart ? maskFromCidr(parseInt(cidrPart)) : undefined;
+        nodes.push({
+          id: sdwanNodeId,
+          label: intf.name,
+          type: "sdwan",
+          group: "wan",
+          connections: [switchId],
+          ip: ipPart || undefined,
+          subnetMask: mask || undefined,
+          portIndex: intf.name
+        });
+        nodeMap.add(sdwanNodeId);
+        const swNode = nodes.find(n => n.id === switchId);
+        if (swNode && !swNode.connections.includes(sdwanNodeId)) swNode.connections.push(sdwanNodeId);
+      }
+    }
+  }
+
   return nodes;
 }
 
@@ -1103,10 +1199,12 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
 const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [zoom, setZoom] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [viewMode, setViewMode] = useState<"RADIAL" | "TREE">("RADIAL");
+
+  const positionsRef = useRef<Record<string, { x: number; y: number }>>({});
+  const velocitiesRef = useRef<Record<string, { vx: number; vy: number }>>({});
 
   const dragInfo = useRef<{
     isPanning: boolean;
@@ -1135,6 +1233,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     const cy = height / 2;
 
     const newPositions: Record<string, { x: number; y: number }> = {};
+    const newVelocities: Record<string, { vx: number; vy: number }> = {};
 
     if (viewMode === "TREE") {
       // 1. Routers at the top
@@ -1231,51 +1330,11 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
       if (!newPositions[n.id]) {
         newPositions[n.id] = { x: cx + (Math.random() - 0.5) * 200, y: cy + (Math.random() - 0.5) * 200 };
       }
+      newVelocities[n.id] = { vx: 0, vy: 0 };
     });
 
-    // Pairwise repulsion loop to separate nodes closer than 120px
-    const minDistance = 120;
-    const iterations = 100;
-    for (let step = 0; step < iterations; step++) {
-      let moved = false;
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const n1 = nodes[i];
-          const n2 = nodes[j];
-          const pos1 = newPositions[n1.id];
-          const pos2 = newPositions[n2.id];
-          if (!pos1 || !pos2) continue;
-
-          let dx = pos2.x - pos1.x;
-          let dy = pos2.y - pos1.y;
-          if (dx === 0 && dy === 0) {
-            dx = Math.random() - 0.5;
-            dy = Math.random() - 0.5;
-          }
-
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < minDistance) {
-            moved = true;
-            const overlap = minDistance - dist;
-            const force = (overlap / (dist || 1)) * 0.5;
-            const pushX = dx * force;
-            const pushY = dy * force;
-
-            newPositions[n1.id] = {
-              x: pos1.x - pushX,
-              y: pos1.y - pushY,
-            };
-            newPositions[n2.id] = {
-              x: pos2.x + pushX,
-              y: pos2.y + pushY,
-            };
-          }
-        }
-      }
-      if (!moved) break;
-    }
-
-    setPositions(newPositions);
+    positionsRef.current = newPositions;
+    velocitiesRef.current = newVelocities;
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
   }, [nodes, viewMode, switches, vlans, hosts, routers]);
@@ -1291,7 +1350,119 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
 
-    const render = () => {
+    let animationId: number;
+
+    const tick = () => {
+      // 1. Force-directed simulation calculations
+      const fx: Record<string, number> = {};
+      const fy: Record<string, number> = {};
+      nodes.forEach(n => {
+        fx[n.id] = 0;
+        fy[n.id] = 0;
+      });
+
+      const cx = width / 2;
+      const cy = height / 2;
+
+      // Centering Gravity Pull
+      nodes.forEach(n => {
+        const pos = positionsRef.current[n.id];
+        if (!pos) return;
+        fx[n.id] += (cx - pos.x) * 0.005;
+        fy[n.id] += (cy - pos.y) * 0.005;
+      });
+
+      // Pairwise Repulsion Force (Enforce strict minimum 120px separation)
+      const minDistance = 120;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const n1 = nodes[i];
+          const n2 = nodes[j];
+          const p1 = positionsRef.current[n1.id];
+          const p2 = positionsRef.current[n2.id];
+          if (!p1 || !p2) continue;
+
+          let dx = p2.x - p1.x;
+          let dy = p2.y - p1.y;
+          if (dx === 0 && dy === 0) {
+            dx = Math.random() - 0.5;
+            dy = Math.random() - 0.5;
+          }
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+          if (dist < minDistance) {
+            const overlap = minDistance - dist;
+            // High dynamic force to push them back
+            const force = (overlap / dist) * 0.5;
+            const pushX = dx * force;
+            const pushY = dy * force;
+            fx[n1.id] -= pushX;
+            fy[n1.id] -= pushY;
+            fx[n2.id] += pushX;
+            fy[n2.id] += pushY;
+          } else {
+            // Standard inverse-square repulsion to space them out cleanly
+            const force = 100 / (dist * dist);
+            fx[n1.id] -= dx * force;
+            fy[n1.id] -= dy * force;
+            fx[n2.id] += dx * force;
+            fy[n2.id] += dy * force;
+          }
+        }
+      }
+
+      // Link Attraction Force
+      nodes.forEach(n => {
+        const p1 = positionsRef.current[n.id];
+        if (!p1) return;
+
+        n.connections.forEach(targetId => {
+          const p2 = positionsRef.current[targetId];
+          if (!p2) return;
+
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+          const restLength = 150;
+          const k = 0.03; // Hooke's spring constant
+          const force = (dist - restLength) * k;
+
+          const pullX = (dx / dist) * force;
+          const pullY = (dy / dist) * force;
+
+          fx[n.id] += pullX;
+          fy[n.id] += pullY;
+          fx[targetId] -= pullX;
+          fy[targetId] -= pullY;
+        });
+      });
+
+      // Update positions and apply friction damping
+      nodes.forEach(n => {
+        if (n.id === dragInfo.current.draggedNodeId) {
+          velocitiesRef.current[n.id] = { vx: 0, vy: 0 };
+          return;
+        }
+
+        const vel = velocitiesRef.current[n.id] || { vx: 0, vy: 0 };
+        vel.vx = (vel.vx + fx[n.id]) * 0.82;
+        vel.vy = (vel.vy + fy[n.id]) * 0.82;
+
+        velocitiesRef.current[n.id] = vel;
+
+        const pos = positionsRef.current[n.id];
+        if (pos) {
+          pos.x += vel.vx;
+          pos.y += vel.vy;
+
+          // Keep nodes inside canvas frame with a safe buffer boundary
+          pos.x = Math.max(40, Math.min(width - 40, pos.x));
+          pos.y = Math.max(40, Math.min(height - 40, pos.y));
+        }
+      });
+
+      // 2. Draw loop on canvas
       ctx.clearRect(0, 0, width, height);
 
       ctx.save();
@@ -1300,12 +1471,13 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
       drawGrid(ctx);
 
+      // Render connection lines
       nodes.forEach(node => {
-        const start = positions[node.id];
+        const start = positionsRef.current[node.id];
         if (!start) return;
 
         node.connections.forEach(targetId => {
-          const end = positions[targetId];
+          const end = positionsRef.current[targetId];
           if (!end) return;
 
           ctx.beginPath();
@@ -1329,8 +1501,9 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         });
       });
 
+      // Render node icons
       nodes.forEach(node => {
-        const pos = positions[node.id];
+        const pos = positionsRef.current[node.id];
         if (!pos) return;
 
         const isHovered = node.id === hoveredNodeId;
@@ -1338,10 +1511,16 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
       });
 
       ctx.restore();
+
+      animationId = requestAnimationFrame(tick);
     };
 
-    render();
-  }, [nodes, positions, zoom, panOffset, hoveredNodeId]);
+    tick();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+    };
+  }, [nodes, zoom, panOffset, hoveredNodeId]);
 
   const drawGrid = (ctx: CanvasRenderingContext2D) => {
     const gridSize = 40;
@@ -1384,6 +1563,12 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     } else if (node.type === "host") {
       color = "#34d399";
       border = "rgba(52, 211, 153, 0.3)";
+    } else if (node.type === "vpn") {
+      color = "#f43f5e";
+      border = "rgba(244, 63, 94, 0.4)";
+    } else if (node.type === "sdwan") {
+      color = "#3b82f6";
+      border = "rgba(59, 130, 246, 0.4)";
     }
 
     ctx.save();
@@ -1455,6 +1640,24 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
         ctx.closePath();
         ctx.stroke();
       }
+    } else if (node.type === "vpn") {
+      ctx.beginPath();
+      ctx.moveTo(0, -9);
+      ctx.lineTo(8, -6);
+      ctx.lineTo(8, 0);
+      ctx.quadraticCurveTo(8, 6, 0, 9);
+      ctx.quadraticCurveTo(-8, 6, -8, 0);
+      ctx.lineTo(-8, -6);
+      ctx.closePath();
+      ctx.stroke();
+    } else if (node.type === "sdwan") {
+      ctx.beginPath();
+      ctx.arc(-4, 0, 4, 0.8 * Math.PI, 1.8 * Math.PI);
+      ctx.arc(2, -3, 5, 1.1 * Math.PI, 1.9 * Math.PI);
+      ctx.arc(6, 1, 4, 1.5 * Math.PI, 0.4 * Math.PI);
+      ctx.lineTo(-4, 4);
+      ctx.closePath();
+      ctx.stroke();
     } else {
       ctx.beginPath();
       ctx.rect(-10, -8, 20, 13);
@@ -1549,7 +1752,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     let clickedNodeId: string | null = null;
     
     for (const node of nodes) {
-      const pos = positions[node.id];
+      const pos = positionsRef.current[node.id];
       if (!pos) continue;
       
       const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
@@ -1563,11 +1766,12 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     }
 
     if (clickedNodeId) {
+      // Relative offset tracking to prevent sudden node snapping
       dragInfo.current = {
         isPanning: false,
         draggedNodeId: clickedNodeId,
-        startX: 0,
-        startY: 0
+        startX: localX - positionsRef.current[clickedNodeId].x,
+        startY: localY - positionsRef.current[clickedNodeId].y
       };
     } else {
       dragInfo.current = {
@@ -1593,13 +1797,10 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
     if (info.draggedNodeId) {
       const nodeId = info.draggedNodeId;
-      setPositions(prev => ({
-        ...prev,
-        [nodeId]: {
-          x: localX - info.startX,
-          y: localY - info.startY
-        }
-      }));
+      positionsRef.current[nodeId] = {
+        x: localX - info.startX,
+        y: localY - info.startY
+      };
     } else if (info.isPanning) {
       setPanOffset({
         x: clientX - info.startX,
@@ -1608,7 +1809,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     } else {
       let foundHover: string | null = null;
       for (const node of nodes) {
-        const pos = positions[node.id];
+        const pos = positionsRef.current[node.id];
         if (!pos) continue;
         
         const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
@@ -1665,7 +1866,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     
-    Object.values(positions).forEach(p => {
+    Object.values(positionsRef.current).forEach(p => {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
       if (p.y < minY) minY = p.y;
@@ -1691,11 +1892,11 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     ctx.scale(exportScale, exportScale);
 
     nodes.forEach(node => {
-      const start = positions[node.id];
+      const start = positionsRef.current[node.id];
       if (!start) return;
 
       node.connections.forEach(targetId => {
-        const end = positions[targetId];
+        const end = positionsRef.current[targetId];
         if (!end) return;
 
         ctx.beginPath();
@@ -1709,7 +1910,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     });
 
     nodes.forEach(node => {
-      const pos = positions[node.id];
+      const pos = positionsRef.current[node.id];
       if (!pos) return;
       drawNode(ctx, node, pos.x, pos.y, false);
     });
@@ -1785,16 +1986,16 @@ export default function RunningConfigDecoderClient() {
   const [parseProgress, setParseProgress] = useState(0);
 
   useEffect(() => {
+    setParsed(null);
+    setParseProgress(0);
+
     if (!config.trim()) {
-      setParsed(null);
       setIsParsing(false);
-      setParseProgress(0);
       return;
     }
 
     let isCurrent = true;
     setIsParsing(true);
-    setParseProgress(0);
 
     parseUniversalConfigAsync(config, (progress) => {
       if (isCurrent) {
