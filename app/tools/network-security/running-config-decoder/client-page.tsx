@@ -185,7 +185,22 @@ end`;
 function detectVendor(raw: string): VendorType {
   const lower = raw.toLowerCase();
   
-  // 1. FortiGate (FortiOS) check first - strict vendor lock
+  // 1. Palo Alto check first - check for Palo Alto structural nodes or PAN-OS markers to prevent Juniper matching loops
+  if (lower.includes('deviceconfig system') ||
+      lower.includes('deviceconfig { system') ||
+      lower.includes('set deviceconfig system') ||
+      lower.includes('pan-os') ||
+      lower.includes('pa-') ||
+      lower.includes('rulebase {') ||
+      lower.includes('security { rules') ||
+      lower.includes('set rulebase') ||
+      lower.includes('set network interface') ||
+      lower.includes('set zone') ||
+      lower.includes('set network virtual-router')) {
+    return "PaloAlto";
+  }
+
+  // 2. FortiGate (FortiOS) check second - strict vendor lock
   if (lower.includes('config system global') ||
       lower.includes('config system interface') ||
       lower.includes('config vpn ssl') ||
@@ -195,14 +210,6 @@ function detectVendor(raw: string): VendorType {
       lower.includes('config router static') ||
       lower.includes('config router bgp')) {
     return "FortiGate";
-  }
-
-  // 2. Palo Alto check second
-  if (lower.includes('set deviceconfig system') ||
-      lower.includes('set network interface') ||
-      lower.includes('set zone') ||
-      lower.includes('set network virtual-router')) {
-    return "PaloAlto";
   }
 
   // 3. Juniper check third
@@ -775,15 +782,26 @@ async function parseUniversalConfigAsync(
     const ipsecPhase1 = extractFortiGateBlock(raw, "config vpn ipsec phase1-interface");
     if (ipsecPhase1) {
       const ipsecLines = ipsecPhase1.split("\n");
+      let inPhase1Block = false;
       for (const line of ipsecLines) {
-        const match = line.trim().match(/^edit\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
-        if (match) {
-          const vpnName = match[1];
-          const iface = getInterface(vpnName);
-          iface.type = "VPN Tunnel";
-          iface.status = "up";
-          iface.description = "IPsec VPN Tunnel Interface";
-          iface.mode = "routed";
+        const trimmed = line.trim();
+        if (trimmed.startsWith("config vpn ipsec phase1-interface")) {
+          inPhase1Block = true;
+          continue;
+        }
+        if (inPhase1Block && trimmed === "end") {
+          inPhase1Block = false;
+        }
+        if (inPhase1Block) {
+          const match = trimmed.match(/^edit\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
+          if (match) {
+            const vpnName = match[1];
+            const iface = getInterface(vpnName);
+            iface.type = "VPN Tunnel";
+            iface.status = "up";
+            iface.description = "IPsec VPN Tunnel Interface";
+            iface.mode = "routed";
+          }
         }
       }
     }
@@ -801,15 +819,26 @@ async function parseUniversalConfigAsync(
     const sdwanBlock = extractFortiGateBlock(raw, "config system sdwan");
     if (sdwanBlock) {
       const sdwanLines = sdwanBlock.split("\n");
+      let inMembersBlock = false;
       for (const line of sdwanLines) {
-        const match = line.trim().match(/set\s+interface\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
-        if (match) {
-          const memberName = match[1];
-          const iface = getInterface(memberName);
-          iface.type = "SD-WAN Member";
-          iface.description = iface.description 
-            ? `${iface.description} (SD-WAN Member)` 
-            : "SD-WAN Member Interface";
+        const trimmed = line.trim();
+        if (trimmed.startsWith("config members")) {
+          inMembersBlock = true;
+          continue;
+        }
+        if (inMembersBlock && (trimmed === "end" || trimmed.startsWith("config "))) {
+          inMembersBlock = false;
+        }
+        if (inMembersBlock) {
+          const match = trimmed.match(/^set\s+interface\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
+          if (match) {
+            const memberName = match[1];
+            const iface = getInterface(memberName);
+            iface.type = "SD-WAN Member";
+            iface.description = iface.description 
+              ? (iface.description.includes("SD-WAN Member") ? iface.description : `${iface.description} (SD-WAN Member)`)
+              : "SD-WAN Member Interface";
+          }
         }
       }
     }
@@ -2044,16 +2073,22 @@ export default function RunningConfigDecoderClient() {
   }, [parsed]);
 
   const loadSample = () => {
+    setParsed(null);
+    setParseProgress(0);
     setConfig(SAMPLE_CONFIG);
     setFileMeta(null);
   };
 
   const handleClear = () => {
+    setParsed(null);
+    setParseProgress(0);
     setConfig("");
     setFileMeta(null);
   };
 
   const processFile = (file: File) => {
+    setParsed(null);
+    setParseProgress(0);
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
