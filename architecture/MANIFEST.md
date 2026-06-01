@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-06-01T13:39:30.169Z_
+_Generated: 2026-06-01T13:49:30.966Z_
 
 ---
 
@@ -102,6 +102,7 @@ Keyframes: orbital, core, core, shimmer, fadeIn, slideUp, core, ambient
 - `index.ts`
 - `ToolButton.tsx`
 - `ToolContainer.tsx`
+- `ToolFooter.tsx`
 - `ToolHeader.tsx`
 - `ToolSection.tsx`
 - `ToolTextarea.tsx`

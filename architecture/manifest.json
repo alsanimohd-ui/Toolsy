@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-01T13:39:30.164Z",
+  "generatedAt": "2026-06-01T13:49:30.960Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -130,6 +130,7 @@
         "index.ts",
         "ToolButton.tsx",
         "ToolContainer.tsx",
+        "ToolFooter.tsx",
         "ToolHeader.tsx",
         "ToolSection.tsx",
         "ToolTextarea.tsx"
