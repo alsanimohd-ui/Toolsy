@@ -547,49 +547,6 @@ export default function PortCheckerClient() {
             </GlassCard>
           </div>
         </section>
-
-        {/* Cinematic Documentation Section */}
-        <section className="mt-10 pt-8 border-t border-white/5 flex flex-col gap-8">
-          <div className="flex flex-col gap-2 text-center md:text-left">
-            <h3 className="text-sm font-black uppercase tracking-[0.3em] text-foreground">Network Diagnostics Manual</h3>
-            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Understanding Port Connectivity States</p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <GlassCard className="flex flex-col gap-5 p-6 bg-emerald-500/[0.02] border-emerald-500/10 hover:border-emerald-500/30 transition-colors">
-              <div className="flex items-center gap-3 text-emerald-400">
-                <CheckCircle2 className="size-5" />
-                <h4 className="text-[11px] font-black uppercase tracking-wider">PORT OPEN</h4>
-              </div>
-              <p className="text-[11px] font-medium text-muted/70 leading-relaxed">
-                An application is actively accepting TCP connections, UDP datagrams, or SCTP associations on this port. 
-                This indicates the service is running, bound to the specified interface, and reachable without firewall interference.
-              </p>
-            </GlassCard>
-
-            <GlassCard className="flex flex-col gap-5 p-6 bg-red-500/[0.02] border-red-500/10 hover:border-red-500/30 transition-colors">
-              <div className="flex items-center gap-3 text-red-400">
-                <XCircle className="size-5" />
-                <h4 className="text-[11px] font-black uppercase tracking-wider">PORT CLOSED</h4>
-              </div>
-              <p className="text-[11px] font-medium text-muted/70 leading-relaxed">
-                A closed port is accessible (it receives and responds to probe packets), but there is no application listening on it. 
-                The host is reachable, but the intended service is either down or not configured to listen on this specific port.
-              </p>
-            </GlassCard>
-
-            <GlassCard className="flex flex-col gap-5 p-6 bg-amber-500/[0.02] border-amber-500/10 hover:border-amber-500/30 transition-colors">
-              <div className="flex items-center gap-3 text-amber-400">
-                <Shield className="size-5" />
-                <h4 className="text-[11px] font-black uppercase tracking-wider">FILTERED / TIMEOUT</h4>
-              </div>
-              <p className="text-[11px] font-medium text-muted/70 leading-relaxed">
-                The connection request was silently dropped by a firewall, filter, or network obstacle before reaching the target. 
-                Because no response was received (not even an ICMP error), it is impossible to determine if the port is actually open or closed.
-              </p>
-            </GlassCard>
-          </div>
-        </section>
       </div>
     </ToolContainer>
   );

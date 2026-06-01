@@ -1,5 +1,6 @@
 import { CSSProperties, ReactNode } from "react";
 import { CategoryId, getCategory } from "@/lib/tools";
+import ToolFooter from "./ToolFooter";
 
 interface ToolContainerProps {
   children: ReactNode;
@@ -31,6 +32,7 @@ export default function ToolContainer({
     >
       <div className="toolsy-content">
         {children}
+        <ToolFooter />
       </div>
     </div>
   );

@@ -10,3 +10,4 @@ export { default as ToolHeader } from "./ToolHeader";
 export { default as ToolSection } from "./ToolSection";
 export { default as ToolButton } from "./ToolButton";
 export { default as ToolTextarea } from "./ToolTextarea";
+export { default as ToolFooter } from "./ToolFooter";

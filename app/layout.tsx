@@ -20,7 +20,10 @@ export const metadata: Metadata = {
   title: "Mi",
   description: "A modular platform for developer tools by maker-ai.tech — fast, focused, and extensible.",
   icons: {
-    icon: "/icon.png",
+    icon: [
+      { url: "/icon.png", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" }
+    ],
   },
 };
 
