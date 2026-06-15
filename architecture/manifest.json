@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T20:29:26.051Z",
+  "generatedAt": "2026-06-15T20:48:17.526Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -251,6 +251,7 @@
       "manifest": "node scripts/generate-manifest.js"
     },
     "dependencies": [
+      "@vercel/analytics",
       "framer-motion",
       "jszip",
       "lucide-react",

@@ -54,7 +54,7 @@ interface InterfaceInfo {
   description: string;
   speed: string;
   duplex: string;
-  status: "up" | "down" | "adminDown";
+  status: "up" | "down" | "adminDown" | "unknown";
   ip: string;
   vlanAccess: number | null;
   vlanTrunkAllowed: number[];
@@ -68,7 +68,7 @@ interface InterfaceInfo {
 interface VlanTopologyNode {
   id: string;
   label: string;
-  type: "switch" | "vlan" | "router" | "host" | "vpn" | "sdwan";
+  type: "switch" | "vlan" | "router" | "port" | "vpn" | "sdwan";
   group: string;
   connections: string[];
   ip?: string;
@@ -396,7 +396,7 @@ async function parseUniversalConfigAsync(
         description: "",
         speed: "auto",
         duplex: "auto",
-        status: "up",
+        status: "unknown",
         ip: "",
         vlanAccess: null,
         vlanTrunkAllowed: [],
@@ -534,8 +534,11 @@ async function parseUniversalConfigAsync(
             activeIface.ip = `${ipMatch[1]}/${ipMatch[2]}`;
           }
           activeIface.mode = "routed";
-          if (!cfg.managementIp && activeIface.type !== "SVI") {
-            cfg.managementIp = ipMatch[1];
+          if (!cfg.managementIp) {
+            const ifaceNameLower = (activeIface.name || "").toLowerCase();
+            if (ifaceNameLower.includes("mgmt") || ifaceNameLower.includes("management") || ifaceNameLower.includes("mgt")) {
+              cfg.managementIp = ipMatch[1];
+            }
           }
         }
 
@@ -699,27 +702,8 @@ async function parseUniversalConfigAsync(
     }
   });
 
-  // Fallback protection: guarantee at least one interface is populated
-  if (cfg.interfaces.length === 0) {
-    cfg.interfaces.push({
-      name: "eth0",
-      description: "Default Fallback Interface",
-      speed: "auto",
-      duplex: "auto",
-      status: "up",
-      ip: "192.168.1.1/24",
-      vlanAccess: null,
-      vlanTrunkAllowed: [],
-      mode: "routed",
-      mac: "",
-      mtu: 1500,
-      type: "Physical Port",
-      trunkAll: false,
-    });
-    cfg.managementIp = "192.168.1.1";
-  }
   if (!cfg.hostname) {
-    cfg.hostname = "TopoMap-Device";
+    cfg.hostname = "";
   }
 
   return cfg;
@@ -731,7 +715,7 @@ function finalizeInterface(iface: Partial<InterfaceInfo>): InterfaceInfo {
     description: iface.description || "",
     speed: iface.speed || "auto",
     duplex: iface.duplex || "auto",
-    status: iface.status || "down",
+    status: iface.status || "unknown",
     ip: iface.ip || "",
     vlanAccess: iface.vlanAccess ?? null,
     vlanTrunkAllowed: iface.vlanTrunkAllowed || [],
@@ -775,28 +759,28 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
 
   // Root switch node
   const switchId = "sw-core";
-  let swIp = "";
-  let swMask = "";
+  let swIp: string | undefined;
+  let swMask: string | undefined;
   if (cfg.managementIp) {
     swIp = cfg.managementIp;
     const mgmtIface = cfg.interfaces.find(i => i.ip && i.ip.startsWith(cfg.managementIp));
-    if (mgmtIface) {
+    if (mgmtIface && mgmtIface.ip) {
       const [, cidrPart] = mgmtIface.ip.split("/");
-      swMask = maskFromCidr(parseInt(cidrPart || "24"));
-    } else {
-      swMask = "255.255.255.0";
+      if (cidrPart) {
+        swMask = maskFromCidr(parseInt(cidrPart));
+      }
     }
   }
 
   nodes.push({
     id: switchId,
-    label: cfg.hostname || "Core-Switch",
+    label: cfg.hostname || "Unnamed Device",
     type: "switch",
     group: "infra",
     connections: [],
-    ip: swIp || undefined,
-    subnetMask: swMask || undefined,
-    portIndex: "Mgmt"
+    ip: swIp,
+    subnetMask: swMask,
+    portIndex: swIp ? "Mgmt" : undefined
   });
   nodeMap.add(switchId);
 
@@ -892,75 +876,35 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
     }
   }
 
-  // Router node if routing enabled or static routes
-  if (cfg.routingProtocols.length > 0) {
-    const routerId = "router-core";
-    let rIp = "";
-    let rMask = "";
-    let rPort = "";
-
-    // Try to find router-id or routed interface
-    const routed = cfg.interfaces.find(i => i.mode === "routed" && i.ip && i.type !== "SVI");
-    if (routed) {
-      const [ipPart, cidrPart] = routed.ip.split("/");
-      rIp = ipPart;
-      rMask = maskFromCidr(parseInt(cidrPart || "24"));
-      rPort = routed.name;
-    } else if (cfg.managementIp) {
-      // Default router gateway is often .254 or similar on the management subnet
-      const octets = cfg.managementIp.split(".");
-      if (octets.length === 4) {
-        octets[3] = "254";
-        rIp = octets.join(".");
-        rMask = "255.255.255.0";
-        rPort = "Core-Link";
-      }
-    }
-
-    if (!nodeMap.has(routerId)) {
-      nodes.push({
-        id: routerId,
-        label: "Core Router",
-        type: "router",
-        group: "infra",
-        connections: [switchId],
-        ip: rIp || undefined,
-        subnetMask: rMask || undefined,
-        portIndex: rPort || undefined
-      });
-      nodeMap.add(routerId);
-      const swNode = nodes.find(n => n.id === switchId);
-      if (swNode && !swNode.connections.includes(routerId)) swNode.connections.push(routerId);
-    }
-  }
-
-  // Host nodes from access ports
+// Access port nodes
   for (const intf of cfg.interfaces) {
-    if ((intf.mode === "access" || intf.mode === "unknown" || intf.mode === "routed") && intf.status === "up" && intf.type !== "SVI" && intf.type !== "VPN Tunnel" && intf.type !== "SD-WAN Member") {
-      const hostId = `host-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
-      if (!nodeMap.has(hostId)) {
+    if ((intf.mode === "access" || intf.mode === "unknown" || intf.mode === "routed") && intf.status !== "adminDown" && intf.type !== "SVI" && intf.type !== "VPN Tunnel" && intf.type !== "SD-WAN Member") {
+      const portId = `port-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
+      if (!nodeMap.has(portId)) {
         const vlanTag = intf.vlanAccess ? ` (VLAN ${intf.vlanAccess})` : "";
         
-        let hostIp = "";
-        let hostMask = "";
+        let portIp: string | undefined;
+        let portMask: string | undefined;
         
         if (intf.ip) {
           const [ipPart, cidrPart] = intf.ip.split("/");
-          hostIp = ipPart;
-          hostMask = maskFromCidr(parseInt(cidrPart || "24"));
+          portIp = ipPart;
+          if (cidrPart) {
+            portMask = maskFromCidr(parseInt(cidrPart));
+          }
         }
 
         nodes.push({
-          id: hostId,
+          id: portId,
           label: `${intf.name}${vlanTag}`,
-          type: "host",
-          group: intf.vlanAccess ? `vlan-${intf.vlanAccess}` : "default",
+          type: "port",
+          group: intf.vlanAccess ? `vlan-${intf.vlanAccess}` : "ungrouped",
           connections: [switchId],
-          ip: hostIp || undefined,
-          subnetMask: hostMask || undefined,
+          ip: portIp,
+          subnetMask: portMask,
           portIndex: intf.name
         });
-        nodeMap.add(hostId);
+        nodeMap.add(portId);
       }
     }
   }
@@ -1047,7 +991,7 @@ const TopologicalMap = memo(function TopologicalMap({
 
   const switches = useMemo(() => nodes.filter(n => n.type === 'switch'), [nodes]);
   const vlans = useMemo(() => nodes.filter(n => n.type === 'vlan'), [nodes]);
-  const hosts = useMemo(() => nodes.filter(n => n.type === 'host'), [nodes]);
+  const ports = useMemo(() => nodes.filter(n => n.type === 'port'), [nodes]);
   const routers = useMemo(() => nodes.filter(n => n.type === 'router'), [nodes]);
 
   const searchLower = searchQuery.toLowerCase();
@@ -1121,17 +1065,17 @@ const TopologicalMap = memo(function TopologicalMap({
       });
 
       vlans.forEach((vlanNode) => {
-        const vlanHosts = hosts.filter(h => h.group === vlanNode.id);
+        const vlanPorts = ports.filter(h => h.group === vlanNode.id);
         const parentPos = newPositions[vlanNode.id] || { x: cx, y: vlanY + 30 };
-        vlanHosts.forEach((hostNode, idx) => {
-          const offset = (idx - (vlanHosts.length - 1) / 2) * 100;
-          newPositions[hostNode.id] = { x: parentPos.x + offset, y: hostY + 30 };
+        vlanPorts.forEach((portNode, idx) => {
+          const offset = (idx - (vlanPorts.length - 1) / 2) * 100;
+          newPositions[portNode.id] = { x: parentPos.x + offset, y: hostY + 30 };
         });
       });
 
-      const orphanHosts = hosts.filter(h => h.group !== "vlan-" && !vlans.some(v => v.id === h.group));
-      orphanHosts.forEach((h, idx) => {
-        const offset = (idx - (orphanHosts.length - 1) / 2) * 100;
+      const orphanPorts = ports.filter(h => h.group !== "vlan-" && !vlans.some(v => v.id === h.group) && h.group !== "ungrouped");
+      orphanPorts.forEach((h, idx) => {
+        const offset = (idx - (orphanPorts.length - 1) / 2) * 100;
         newPositions[h.id] = { x: cx + offset, y: hostY + 30 };
       });
     } else {
@@ -1157,10 +1101,10 @@ const TopologicalMap = memo(function TopologicalMap({
         };
       });
 
-      hosts.forEach((h) => {
+      ports.forEach((h) => {
         const parentId = h.group;
         const parentPos = newPositions[parentId] || newPositions[switches[0]?.id] || { x: cx, y: cy };
-        const siblings = hosts.filter(host => host.group === h.group);
+        const siblings = ports.filter(port => port.group === h.group);
         const index = siblings.findIndex(s => s.id === h.id);
         const hRadius = Math.min(90, dynamicWidth * 0.1);
         const angleOffset = Math.atan2(parentPos.y - cy, parentPos.x - cx);
@@ -1255,7 +1199,7 @@ const TopologicalMap = memo(function TopologicalMap({
     const panY = containerH / 2 - centerY * finalZoom;
     setZoom(finalZoom);
     setPanOffset({ x: panX, y: panY });
-  }, [nodes, viewMode, switches, vlans, hosts, routers, dynamicWidth, dynamicHeight]);
+  }, [nodes, viewMode, switches, vlans, ports, routers, dynamicWidth, dynamicHeight]);
 
   // Canvas rendering
   useEffect(() => {
@@ -1375,7 +1319,7 @@ const TopologicalMap = memo(function TopologicalMap({
     } else if (node.type === "router") {
       color = "#fbbf24";
       border = "rgba(251, 191, 36, 0.4)";
-    } else if (node.type === "host") {
+    } else if (node.type === "port") {
       color = "#34d399";
       border = "rgba(52, 211, 153, 0.3)";
     } else if (node.type === "vpn") {
@@ -2232,8 +2176,8 @@ export default function RunningConfigDecoderClient() {
                     </div>
                     <div className="flex flex-col max-h-[600px] overflow-y-auto custom-scrollbar">
                       {parsed.interfaces.map((intf, idx) => {
-                        const statusColor = intf.status === "up" ? "text-emerald-400" : intf.status === "adminDown" ? "text-red-400" : "text-amber-400";
-                        const statusIcon = intf.status === "up" ? CheckCircle2 : intf.status === "adminDown" ? XCircle : AlertTriangle;
+                        const statusColor = intf.status === "up" ? "text-emerald-400" : intf.status === "adminDown" ? "text-red-400" : intf.status === "down" ? "text-amber-400" : "text-muted/40";
+                        const statusIcon = intf.status === "up" ? CheckCircle2 : intf.status === "adminDown" ? XCircle : intf.status === "down" ? AlertTriangle : AlertTriangle;
                         const StatusIcon = statusIcon;
                         return (
                           <div key={idx} className="grid grid-cols-[160px_1fr_80px_100px_100px_120px] p-4 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors items-center">
@@ -2248,7 +2192,7 @@ export default function RunningConfigDecoderClient() {
                             <div className="flex items-center gap-1.5">
                               <StatusIcon className={`size-3 ${statusColor}`} />
                               <span className={`text-[9px] font-black uppercase tracking-wider ${statusColor}`}>
-                                {intf.status === "adminDown" ? "DOWN" : intf.status.toUpperCase()}
+                                {intf.status === "adminDown" ? "ADMIN DOWN" : intf.status === "unknown" ? "UNKNOWN" : intf.status.toUpperCase()}
                               </span>
                             </div>
                             <div className={`text-[9px] font-black uppercase tracking-wider ${intf.type === "VPN Tunnel" ? "text-rose-400" : intf.type === "SD-WAN Member" ? "text-amber-400" : intf.mode === "trunk" ? "text-amber-400" : intf.mode === "access" ? "text-cyan-400" : "text-muted/40"}`}>
@@ -2340,7 +2284,8 @@ export default function RunningConfigDecoderClient() {
                       <div className="flex items-center gap-2"><div className="size-3 rounded bg-accent/30 border border-accent/50" /><span className="text-[11px] font-bold text-muted">Core Switch</span></div>
                       <div className="flex items-center gap-2"><div className="size-3 rounded bg-purple-500/30 border border-purple-500/50" /><span className="text-[11px] font-bold text-muted">VLAN Segment</span></div>
                       <div className="flex items-center gap-2"><div className="size-3 rounded bg-emerald-500/30 border border-emerald-500/50" /><span className="text-[11px] font-bold text-muted">Access Port</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-amber-500/30 border border-amber-500/50" /><span className="text-[11px] font-bold text-muted">Router</span></div>
+                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-rose-500/30 border border-rose-500/50" /><span className="text-[11px] font-bold text-muted">VPN Tunnel</span></div>
+                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-blue-500/30 border border-blue-500/50" /><span className="text-[11px] font-bold text-muted">SD-WAN</span></div>
                     </div>
                   </GlassCard>
                 )}

@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-06-15T20:29:26.057Z_
+_Generated: 2026-06-15T20:48:17.533Z_
 
 ---
 
@@ -160,7 +160,7 @@ Keyframes: orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core, ambien
 - Build: `npm run typecheck && npm run lint && next build`
 - Lint: `next lint`
 - Test: `vitest run`
-- Dependencies: 10
+- Dependencies: 11
 - Dev Dependencies: 17
 
 ---
