@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-06-01T18:21:03.198Z_
+_Generated: 2026-06-15T20:29:26.057Z_
 
 ---
 
@@ -60,13 +60,13 @@ _Generated: 2026-06-01T18:21:03.198Z_
 
 ## Design System
 
-CSS Variable Tokens: **48**  
+CSS Variable Tokens: **52**  
 
 clamp() Expressions: **13**  
 
-Utility Classes: 24  
+Utility Classes: 25  
 
-Keyframes: orbital, core, core, shimmer, fadeIn, slideUp, core, ambient
+Keyframes: orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core, ambient
 
 
 ### Spacing Scale (clamp)

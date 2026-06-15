@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef, memo } from "react";
+import { useState, useMemo, useEffect, useRef, memo, useCallback } from "react";
 import {
   ToolContainer,
   ToolHeader,
@@ -58,6 +58,7 @@ interface InterfaceInfo {
   ip: string;
   vlanAccess: number | null;
   vlanTrunkAllowed: number[];
+  trunkAll: boolean;
   mode: "access" | "trunk" | "routed" | "unknown";
   mac: string;
   mtu: number;
@@ -399,6 +400,7 @@ async function parseUniversalConfigAsync(
         ip: "",
         vlanAccess: null,
         vlanTrunkAllowed: [],
+        trunkAll: false,
         mode: isVlan ? "routed" : "unknown",
         mac: "",
         mtu: 1500,
@@ -594,7 +596,8 @@ async function parseUniversalConfigAsync(
         if (trunkVlanMatch) {
           const val = trunkVlanMatch[1].trim();
           if (val.toLowerCase() === "all") {
-            activeIface.vlanTrunkAllowed = [1, 10, 20, 30, 100, 200, 300];
+            activeIface.vlanTrunkAllowed = [];
+            activeIface.trunkAll = true;
           } else {
             const ids = val.split(/[,\s]+/).map(v => parseInt(v.trim())).filter(n => !isNaN(n));
             ids.forEach(id => {
@@ -711,6 +714,7 @@ async function parseUniversalConfigAsync(
       mac: "",
       mtu: 1500,
       type: "Physical Port",
+      trunkAll: false,
     });
     cfg.managementIp = "192.168.1.1";
   }
@@ -731,6 +735,7 @@ function finalizeInterface(iface: Partial<InterfaceInfo>): InterfaceInfo {
     ip: iface.ip || "",
     vlanAccess: iface.vlanAccess ?? null,
     vlanTrunkAllowed: iface.vlanTrunkAllowed || [],
+    trunkAll: iface.trunkAll || false,
     mode: iface.mode || "unknown",
     mac: iface.mac || "",
     mtu: iface.mtu || 1500,
@@ -869,6 +874,22 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
         }
       }
     }
+    if (intf.trunkAll && intf.mode === "trunk") {
+      const trunkAllId = `trunk-all-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
+      if (!nodeMap.has(trunkAllId)) {
+        nodes.push({
+          id: trunkAllId,
+          label: `Trunk ALL (${intf.name})`,
+          type: "vlan",
+          group: "trunk-all",
+          connections: [switchId],
+          portIndex: intf.name,
+        });
+        nodeMap.add(trunkAllId);
+        const swNode = nodes.find(n => n.id === switchId);
+        if (swNode && !swNode.connections.includes(trunkAllId)) swNode.connections.push(trunkAllId);
+      }
+    }
   }
 
   // Router node if routing enabled or static routes
@@ -914,7 +935,6 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
   }
 
   // Host nodes from access ports
-  let hostCount = 0;
   for (const intf of cfg.interfaces) {
     if ((intf.mode === "access" || intf.mode === "unknown" || intf.mode === "routed") && intf.status === "up" && intf.type !== "SVI" && intf.type !== "VPN Tunnel" && intf.type !== "SD-WAN Member") {
       const hostId = `host-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
@@ -928,19 +948,6 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
           const [ipPart, cidrPart] = intf.ip.split("/");
           hostIp = ipPart;
           hostMask = maskFromCidr(parseInt(cidrPart || "24"));
-        } else if (intf.vlanAccess !== null) {
-          // Try to find SVI for this VLAN to base the host IP on
-          const parentSvi = cfg.interfaces.find(i => i.type === "SVI" && (i.name.toLowerCase() === `vlan${intf.vlanAccess}` || i.name.toLowerCase() === `vlan ${intf.vlanAccess}` || i.name.toLowerCase() === `irb.${intf.vlanAccess}`));
-          if (parentSvi && parentSvi.ip) {
-            const [sviIp, sviCidr] = parentSvi.ip.split("/");
-            const octets = sviIp.split(".");
-            if (octets.length === 4) {
-              hostCount++;
-              octets[3] = (50 + hostCount).toString();
-              hostIp = octets.join(".");
-              hostMask = maskFromCidr(parseInt(sviCidr || "24"));
-            }
-          }
         }
 
         nodes.push({
@@ -1008,15 +1015,23 @@ function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
    Topology Map Component (Absolute + SVG connectors)
    ───────────────────────────────────────────── */
 
-const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopologyNode[] }) {
+const TopologicalMap = memo(function TopologicalMap({
+  nodes,
+  searchQuery = "",
+  onNodeSelect,
+}: {
+  nodes: VlanTopologyNode[];
+  searchQuery?: string;
+  onNodeSelect?: (nodeId: string | null) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [zoom, setZoom] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [viewMode, setViewMode] = useState<"RADIAL" | "TREE">("RADIAL");
-
+  const [viewMode, setViewMode] = useState<"RADIAL" | "TREE">("TREE");
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
 
   const dragInfo = useRef<{
     isPanning: boolean;
@@ -1030,161 +1045,219 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     startY: 0,
   });
 
-  const width = 800;
-  const height = 600;
-
   const switches = useMemo(() => nodes.filter(n => n.type === 'switch'), [nodes]);
   const vlans = useMemo(() => nodes.filter(n => n.type === 'vlan'), [nodes]);
   const hosts = useMemo(() => nodes.filter(n => n.type === 'host'), [nodes]);
   const routers = useMemo(() => nodes.filter(n => n.type === 'router'), [nodes]);
 
-  // Deterministically position all nodes statically upon nodes or viewMode changes (Zero Animation Engine)
+  const searchLower = searchQuery.toLowerCase();
+
+  const isNodeMatched = useCallback((node: VlanTopologyNode) => {
+    if (!searchLower) return true;
+    return (
+      node.label.toLowerCase().includes(searchLower) ||
+      (node.ip && node.ip.toLowerCase().includes(searchLower)) ||
+      (node.portIndex && node.portIndex.toLowerCase().includes(searchLower)) ||
+      node.type.toLowerCase().includes(searchLower)
+    );
+  }, [searchLower]);
+
+  const isNodeFocused = useCallback((node: VlanTopologyNode) => {
+    if (!focusNodeId) return true;
+    if (node.id === focusNodeId) return true;
+    const focusedNode = nodes.find(n => n.id === focusNodeId);
+    if (focusedNode) {
+      return focusedNode.connections.includes(node.id) || node.connections.includes(focusNodeId);
+    }
+    return false;
+  }, [focusNodeId, nodes]);
+
+  const dynamicWidth = useMemo(() => Math.max(800, nodes.length * 85), [nodes.length]);
+  const dynamicHeight = useMemo(() => Math.max(600, Math.max(nodes.length * 45, 500)), [nodes.length]);
+
   useEffect(() => {
-    const cx = width / 2;
-    const cy = height / 2;
+    const cx = dynamicWidth / 2;
+    const cy = dynamicHeight / 2;
     const newPositions: Record<string, { x: number; y: number }> = {};
 
     if (viewMode === "TREE") {
-      // 1. Routers at the top level (Level 1)
+      const layerGap = Math.max(140, Math.min(220, dynamicHeight / 5));
+      const routerY = 70;
+      const switchY = routerY + layerGap;
+      const vlanY = switchY + layerGap;
+      const hostY = vlanY + layerGap;
+
       routers.forEach((r, i) => {
         newPositions[r.id] = {
           x: cx + (i - (routers.length - 1) / 2) * 180,
-          y: 70
+          y: routerY + 30,
         };
       });
 
-      // 2. Core switch at Level 2
       if (switches.length > 0) {
-        newPositions[switches[0].id] = { x: cx, y: 160 };
+        newPositions[switches[0].id] = { x: cx, y: switchY + 30 };
       }
 
-      // 3. VPN & SD-WAN flanking Core Switch
       const vpns = nodes.filter(n => n.type === "vpn");
       vpns.forEach((v, i) => {
         newPositions[v.id] = {
-          x: cx - 200 - i * 65,
-          y: 160
+          x: cx - 220 - i * 70,
+          y: switchY + 30,
         };
       });
 
       const sdwans = nodes.filter(n => n.type === "sdwan");
       sdwans.forEach((s, i) => {
         newPositions[s.id] = {
-          x: cx + 200 + i * 65,
-          y: 160
+          x: cx + 220 + i * 70,
+          y: switchY + 30,
         };
       });
 
-      // 4. VLANs spaced horizontally (Level 3)
-      const vlanY = 300;
+      const vlanSpacing = Math.max(100, dynamicWidth / Math.max(vlans.length, 1));
       vlans.forEach((v, i) => {
-        const xPos = cx + (i - (vlans.length - 1) / 2) * (width / Math.max(vlans.length, 1) - 40);
-        newPositions[v.id] = {
-          x: xPos,
-          y: vlanY
-        };
+        const xPos = cx + (i - (vlans.length - 1) / 2) * Math.min(vlanSpacing, 160);
+        newPositions[v.id] = { x: xPos, y: vlanY + 30 };
       });
 
-      // 5. Hosts spaced below parent VLANs (Level 4)
-      const hostY = 460;
       vlans.forEach((vlanNode) => {
         const vlanHosts = hosts.filter(h => h.group === vlanNode.id);
-        const parentPos = newPositions[vlanNode.id] || { x: cx, y: vlanY };
-        
+        const parentPos = newPositions[vlanNode.id] || { x: cx, y: vlanY + 30 };
         vlanHosts.forEach((hostNode, idx) => {
-          const offset = (idx - (vlanHosts.length - 1) / 2) * 80;
-          newPositions[hostNode.id] = {
-            x: parentPos.x + offset,
-            y: hostY
-          };
+          const offset = (idx - (vlanHosts.length - 1) / 2) * 100;
+          newPositions[hostNode.id] = { x: parentPos.x + offset, y: hostY + 30 };
         });
       });
 
-      // Orphan hosts below switch
       const orphanHosts = hosts.filter(h => h.group !== "vlan-" && !vlans.some(v => v.id === h.group));
       orphanHosts.forEach((h, idx) => {
-        const offset = (idx - (orphanHosts.length - 1) / 2) * 80;
-        newPositions[h.id] = {
-          x: cx + offset,
-          y: hostY
-        };
+        const offset = (idx - (orphanHosts.length - 1) / 2) * 100;
+        newPositions[h.id] = { x: cx + offset, y: hostY + 30 };
       });
     } else {
-      // RADIAL VIEW MODE
-      // 1. Core switch aligned perfectly at middle hub center
       if (switches.length > 0) {
         newPositions[switches[0].id] = { x: cx, y: cy };
       }
 
-      // 2. Routers radiating upwards
       routers.forEach((r, i) => {
         const angle = -Math.PI / 2 + (i - (routers.length - 1) / 2) * 0.35;
+        const radius = Math.min(130, dynamicWidth * 0.15);
         newPositions[r.id] = {
-          x: cx + 130 * Math.cos(angle),
-          y: cy + 130 * Math.sin(angle)
+          x: cx + radius * Math.cos(angle),
+          y: cy + radius * Math.sin(angle),
         };
       });
 
-      // 3. VLANs distributed uniformly in an inner circle
-      const vRadius = 150;
+      const vRadius = Math.min(180, dynamicWidth * 0.2);
       vlans.forEach((v, i) => {
         const angle = (i / (vlans.length || 1)) * 2 * Math.PI - Math.PI / 2;
         newPositions[v.id] = {
           x: cx + vRadius * Math.cos(angle),
-          y: cy + vRadius * Math.sin(angle)
+          y: cy + vRadius * Math.sin(angle),
         };
       });
 
-      // 4. Hosts radiating outwards from their parent VLANs
       hosts.forEach((h) => {
         const parentId = h.group;
         const parentPos = newPositions[parentId] || newPositions[switches[0]?.id] || { x: cx, y: cy };
-
         const siblings = hosts.filter(host => host.group === h.group);
         const index = siblings.findIndex(s => s.id === h.id);
-        const hRadius = 85;
-
+        const hRadius = Math.min(90, dynamicWidth * 0.1);
         const angleOffset = Math.atan2(parentPos.y - cy, parentPos.x - cx);
         const spread = Math.PI / 2.8;
         const startAngle = angleOffset - spread / 2;
         const step = siblings.length > 1 ? spread / (siblings.length - 1) : 0;
         const angle = startAngle + index * step;
-
         newPositions[h.id] = {
           x: parentPos.x + hRadius * Math.cos(angle),
-          y: parentPos.y + hRadius * Math.sin(angle)
+          y: parentPos.y + hRadius * Math.sin(angle),
         };
       });
 
-      // 5. VPN and SD-WAN security endpoints radiating in the bottom sector
       const securityNodes = nodes.filter(n => n.type === "vpn" || n.type === "sdwan");
-      const secRadius = 190;
+      const secRadius = Math.min(220, dynamicWidth * 0.25);
       const secStart = Math.PI * 0.35;
       const secEnd = Math.PI * 0.65;
       const secSpread = secEnd - secStart;
       const secStep = securityNodes.length > 1 ? secSpread / (securityNodes.length - 1) : 0;
       securityNodes.forEach((node, idx) => {
-        const angle = secStart + idx * secStep;
+        const angle = securityNodes.length === 1 ? (secStart + secEnd) / 2 : secStart + idx * secStep;
         newPositions[node.id] = {
           x: cx + secRadius * Math.cos(angle),
-          y: cy + secRadius * Math.sin(angle)
+          y: cy + secRadius * Math.sin(angle),
         };
       });
     }
 
-    // Boundary containment safety check
     nodes.forEach(n => {
       if (!newPositions[n.id]) {
         newPositions[n.id] = { x: cx, y: cy + 120 };
       }
     });
 
-    setNodePositions(newPositions);
-    setZoom(1);
-    setPanOffset({ x: 0, y: 0 });
-  }, [nodes, viewMode, switches, vlans, hosts, routers]);
+    // Overlap resolution
+    const minDist = 95;
+    const nodeIds = Object.keys(newPositions);
+    for (let iter = 0; iter < 20; iter++) {
+      let moved = false;
+      for (let i = 0; i < nodeIds.length; i++) {
+        for (let j = i + 1; j < nodeIds.length; j++) {
+          const a = newPositions[nodeIds[i]];
+          const b = newPositions[nodeIds[j]];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < minDist && dist > 0) {
+            const push = (minDist - dist) / 2 + 2;
+            const angle = Math.atan2(dy, dx);
+            a.x -= Math.cos(angle) * push;
+            a.y -= Math.sin(angle) * push;
+            b.x += Math.cos(angle) * push;
+            b.y += Math.sin(angle) * push;
+            moved = true;
+          }
+        }
+      }
+      if (!moved) break;
+    }
 
-  // Static draw canvas rendering block (0 animation loops)
+    // Clamp to canvas bounds
+    const margin = 80;
+    for (const id of nodeIds) {
+      const p = newPositions[id];
+      p.x = Math.max(margin, Math.min(dynamicWidth - margin, p.x));
+      p.y = Math.max(margin, Math.min(dynamicHeight - margin, p.y));
+    }
+
+    setNodePositions(newPositions);
+
+    // Zoom to fit
+    const xs = Object.values(newPositions).map(p => p.x);
+    const ys = Object.values(newPositions).map(p => p.y);
+    if (xs.length === 0) {
+      setZoom(1);
+      setPanOffset({ x: 0, y: 0 });
+      return;
+    }
+    const graphMinX = Math.min(...xs) - 60;
+    const graphMaxX = Math.max(...xs) + 60;
+    const graphMinY = Math.min(...ys) - 40;
+    const graphMaxY = Math.max(...ys) + 40;
+    const graphW = graphMaxX - graphMinX || 1;
+    const graphH = graphMaxY - graphMinY || 1;
+    const containerW = dynamicWidth;
+    const containerH = dynamicHeight;
+    const fitZoom = Math.min(containerW / graphW, containerH / graphH, 2);
+    const finalZoom = Math.max(0.3, Math.min(fitZoom, 1.5));
+    const centerX = (graphMinX + graphMaxX) / 2;
+    const centerY = (graphMinY + graphMaxY) / 2;
+    const panX = containerW / 2 - centerX * finalZoom;
+    const panY = containerH / 2 - centerY * finalZoom;
+    setZoom(finalZoom);
+    setPanOffset({ x: panX, y: panY });
+  }, [nodes, viewMode, switches, vlans, hosts, routers, dynamicWidth, dynamicHeight]);
+
+  // Canvas rendering
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1192,91 +1265,107 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+    const displayW = canvas.clientWidth;
+    const displayH = canvas.clientHeight;
+    canvas.width = displayW * dpr;
+    canvas.height = displayH * dpr;
     ctx.scale(dpr, dpr);
 
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, displayW, displayH);
+
+    const isDark = document.documentElement.classList.contains("dark");
 
     ctx.save();
     ctx.translate(panOffset.x, panOffset.y);
     ctx.scale(zoom, zoom);
 
-    drawGrid(ctx);
+    // Draw grid
+    const gridSize = 40;
+    ctx.strokeStyle = isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.06)";
+    ctx.lineWidth = 1;
+    const viewLeft = -panOffset.x / zoom - 200;
+    const viewRight = (displayW - panOffset.x) / zoom + 200;
+    const viewTop = -panOffset.y / zoom - 200;
+    const viewBottom = (displayH - panOffset.y) / zoom + 200;
+    for (let x = Math.floor(viewLeft / gridSize) * gridSize; x < viewRight; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, viewTop);
+      ctx.lineTo(x, viewBottom);
+      ctx.stroke();
+    }
+    for (let y = Math.floor(viewTop / gridSize) * gridSize; y < viewBottom; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(viewLeft, y);
+      ctx.lineTo(viewRight, y);
+      ctx.stroke();
+    }
 
-    // Render connection lines
+    const allPositions = nodePositions;
+
+    // Draw edges
     nodes.forEach(node => {
-      const start = nodePositions[node.id];
+      const start = allPositions[node.id];
       if (!start) return;
+      const nodeVisible = isNodeFocused(node) && isNodeMatched(node);
 
       node.connections.forEach(targetId => {
-        const end = nodePositions[targetId];
+        const end = allPositions[targetId];
         if (!end) return;
+
+        const targetNode = nodes.find(n => n.id === targetId);
+        const targetVisible = targetNode ? isNodeFocused(targetNode) && isNodeMatched(targetNode) : false;
+        const finalAlpha = focusNodeId ? ((nodeVisible && targetVisible) ? 0.6 : 0.03) : (isNodeMatched(node) && targetNode && isNodeMatched(targetNode) ? 0.2 : 0.04);
 
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
         const midX = (start.x + end.x) / 2;
         ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
-        ctx.strokeStyle = node.id === hoveredNodeId || targetId === hoveredNodeId
-          ? "rgba(239, 68, 68, 0.7)"
-          : "rgba(255, 255, 255, 0.15)";
-        ctx.lineWidth = node.id === hoveredNodeId || targetId === hoveredNodeId ? 2.5 : 1.5;
-        
-        if (node.id === hoveredNodeId || targetId === hoveredNodeId) {
-          ctx.shadowBlur = 8;
-          ctx.shadowColor = "rgba(239, 68, 68, 0.5)";
+
+        const isHoveredEdge = node.id === hoveredNodeId || targetId === hoveredNodeId;
+        const isFocusEdge = focusNodeId && (node.id === focusNodeId || targetId === focusNodeId);
+
+        if (isFocusEdge) {
+          ctx.strokeStyle = isDark ? "rgba(14, 179, 186, 0.7)" : "rgba(14, 179, 186, 0.8)";
+          ctx.lineWidth = 2.5;
+        } else if (isHoveredEdge) {
+          ctx.strokeStyle = isDark ? "rgba(239, 68, 68, 0.7)" : "rgba(220, 38, 38, 0.7)";
+          ctx.lineWidth = 2.5;
         } else {
-          ctx.shadowBlur = 0;
+          ctx.strokeStyle = isDark ? `rgba(255, 255, 255, ${finalAlpha})` : `rgba(30, 30, 46, ${finalAlpha})`;
+          ctx.lineWidth = 1.5;
         }
-        
         ctx.stroke();
-        ctx.shadowBlur = 0;
       });
     });
 
-    // Render node icons
+    // Draw nodes
     nodes.forEach(node => {
-      const pos = nodePositions[node.id];
+      const pos = allPositions[node.id];
       if (!pos) return;
 
+      const isFocused = isNodeFocused(node);
+      const isMatched = isNodeMatched(node);
+      const nodeAlpha = focusNodeId ? (isFocused ? 1 : 0.12) : (isMatched ? 1 : 0.2);
       const isHovered = node.id === hoveredNodeId;
-      drawNode(ctx, node, pos.x, pos.y, isHovered);
+
+      drawNode(ctx, node, pos.x, pos.y, isHovered, isFocused, isMatched, nodeAlpha, isDark);
     });
 
     ctx.restore();
-  }, [nodes, nodePositions, zoom, panOffset, hoveredNodeId]);
+  }, [nodes, nodePositions, zoom, panOffset, hoveredNodeId, focusNodeId, searchLower, dynamicWidth, dynamicHeight, isNodeFocused, isNodeMatched]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const drawGrid = (ctx: CanvasRenderingContext2D) => {
-    const gridSize = 40;
-    const buffer = 1000;
-    const startX = -buffer;
-    const endX = width + buffer;
-    const startY = -buffer;
-    const endY = height + buffer;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
-    ctx.lineWidth = 1;
-
-    for (let x = startX; x < endX; x += gridSize) {
-      ctx.moveTo(x, startY);
-      ctx.lineTo(x, endY);
-    }
-    for (let y = startY; y < endY; y += gridSize) {
-      ctx.moveTo(startX, y);
-      ctx.lineTo(endX, y);
-    }
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(width/2, height/2, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
-    ctx.fill();
-    ctx.restore();
-  };
-
-  const drawNode = (ctx: CanvasRenderingContext2D, node: VlanTopologyNode, x: number, y: number, isHovered: boolean) => {
+  // Theme-aware node drawing
+  const drawNode = (
+    ctx: CanvasRenderingContext2D,
+    node: VlanTopologyNode,
+    x: number,
+    y: number,
+    isHovered: boolean,
+    isFocused: boolean,
+    isMatched: boolean,
+    alpha: number,
+    isDark: boolean,
+  ) => {
     let color = "#ef4444";
     let border = "rgba(239, 68, 68, 0.4)";
 
@@ -1298,49 +1387,42 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     }
 
     ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.translate(x, y);
 
-    if (isHovered) {
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = color;
+    if (isHovered || isFocused) {
+      ctx.shadowBlur = isFocused ? 20 : 15;
+      ctx.shadowColor = isFocused ? "rgba(14, 179, 186, 0.6)" : color;
     }
 
-    const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
-    
+    const radius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
+
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.fillStyle = isHovered ? "rgba(0, 0, 0, 0.95)" : "rgba(10, 10, 15, 0.95)";
+    ctx.fillStyle = isDark ? "rgba(10, 10, 15, 0.95)" : "rgba(255, 255, 255, 0.95)";
     ctx.fill();
-
-    ctx.strokeStyle = isHovered ? color : border;
-    ctx.lineWidth = isHovered ? 2.5 : 1.5;
+    ctx.strokeStyle = isFocused ? "rgba(14, 179, 186, 0.8)" : isHovered ? color : border;
+    ctx.lineWidth = isFocused ? 3 : isHovered ? 2.5 : 1.5;
     ctx.stroke();
 
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.lineWidth = 1.5;
-    ctx.shadowBlur = 0;
 
+    // Draw node icons (same as before but theme-aware)
     if (node.type === "switch") {
       ctx.beginPath();
-      ctx.moveTo(-12, -4);
-      ctx.lineTo(12, -4);
-      ctx.moveTo(12, -4);
-      ctx.lineTo(8, -7);
-      ctx.moveTo(12, -4);
-      ctx.lineTo(8, -1);
-      ctx.moveTo(12, 4);
-      ctx.lineTo(-12, 4);
-      ctx.moveTo(-12, 4);
-      ctx.lineTo(-8, 1);
-      ctx.moveTo(-12, 4);
-      ctx.lineTo(-8, 7);
+      ctx.moveTo(-12, -4); ctx.lineTo(12, -4);
+      ctx.moveTo(12, -4); ctx.lineTo(8, -7);
+      ctx.moveTo(12, -4); ctx.lineTo(8, -1);
+      ctx.moveTo(12, 4); ctx.lineTo(-12, 4);
+      ctx.moveTo(-12, 4); ctx.lineTo(-8, 1);
+      ctx.moveTo(-12, 4); ctx.lineTo(-8, 7);
       ctx.stroke();
     } else if (node.type === "router") {
       ctx.beginPath();
-      ctx.arc(0, 0, 10, 0, Math.PI * 2);
-      ctx.stroke();
-      
+      ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(0, -6); ctx.lineTo(0, -13);
       ctx.moveTo(0, -13); ctx.lineTo(-3, -10);
@@ -1368,63 +1450,45 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
       }
     } else if (node.type === "vpn") {
       ctx.beginPath();
-      ctx.moveTo(0, -9);
-      ctx.lineTo(8, -6);
-      ctx.lineTo(8, 0);
+      ctx.moveTo(0, -9); ctx.lineTo(8, -6); ctx.lineTo(8, 0);
       ctx.quadraticCurveTo(8, 6, 0, 9);
       ctx.quadraticCurveTo(-8, 6, -8, 0);
-      ctx.lineTo(-8, -6);
-      ctx.closePath();
-      ctx.stroke();
+      ctx.lineTo(-8, -6); ctx.closePath(); ctx.stroke();
     } else if (node.type === "sdwan") {
       ctx.beginPath();
       ctx.arc(-4, 0, 4, 0.8 * Math.PI, 1.8 * Math.PI);
       ctx.arc(2, -3, 5, 1.1 * Math.PI, 1.9 * Math.PI);
       ctx.arc(6, 1, 4, 1.5 * Math.PI, 0.4 * Math.PI);
-      ctx.lineTo(-4, 4);
-      ctx.closePath();
-      ctx.stroke();
+      ctx.lineTo(-4, 4); ctx.closePath(); ctx.stroke();
     } else {
+      ctx.beginPath(); ctx.rect(-10, -8, 20, 13); ctx.stroke();
       ctx.beginPath();
-      ctx.rect(-10, -8, 20, 13);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(-3, 5);
-      ctx.lineTo(-5, 9);
-      ctx.lineTo(5, 9);
-      ctx.lineTo(3, 5);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(-3, 5); ctx.lineTo(-5, 9); ctx.lineTo(5, 9); ctx.lineTo(3, 5);
+      ctx.closePath(); ctx.fill();
     }
 
-    const label = node.label;
-    const linesToDraw: string[] = [label];
+    // Draw label
+    const linesToDraw: string[] = [node.label];
     if (node.portIndex && node.type !== "switch") {
       linesToDraw.push(`Port: ${node.portIndex}`);
     }
     if (node.ip) {
-      if (node.subnetMask) {
-        linesToDraw.push(`${node.ip} / ${node.subnetMask}`);
-      } else {
-        linesToDraw.push(node.ip);
-      }
+      linesToDraw.push(`${node.ip}${node.subnetMask ? ` / ${node.subnetMask}` : ""}`);
     }
 
-    ctx.font = "bold 9px monospace";
+    const labelFont = isMatched || !searchLower ? "bold 11px monospace" : "11px monospace";
+    const detailFont = "10px monospace";
+    ctx.font = labelFont;
     let maxWidth = 0;
     linesToDraw.forEach(ln => {
       const w = ctx.measureText(ln).width;
       if (w > maxWidth) maxWidth = w;
     });
 
-    ctx.fillStyle = "rgba(10, 10, 15, 0.95)";
-    ctx.strokeStyle = isHovered ? color : "rgba(255, 255, 255, 0.08)";
-    ctx.lineWidth = 1;
-
     const px = 8;
     const py = 6;
-    const lineSpacing = 12;
-    const startY = radius + 12;
+    const lineSpacing = 14;
+    const startY = radius + 14;
 
     const rw = maxWidth + px * 2;
     const rh = linesToDraw.length * lineSpacing + py * 2 - 4;
@@ -1444,6 +1508,9 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     ctx.arcTo(rx, ry, rx + rr, ry, rr);
     ctx.closePath();
 
+    ctx.fillStyle = isDark ? "rgba(10, 10, 15, 0.92)" : "rgba(255, 255, 255, 0.92)";
+    ctx.strokeStyle = isFocused ? "rgba(14, 179, 186, 0.6)" : isHovered ? color : isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.1)";
+    ctx.lineWidth = isFocused ? 1.5 : 1;
     ctx.fill();
     ctx.stroke();
 
@@ -1453,11 +1520,11 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     linesToDraw.forEach((ln, idx) => {
       const ly = startY + idx * lineSpacing;
       if (idx === 0) {
-        ctx.fillStyle = color;
-        ctx.font = "bold 9px monospace";
+        ctx.fillStyle = isMatched || !searchLower ? color : isDark ? "rgba(255, 255, 255, 0.3)" : "rgba(0, 0, 0, 0.3)";
+        ctx.font = labelFont;
       } else {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-        ctx.font = "8px monospace";
+        ctx.fillStyle = isDark ? "rgba(255, 255, 255, 0.6)" : "rgba(30, 30, 46, 0.6)";
+        ctx.font = detailFont;
       }
       ctx.fillText(ln, 0, ly);
     });
@@ -1469,24 +1536,18 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-
-    const localX = (clientX - rect.left - panOffset.x) / zoom;
-    const localY = (clientY - rect.top - panOffset.y) / zoom;
+    const localX = (e.clientX - rect.left - panOffset.x) / zoom;
+    const localY = (e.clientY - rect.top - panOffset.y) / zoom;
 
     let clickedNodeId: string | null = null;
-    
+
     for (const node of nodes) {
       const pos = nodePositions[node.id];
       if (!pos) continue;
-      
-      const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
+      const nodeRadius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
       const dx = localX - pos.x;
       const dy = localY - pos.y;
-      
-      // Extended grab boundary for reliable zero-jitter grabs
-      if (dx * dx + dy * dy < radius * radius + 150) {
+      if (dx * dx + dy * dy < nodeRadius * nodeRadius + 100) {
         clickedNodeId = node.id;
         break;
       }
@@ -1494,19 +1555,18 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
     if (clickedNodeId) {
       const pos = nodePositions[clickedNodeId];
-      // Store cursor relative offset from node origin
       dragInfo.current = {
         isPanning: false,
         draggedNodeId: clickedNodeId,
         startX: localX - pos.x,
-        startY: localY - pos.y
+        startY: localY - pos.y,
       };
     } else {
       dragInfo.current = {
         isPanning: true,
         draggedNodeId: null,
-        startX: clientX - panOffset.x,
-        startY: clientY - panOffset.y
+        startX: e.clientX - panOffset.x,
+        startY: e.clientY - panOffset.y,
       };
     }
   };
@@ -1515,41 +1575,33 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-
-    const localX = (clientX - rect.left - panOffset.x) / zoom;
-    const localY = (clientY - rect.top - panOffset.y) / zoom;
+    const localX = (e.clientX - rect.left - panOffset.x) / zoom;
+    const localY = (e.clientY - rect.top - panOffset.y) / zoom;
 
     const info = dragInfo.current;
 
     if (info.draggedNodeId) {
-      const nodeId = info.draggedNodeId;
-      // Confine movement to grid bounding box boundary
-      const dragX = Math.max(40, Math.min(width - 40, localX - info.startX));
-      const dragY = Math.max(40, Math.min(height - 40, localY - info.startY));
-      
-      // Update coordinates in React state immediately to trigger instantaneous draw refresh
+      const margin = 40;
+      const dragX = Math.max(margin, Math.min(dynamicWidth - margin, localX - info.startX));
+      const dragY = Math.max(margin, Math.min(dynamicHeight - margin, localY - info.startY));
       setNodePositions(prev => ({
         ...prev,
-        [nodeId]: { x: dragX, y: dragY }
+        [info.draggedNodeId!]: { x: dragX, y: dragY },
       }));
     } else if (info.isPanning) {
       setPanOffset({
-        x: clientX - info.startX,
-        y: clientY - info.startY
+        x: e.clientX - info.startX,
+        y: e.clientY - info.startY,
       });
     } else {
       let foundHover: string | null = null;
       for (const node of nodes) {
         const pos = nodePositions[node.id];
         if (!pos) continue;
-        
-        const radius = node.type === "switch" ? 28 : node.type === "vlan" || node.type === "router" ? 24 : 20;
+        const nodeRadius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
         const dx = localX - pos.x;
         const dy = localY - pos.y;
-        
-        if (dx * dx + dy * dy < radius * radius + 150) {
+        if (dx * dx + dy * dy < nodeRadius * nodeRadius + 100) {
           foundHover = node.id;
           break;
         }
@@ -1561,8 +1613,41 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
   };
 
   const handleMouseUp = () => {
+    if (dragInfo.current.draggedNodeId) {
+      // Was it a click (no significant drag)?
+      // If so, toggle focus
+    }
     dragInfo.current.isPanning = false;
     dragInfo.current.draggedNodeId = null;
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const localX = (e.clientX - rect.left - panOffset.x) / zoom;
+    const localY = (e.clientY - rect.top - panOffset.y) / zoom;
+
+    let clickedNodeId: string | null = null;
+    for (const node of nodes) {
+      const pos = nodePositions[node.id];
+      if (!pos) continue;
+      const nodeRadius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
+      const dx = localX - pos.x;
+      const dy = localY - pos.y;
+      if (dx * dx + dy * dy < nodeRadius * nodeRadius + 100) {
+        clickedNodeId = node.id;
+        break;
+      }
+    }
+
+    if (clickedNodeId) {
+      setFocusNodeId(prev => prev === clickedNodeId ? null : clickedNodeId);
+      onNodeSelect?.(clickedNodeId === focusNodeId ? null : clickedNodeId);
+    } else {
+      setFocusNodeId(null);
+      onNodeSelect?.(null);
+    }
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -1570,21 +1655,21 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    
+
     const zoomIntensity = 0.08;
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    
+
     const delta = e.deltaY < 0 ? 1 : -1;
-    const newZoom = Math.min(Math.max(zoom * (1 + delta * zoomIntensity), 0.3), 3);
-    
+    const newZoom = Math.min(Math.max(zoom * (1 + delta * zoomIntensity), 0.2), 4);
+
     const xs = (mouseX - panOffset.x) / zoom;
     const ys = (mouseY - panOffset.y) / zoom;
-    
+
     setZoom(newZoom);
     setPanOffset({
       x: mouseX - xs * newZoom,
-      y: mouseY - ys * newZoom
+      y: mouseY - ys * newZoom,
     });
   };
 
@@ -1597,10 +1682,14 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
 
     const ctx = tempCanvas.getContext("2d");
     if (!ctx) return;
-    
+
+    const isDark = document.documentElement.classList.contains("dark");
+    ctx.fillStyle = isDark ? "#020205" : "#ffffff";
+    ctx.fillRect(0, 0, exportWidth, exportHeight);
+
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
-    
+
     Object.values(nodePositions).forEach(p => {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
@@ -1611,34 +1700,28 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     const padding = 150;
     const graphWidth = maxX - minX || 1;
     const graphHeight = maxY - minY || 1;
-
     const scaleX = (exportWidth - padding * 2) / graphWidth;
     const scaleY = (exportHeight - padding * 2) / graphHeight;
     const exportScale = Math.min(scaleX, scaleY, 1.5);
 
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    
-    const exportTransX = exportWidth / 2 - centerX * exportScale;
-    const exportTransY = exportHeight / 2 - centerY * exportScale;
 
     ctx.save();
-    ctx.translate(exportTransX, exportTransY);
+    ctx.translate(exportWidth / 2 - centerX * exportScale, exportHeight / 2 - centerY * exportScale);
     ctx.scale(exportScale, exportScale);
 
     nodes.forEach(node => {
       const start = nodePositions[node.id];
       if (!start) return;
-
       node.connections.forEach(targetId => {
         const end = nodePositions[targetId];
         if (!end) return;
-
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
         const midX = (start.x + end.x) / 2;
         ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+        ctx.strokeStyle = "rgba(14, 179, 186, 0.4)";
         ctx.lineWidth = 2.5;
         ctx.stroke();
       });
@@ -1647,7 +1730,7 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
     nodes.forEach(node => {
       const pos = nodePositions[node.id];
       if (!pos) return;
-      drawNode(ctx, node, pos.x, pos.y, false);
+      drawNode(ctx, node, pos.x, pos.y, false, true, true, 1, isDark);
     });
 
     ctx.restore();
@@ -1662,46 +1745,73 @@ const TopologicalMap = memo(function TopologicalMap({ nodes }: { nodes: VlanTopo
   };
 
   return (
-    <div className="relative w-full overflow-hidden bg-black/40 border border-white/5 rounded-2xl flex flex-col items-center justify-center p-0 min-h-[600px] select-none">
-      <div className="absolute top-4 left-4 z-10 flex gap-1 bg-black/60 p-1 border border-white/10 rounded-lg">
-        <button
-          onClick={() => setViewMode("RADIAL")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === "RADIAL" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-white/5"}`}
-        >
-          Radial
-        </button>
+    <div className="relative w-full overflow-hidden bg-[var(--surface)] dark:bg-black/40 border border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center p-0 select-none">
+      <div className="absolute top-4 left-4 z-10 flex gap-1 bg-[var(--surface)] dark:bg-black/60 p-1 border border-[var(--glass-border)] rounded-lg">
         <button
           onClick={() => setViewMode("TREE")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === "TREE" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-white/5"}`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${viewMode === "TREE" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-[var(--surface-raised)]"}`}
         >
           Tree
+        </button>
+        <button
+          onClick={() => setViewMode("RADIAL")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${viewMode === "RADIAL" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-[var(--surface-raised)]"}`}
+        >
+          Radial
         </button>
       </div>
 
       <div className="absolute top-4 right-4 z-10 flex gap-2">
+        {focusNodeId && (
+          <button
+            onClick={() => { setFocusNodeId(null); onNodeSelect?.(null); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--surface-raised)] border border-[var(--glass-border)] hover:bg-[var(--surface)] text-[11px] font-black text-foreground uppercase tracking-widest transition-all"
+          >
+            Clear Focus
+          </button>
+        )}
         <button
-          onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-[9px] font-black text-foreground uppercase tracking-widest transition-all"
+          onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); setFocusNodeId(null); onNodeSelect?.(null); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--glass-border)] hover:bg-[var(--surface-raised)] text-[11px] font-black text-foreground uppercase tracking-widest transition-all"
         >
           Reset View
         </button>
         <button
           onClick={exportPng}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/80 border border-accent/20 text-[9px] font-black text-accent-foreground uppercase tracking-widest transition-all shadow-lg"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/80 border border-accent/20 text-[11px] font-black text-accent-foreground uppercase tracking-widest transition-all shadow-lg"
         >
-          Export Topology as PNG
+          Export PNG
         </button>
       </div>
 
       <canvas
         ref={canvasRef}
-        className="w-full h-[600px] cursor-grab active:cursor-grabbing"
+        className="w-full cursor-grab active:cursor-grabbing"
+        style={{ height: `${Math.max(500, Math.min(dynamicHeight, 900))}px` }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onClick={handleCanvasClick}
         onWheel={handleWheel}
       />
+
+      {focusNodeId && (() => {
+        const focusedNode = nodes.find(n => n.id === focusNodeId);
+        if (!focusedNode) return null;
+        const connectedNodes = nodes.filter(n => focusedNode.connections.includes(n.id) || n.connections.includes(focusedNode.id));
+        return (
+          <div className="absolute bottom-4 left-4 z-10 max-w-xs bg-[var(--surface)] dark:bg-black/80 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-4 text-[11px]">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="size-2.5 rounded-full" style={{ backgroundColor: focusedNode.type === "switch" ? "#ef4444" : focusedNode.type === "vlan" ? "#c084fc" : focusedNode.type === "router" ? "#fbbf24" : focusedNode.type === "vpn" ? "#f43f5e" : focusedNode.type === "sdwan" ? "#3b82f6" : "#34d399" }} />
+              <span className="font-black text-foreground uppercase tracking-widest">{focusedNode.label}</span>
+            </div>
+            {focusedNode.ip && <div className="text-muted font-mono">IP: {focusedNode.ip}{focusedNode.subnetMask ? ` / ${focusedNode.subnetMask}` : ""}</div>}
+            {focusedNode.portIndex && <div className="text-muted font-mono">Port: {focusedNode.portIndex}</div>}
+            <div className="text-muted/60 mt-1">{connectedNodes.length} connection{connectedNodes.length !== 1 ? "s" : ""}</div>
+          </div>
+        );
+      })()}
     </div>
   );
 });
@@ -1719,6 +1829,8 @@ export default function RunningConfigDecoderClient() {
   const [parsed, setParsed] = useState<ParsedConfig | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [parseProgress, setParseProgress] = useState(0);
+  const [topoSearch, setTopoSearch] = useState("");
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     setParsed(null);
@@ -2145,6 +2257,8 @@ export default function RunningConfigDecoderClient() {
                             <div className="flex items-center gap-1 flex-wrap">
                               {intf.vlanAccess !== null ? (
                                 <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-black text-cyan-400">A:{intf.vlanAccess}</span>
+                              ) : intf.trunkAll ? (
+                                <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[9px] font-black text-amber-400">T:ALL</span>
                               ) : intf.vlanTrunkAllowed.length > 0 ? (
                                 <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[9px] font-black text-amber-400">T:{intf.vlanTrunkAllowed.join(",")}</span>
                               ) : intf.ip ? (
@@ -2174,32 +2288,59 @@ export default function RunningConfigDecoderClient() {
                 </div>
 
                 {topologyNodes.length === 0 ? (
-                  <GlassCard className="py-20 flex flex-col items-center gap-4 text-center border-dashed border-white/10">
+                  <GlassCard className="py-20 flex flex-col items-center gap-4 text-center border-dashed border-[var(--glass-border)]">
                     <Map className="size-12 text-muted/20" />
                     <div className="flex flex-col gap-1">
-                      <h3 className="text-sm font-black uppercase tracking-widest text-muted/80">No Topology Available</h3>
+                      <h3 className="text-sm font-black uppercase tracking-widest text-foreground/80">No Topology Available</h3>
                       <p className="text-xs text-muted/50 font-medium">Parse a config with interfaces and VLANs to generate a visual network schema.</p>
                     </div>
                   </GlassCard>
                 ) : (
                   <GlassCard className="flex flex-col gap-6 p-6">
-                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
+                    <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-muted">
                       <Map className="size-3.5" /> Topology Graph
                       <span className="text-muted/40 font-normal normal-case tracking-normal ml-2">
                         ({topologyNodes.length} nodes)
                       </span>
                     </div>
 
+                    <div className="flex items-center gap-3">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={topoSearch}
+                          onChange={(e) => setTopoSearch(e.target.value)}
+                          placeholder="Search nodes by name, IP, VLAN, or port..."
+                          className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--input-bg)] px-4 py-2.5 pl-10 text-sm font-medium text-foreground outline-none transition-all duration-200 focus:border-accent/40 focus:ring-4 focus:ring-accent/10 placeholder:text-muted/40"
+                        />
+                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                      {focusNodeId && (
+                        <button
+                          onClick={() => setFocusNodeId(null)}
+                          className="px-3 py-2.5 rounded-xl border border-[var(--glass-border)] bg-[var(--surface-raised)] text-[11px] font-black uppercase tracking-widest text-foreground hover:bg-[var(--surface)] transition-all"
+                        >
+                          Clear Focus
+                        </button>
+                      )}
+                    </div>
+
                     {/* Topology Canvas */}
-                    <TopologicalMap nodes={topologyNodes} />
+                    <TopologicalMap
+                      nodes={topologyNodes}
+                      searchQuery={topoSearch}
+                      onNodeSelect={(id) => setFocusNodeId(id)}
+                    />
 
                     {/* Legend */}
-                    <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-black/40 border border-white/5">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-muted/60">Legend</span>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-accent/30 border border-accent/50" /><span className="text-[9px] font-bold text-muted">Core Switch</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-purple-500/30 border border-purple-500/50" /><span className="text-[9px] font-bold text-muted">VLAN Segment</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-emerald-500/30 border border-emerald-500/50" /><span className="text-[9px] font-bold text-muted">Access Port</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-amber-500/30 border border-amber-500/50" /><span className="text-[9px] font-bold text-muted">Router</span></div>
+                    <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-[var(--surface-raised)] border border-[var(--glass-border)]">
+                      <span className="text-[11px] font-black uppercase tracking-widest text-muted/60">Legend</span>
+                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-accent/30 border border-accent/50" /><span className="text-[11px] font-bold text-muted">Core Switch</span></div>
+                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-purple-500/30 border border-purple-500/50" /><span className="text-[11px] font-bold text-muted">VLAN Segment</span></div>
+                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-emerald-500/30 border border-emerald-500/50" /><span className="text-[11px] font-bold text-muted">Access Port</span></div>
+                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-amber-500/30 border border-amber-500/50" /><span className="text-[11px] font-bold text-muted">Router</span></div>
                     </div>
                   </GlassCard>
                 )}

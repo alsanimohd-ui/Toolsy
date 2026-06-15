@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-01T18:21:03.192Z",
+  "generatedAt": "2026-06-15T20:29:26.051Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -175,7 +175,7 @@
     "clientPages": []
   },
   "designSystem": {
-    "cssVariableTokens": 48,
+    "cssVariableTokens": 52,
     "clampExpressions": [
       "1rem, 3vw, 2.5rem",
       "1.25rem, 4svh, 5rem",
@@ -215,6 +215,7 @@
       ".toolsy-portal-footer",
       ".toolsy-radial-scale",
       ".toolsy-section-title",
+      ".toolsy-skeleton",
       ".toolsy-textarea"
     ],
     "keyframes": [
@@ -224,11 +225,13 @@
       "shimmer",
       "fadeIn",
       "slideUp",
+      "skeleton",
       "core",
       "ambient"
     ],
     "responsiveBreakpoints": [
       "@media (max-width: 640px)",
+      "@media (prefers-reduced-motion: reduce)",
       "@media (prefers-reduced-motion: reduce)"
     ],
     "hasWorkspaceSystem": true,
