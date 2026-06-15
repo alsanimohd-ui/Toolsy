@@ -402,7 +402,7 @@ export default function ToolFooter({ title, subtitle, columns }: ToolFooterProps
   };
 
   return (
-    <section className="mt-16 pt-10 border-t border-white/5 flex flex-col gap-10">
+    <section className="mt-16 pt-10 border-t border-[var(--glass-border)] flex flex-col gap-10">
       
       {/* Dynamic Header */}
       <div className="flex flex-col gap-2 text-center md:text-left">
@@ -422,7 +422,7 @@ export default function ToolFooter({ title, subtitle, columns }: ToolFooterProps
           return (
             <GlassCard
               key={idx}
-              className={`flex flex-col gap-5 p-6 transition-all duration-300 ${styles.cardStyle}`}
+              className={`flex flex-col gap-5 transition-all duration-300 ${styles.cardStyle}`}
             >
               <div className={`flex items-center gap-3 ${styles.textColor}`}>
                 <Icon className="size-5 shrink-0" />
@@ -439,7 +439,7 @@ export default function ToolFooter({ title, subtitle, columns }: ToolFooterProps
       </div>
 
       {/* Maker-AI Premium Glassmorphic Corporate Branding Row */}
-      <div className="mt-4 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-[9px] font-black uppercase tracking-[0.35em] text-muted/50 bg-white/[0.01] dark:bg-black/10 backdrop-blur-md px-8 py-5 rounded-[20px] border border-white/5">
+      <div className="mt-4 pt-6 border-t border-[var(--glass-border)] flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] font-black uppercase tracking-[0.35em] text-muted/50 bg-[var(--surface)] backdrop-blur-md px-8 py-5 rounded-[20px] border border-[var(--glass-border)]">
         <span className="opacity-80">
           Engineered and Powered by maker-ai
         </span>

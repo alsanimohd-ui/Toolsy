@@ -15,7 +15,7 @@ const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
       <motion.div
         ref={ref}
         whileHover={hoverEffect ? { y: -3, scale: 1.005 } : undefined}
-        className={`toolsy-card ${hoverEffect ? "toolsy-card-hover" : ""} p-[var(--space-card)] ${className}`}
+        className={`toolsy-card ${hoverEffect ? "toolsy-card-hover" : ""} ${className}`}
       >
         {children}
       </motion.div>

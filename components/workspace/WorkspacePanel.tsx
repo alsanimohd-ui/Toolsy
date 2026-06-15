@@ -3,7 +3,6 @@
 import dynamic from "next/dynamic";
 import { useMemo, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2 } from "lucide-react";
 import { useWorkspace } from "./WorkspaceContext";
 
 /* ───────────────────────────────────────────────────────────────────── */
@@ -66,14 +65,13 @@ const TOOL_MODULES: Record<string, React.ComponentType> = {
 
 function ToolLoadingState({ name }: { name?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-4 text-muted/40">
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-      >
-        <Loader2 className="size-8" />
-      </motion.div>
-      <span className="text-[10px] font-black uppercase tracking-[0.3em]">
+    <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-6 p-8">
+      <div className="flex flex-col items-center gap-4 w-full max-w-md">
+        <div className="toolsy-skeleton w-full h-8 rounded-xl" />
+        <div className="toolsy-skeleton w-3/4 h-6 rounded-lg" />
+        <div className="toolsy-skeleton w-full h-40 rounded-2xl mt-4" />
+      </div>
+      <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted/40">
         {name ? `Loading ${name}…` : "Loading module…"}
       </span>
     </div>

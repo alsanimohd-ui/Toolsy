@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const VT_API_KEY = process.env.VIRUSTOTAL_API_KEY;
+const ANALYSIS_ID_REGEX = /^[a-zA-Z0-9\-]{1,128}$/;
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const id = params.id;
+
+  if (!ANALYSIS_ID_REGEX.test(id)) {
+    return NextResponse.json(
+      { error: "Invalid analysis ID format." },
+      { status: 400 }
+    );
+  }
 
   if (!VT_API_KEY) {
     return NextResponse.json(

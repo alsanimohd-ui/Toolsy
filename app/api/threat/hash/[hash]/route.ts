@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const VT_API_KEY = process.env.VIRUSTOTAL_API_KEY;
+const HASH_REGEX = /^[a-fA-F0-9]{32,64}$/;
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { hash: string } }
 ) {
   const hash = params.hash;
+
+  if (!HASH_REGEX.test(hash)) {
+    return NextResponse.json(
+      { error: "Invalid hash format. Must be a 32-64 character hexadecimal string." },
+      { status: 400 }
+    );
+  }
 
   if (!VT_API_KEY) {
     return NextResponse.json(

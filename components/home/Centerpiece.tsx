@@ -11,7 +11,6 @@ interface CenterpieceProps {
 }
 
 const SPRING_CRISP = { type: "spring" as const, stiffness: 340, damping: 28, mass: 0.6 };
-const SPRING_SOFT = { type: "spring" as const, stiffness: 180, damping: 22, mass: 0.8 };
 const EASE_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const categoryIcons: Record<CategoryId, React.ElementType> = {
@@ -20,18 +19,15 @@ const categoryIcons: Record<CategoryId, React.ElementType> = {
   "dev-automation": Code2,
 };
 
-// Orbital ring definitions
 const ORBITAL_RINGS = [
   { inset: "-52%", duration: 38, reverse: false, dashArray: "2 7", opacity: 0.18 },
   { inset: "-38%", duration: 52, reverse: true, dashArray: "1 14", opacity: 0.12 },
-  { inset: "-24%", duration: 29, reverse: false, dashArray: "3 5", opacity: 0.22 },
-  { inset: "-14%", duration: 18, reverse: true, dashArray: "2 9", opacity: 0.16 },
 ];
 
 export default function Centerpiece({ activeSegment }: CenterpieceProps) {
   const activeCategory = activeSegment ? toolCategories[activeSegment] : null;
-  const activeColor = activeCategory?.color ?? "#0eb3ba";
-  const activeGlow = activeCategory?.glowColor ?? "rgba(14, 179, 186, 0.5)";
+  const activeColor = activeCategory?.color ?? "var(--accent)";
+  const activeGlow = activeCategory?.glowColor ?? "var(--accent-glow)";
   const CategoryIcon = activeSegment ? categoryIcons[activeSegment] : Sparkles;
 
   const mouseX = useMotionValue(0);
@@ -72,12 +68,12 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
             active: { opacity: 0.5, scale: 1.06 },
             hover:  { opacity: 0.6, scale: 1.12 },
           }}
-          transition={SPRING_SOFT}
+          transition={SPRING_CRISP}
         >
           <div
             className="absolute inset-0 rounded-full"
             style={{
-              background: `radial-gradient(circle at 50% 50%, ${activeColor}55 0%, ${activeColor}22 40%, transparent 70%)`,
+              background: `radial-gradient(circle at 50% 50%, color-mix(in srgb, ${activeColor} 30%, transparent) 0%, color-mix(in srgb, ${activeColor} 10%, transparent) 40%, transparent 70%)`,
               filter: "blur(40px)",
             }}
           />
@@ -93,7 +89,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
             animate={{ rotate: ring.reverse ? -360 : 360 }}
             transition={{ duration: ring.duration, repeat: Infinity, ease: "linear" }}
           >
-            <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" fill="none">
+            <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" fill="none" aria-hidden="true">
               <circle
                 cx="50" cy="50" r="48"
                 stroke={i === 0 ? activeColor : "var(--cp-ring-base)"}
@@ -109,10 +105,11 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
         <motion.div
           className="relative z-10 flex h-full w-full items-center justify-center overflow-hidden rounded-full cursor-pointer"
           style={{
-            background: "rgba(10, 10, 20, 0.6)",
+            background: "var(--cp-glass-bg)",
+            boxShadow: "var(--cp-glass-shadow)",
+            border: `1px solid color-mix(in srgb, ${activeColor} 25%, transparent)`,
             backdropFilter: "blur(24px) saturate(180%)",
-            boxShadow: `inset 0 0 40px ${activeColor}20, 0 0 20px rgba(0,0,0,0.5)`,
-            border: `1px solid ${activeColor}40`
+            WebkitBackdropFilter: "blur(24px) saturate(180%)",
           }}
           variants={{
             rest:   { scale: 1 },
@@ -121,53 +118,46 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
           }}
           transition={SPRING_CRISP}
         >
-          {/* Base globe texture (dotted point cloud) */}
+          {/* Core pulsing energy */}
           <motion.div
-            className="absolute inset-0 rounded-full pointer-events-none opacity-40"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 180, repeat: Infinity, ease: "linear" }}
-            style={{
-              backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.4) 1px, transparent 1px)",
-              backgroundSize: "8px 8px",
-              maskImage: "radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)"
+            className="absolute inset-0 rounded-full pointer-events-none"
+            style={{ background: `radial-gradient(circle, ${activeColor}66 0%, transparent 60%)` }}
+            animate={{
+              scale: activeSegment ? [0.8, 1.1, 0.8] : [0.9, 1.05, 0.9],
+              opacity: activeSegment ? [0.6, 1, 0.6] : [0.4, 0.7, 0.4],
             }}
+            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
           />
 
-          {/* Wireframe Rotating Holographic Globe */}
+          {/* Rotating wireframe globe */}
           <motion.div
-            className="absolute inset-0"
+            className="absolute inset-0 pointer-events-none"
             style={{ x: innerX, y: innerY }}
           >
-            <motion.svg 
-              viewBox="0 0 100 100" 
+            <motion.svg
+              viewBox="0 0 100 100"
               className="absolute inset-0 w-full h-full opacity-50"
               animate={{ rotate: -360 }}
               transition={{ duration: 80, repeat: Infinity, ease: "linear" }}
+              aria-hidden="true"
             >
               <g stroke={activeColor} strokeWidth="0.5" fill="none">
-                {/* Latitudes */}
                 <ellipse cx="50" cy="50" rx="46" ry="46" />
                 <ellipse cx="50" cy="50" rx="46" ry="32" />
                 <ellipse cx="50" cy="50" rx="46" ry="16" />
-                {/* Longitudes */}
                 <ellipse cx="50" cy="50" rx="32" ry="46" />
                 <ellipse cx="50" cy="50" rx="16" ry="46" />
                 <line x1="50" y1="4" x2="50" y2="96" />
                 <line x1="4" y1="50" x2="96" y2="50" />
               </g>
             </motion.svg>
-            
-            {/* Core pulsing energy */}
-            <motion.div
-              className="absolute inset-0 rounded-full"
-              style={{ background: `radial-gradient(circle, ${activeColor}66 0%, transparent 60%)` }}
-              animate={{
-                scale: activeSegment ? [0.8, 1.1, 0.8] : [0.9, 1.05, 0.9],
-                opacity: activeSegment ? [0.6, 1, 0.6] : [0.4, 0.7, 0.4],
-              }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-            />
           </motion.div>
+
+          {/* Refraction highlight */}
+          <div
+            className="absolute inset-0 rounded-full pointer-events-none opacity-30 dark:opacity-20"
+            style={{ background: "var(--cp-glass-refract)" }}
+          />
 
           {/* Hero Typography */}
           <motion.div
@@ -185,18 +175,18 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
               >
                 <motion.span
                   className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: activeColor, boxShadow: `0 0 10px ${activeGlow}` }}
+                  style={{ background: `color-mix(in srgb, ${activeColor} 100%, transparent)`, boxShadow: `0 0 10px ${activeGlow}` }}
                   animate={{ opacity: [0.5, 1, 0.5] }}
                   transition={{ duration: 1.5, repeat: Infinity }}
                 />
-                <span className="font-bold uppercase tracking-[0.3em] text-white/80 text-[9px]">
+                <span className="font-bold uppercase tracking-[0.3em] text-[var(--content-secondary)] text-[11px]">
                   {activeCategory ? activeCategory.shortLabel : "ENTER"}
                 </span>
               </motion.div>
             </AnimatePresence>
 
             <motion.h1
-              className="font-black text-white"
+              className="font-black text-[var(--content-primary)]"
               style={{
                 fontSize: "clamp(2rem, 5vw, 4rem)",
                 lineHeight: 1,
@@ -212,7 +202,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
 
             <motion.div
               className="my-3 w-12 h-1 rounded-full"
-              style={{ background: activeColor, boxShadow: `0 0 10px ${activeGlow}` }}
+              style={{ background: `color-mix(in srgb, ${activeColor} 100%, transparent)`, boxShadow: `0 0 10px ${activeGlow}` }}
               initial={{ opacity: 0, scaleX: 0 }}
               animate={{ opacity: 1, scaleX: 1 }}
               transition={{ delay: 0.3, duration: 0.7 }}
@@ -232,7 +222,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
               ) : (
                 <motion.p
                   key="cta"
-                  className="font-bold uppercase tracking-[0.25em] text-white/50 text-[10px]"
+                  className="font-bold uppercase tracking-[0.25em] text-[var(--content-muted)] text-[11px]"
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
@@ -243,30 +233,6 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
             </AnimatePresence>
           </motion.div>
         </motion.div>
-
-        {/* Energy particles */}
-        {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
-          const angle = (i / 8) * 360;
-          const orbitRadius = 55;
-          const x = Math.cos(((angle - 90) * Math.PI) / 180) * orbitRadius;
-          const y = Math.sin(((angle - 90) * Math.PI) / 180) * orbitRadius;
-          return (
-            <motion.div
-              key={i}
-              className="absolute rounded-full pointer-events-none"
-              style={{
-                width: 3, height: 3,
-                left: `calc(50% + ${x}%)`,
-                top: `calc(50% + ${y}%)`,
-                background: i % 2 === 0 ? activeColor : "#fff",
-                boxShadow: `0 0 10px ${i % 2 === 0 ? activeGlow : "#fff"}`,
-                x: "-50%", y: "-50%",
-              }}
-              animate={{ opacity: [0, 0.8, 0], scale: [0.5, 1.5, 0.5] }}
-              transition={{ duration: 3 + i * 0.4, delay: i * 0.3, repeat: Infinity }}
-            />
-          );
-        })}
       </motion.div>
     </Link>
   );

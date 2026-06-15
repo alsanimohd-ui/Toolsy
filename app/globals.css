@@ -30,6 +30,12 @@
   --radius-card: clamp(1rem, 1.8vw, 1.5rem);
   --home-footer-block: clamp(3.5rem, 9svh, 5.25rem);
 
+  /* Semantic Content Tokens - Light */
+  --content-primary: #0f172a;
+  --content-secondary: #475569;
+  --content-muted: #94a3b8;
+  --surface-overlay: rgba(255, 255, 255, 0.7);
+
   /* Component Tokens - Light */
   --card-bg: #ffffff;
   --card-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
@@ -85,6 +91,12 @@
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-shadow: rgba(0, 0, 0, 0.3);
   --glass-blur: 24px;
+
+  /* Semantic Content Tokens - Dark */
+  --content-primary: #f8fafc;
+  --content-secondary: #cbd5e1;
+  --content-muted: #64748b;
+  --surface-overlay: rgba(0, 0, 0, 0.45);
 
   /* Component Tokens - Dark */
   --card-bg: rgba(0, 0, 0, 0.45);
@@ -227,7 +239,7 @@ body {
   }
 
   .toolsy-kicker {
-    @apply text-[10px] font-black uppercase tracking-[0.42em] text-accent;
+    @apply text-[11px] font-black uppercase tracking-[0.42em] text-accent;
   }
 
   .toolsy-page-title {
@@ -247,12 +259,12 @@ body {
   }
 
   .toolsy-meta {
-    @apply text-[10px] font-black uppercase tracking-[0.22em] text-muted;
+    @apply text-[11px] font-black uppercase tracking-[0.22em] text-muted;
   }
 
   .toolsy-card {
     border-radius: var(--radius-card);
-    @apply border border-border backdrop-blur-xl transition-all duration-300;
+    @apply border border-border backdrop-blur-xl transition-all duration-300 p-[var(--space-card)];
     background-color: var(--card-bg);
     box-shadow: var(--card-shadow);
   }
@@ -403,21 +415,23 @@ body {
   }
 
   .glass-deep {
-    background: rgba(10, 10, 20, 0.75);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px 0 var(--glass-shadow);
   }
 
   .glass-premium {
     background: linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.12) 0%,
-      rgba(255, 255, 255, 0.04) 100%
+      color-mix(in srgb, var(--glass-bg) 70%, var(--content-primary)) 0%,
+      var(--glass-bg) 100%
     );
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px 0 var(--glass-shadow);
   }
 
   /* ── KEYFRAMES ─────────────────────────────────────────── */
@@ -450,6 +464,11 @@ body {
   @keyframes slideUp {
     from { opacity: 0; transform: translate(-50%, 0.5rem); }
     to { opacity: 1; transform: translate(-50%, 0); }
+  }
+
+  @keyframes skeleton-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
   }
 
   /* Core breathing — ambient life pulse */
@@ -508,6 +527,29 @@ body {
       animation-iteration-count: 1 !important;
       scroll-behavior: auto !important;
     }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  .toolsy-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--surface-raised) 0%,
+      var(--surface) 40%,
+      var(--surface-raised) 80%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: var(--radius-card);
   }
 
   /* ═══════════════════════════════════════════════════════ */

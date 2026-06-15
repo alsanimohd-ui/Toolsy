@@ -121,10 +121,9 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
   const labelOffsetX = 50 * Math.cos(rad);
   const labelOffsetY = 50 * Math.sin(rad);
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation();
     if (!isVisible) return;
-    // External tools (e.g. jsonlego) open in a new tab
     if (tool.route.startsWith("http")) {
       window.open(tool.route, "_blank", "noopener,noreferrer");
     } else {
@@ -132,11 +131,19 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleClick(e);
+    }
+  };
+
   return (
     <motion.g
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={handleClick}
+        onMouseLeave={() => setHovered(false)}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
       initial={false}
       animate={{
         opacity: isVisible ? 1 : 0,
@@ -150,6 +157,9 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
         delay: isVisible ? idx * 0.05 : 0,
       }}
       style={{ pointerEvents: isVisible ? "auto" : "none", cursor: isVisible ? "pointer" : "default" }}
+      role="button"
+      aria-label={tool.name}
+      tabIndex={isVisible ? 0 : -1}
     >
       {/* Hitbox circle for easier grabbing */}
       <circle cx={pos.x} cy={pos.y} r={R + 25} fill="transparent" className="cursor-pointer" />
@@ -256,7 +266,7 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
       transition={{ duration: 1.5, ease: EASE_EXPO }}
       className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-visible"
     >
-      <svg viewBox="0 0 1000 1000" className="h-full w-full pointer-events-auto overflow-visible">
+      <svg viewBox="0 0 1000 1000" className="h-full w-full pointer-events-auto overflow-visible" role="navigation" aria-label="Tool categories and tools">
         <defs>
           {segments.map((s) => {
             const lPath = s.labelFlip ? arc(CX, CY, LABEL_R, s.e - 5, s.s + 5, 0) : arc(CX, CY, LABEL_R, s.s + 5, s.e - 5);
@@ -279,7 +289,9 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
 
           return (
             <g 
-              key={s.id} 
+              key={s.id}
+              role="group"
+              aria-label={s.label} 
               onMouseEnter={() => {
                 setHoveredArc(s.id as CategoryId);
                 onActiveSegmentChange?.(s.id as CategoryId);
@@ -355,7 +367,8 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
                     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
                     fill: isActive ? "#fff" : "rgba(255,255,255,0.5)",
                   }}
-                >
+> 
+                <title>{s.label}</title>
                   <textPath href={`#lp-${s.id}`} startOffset="50%" textAnchor="middle" dominantBaseline="middle">
                     {s.label}
                   </textPath>

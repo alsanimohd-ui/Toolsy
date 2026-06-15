@@ -60,14 +60,14 @@ function ToolItem({
         onClick={handleClick}
         whileHover={{ x: 2 }}
         transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        className={`
-          group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
-          text-left transition-all duration-200 text-xs
-          ${isActive
-            ? "bg-accent/15 text-accent font-black border border-accent/25"
-            : "text-muted hover:text-foreground hover:bg-white/5 font-semibold border border-transparent"
-          }
-        `}
+className={`
+            group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
+            text-left transition-all duration-200 text-xs
+            ${isActive
+              ? "bg-accent/15 text-accent font-black border border-accent/25 shadow-[0_0_12px_var(--accent-glow)]"
+              : "text-muted hover:text-foreground hover:bg-[var(--surface)] font-semibold border border-transparent"
+            }
+          `}
         title={collapsed ? tool.name : tool.name}
         aria-label={tool.name}
         aria-current={isActive ? "page" : undefined}
@@ -76,7 +76,7 @@ function ToolItem({
       {isActive && (
         <motion.div
           layoutId="active-tool-indicator"
-          className="absolute left-0 inset-y-2 w-0.5 rounded-full bg-accent"
+          className="absolute left-0 inset-y-2 w-1 rounded-full bg-accent"
           transition={{ type: "spring", stiffness: 500, damping: 30 }}
         />
       )}
@@ -87,10 +87,10 @@ function ToolItem({
           shrink-0 flex items-center justify-center rounded-lg
           text-[9px] font-black tracking-wider transition-all duration-200
           ${collapsed ? "size-8" : "size-6"}
-          ${isActive
-            ? "bg-accent/20 text-accent"
-            : "bg-white/5 text-muted group-hover:bg-white/10 group-hover:text-foreground"
-          }
+${isActive
+                ? "bg-accent/20 text-accent"
+                : "bg-[var(--surface)] text-muted group-hover:bg-[var(--surface-raised)] group-hover:text-foreground"
+              }
         `}
       >
         {tool.icon}
@@ -165,7 +165,7 @@ function CategorySection({
           style={{
             backgroundColor: isExpanded || hasActiveChild
               ? `${category.color}20`
-              : "rgba(255,255,255,0.04)",
+              : "var(--surface)",
             color: isExpanded || hasActiveChild
               ? category.color
               : undefined,
@@ -200,7 +200,7 @@ function CategorySection({
               transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
               className="overflow-hidden pl-3"
             >
-              <div className="flex flex-col gap-0.5 pt-0.5 pb-1 border-l border-white/5 pl-3 ml-3.5">
+              <div className="flex flex-col gap-0.5 pt-0.5 pb-1 border-l border-[var(--glass-border)] pl-3 ml-3.5">
                 {categoryTools.map((tool) => (
                   <ToolItem
                     key={tool.slug}
@@ -273,8 +273,8 @@ export default function WorkspaceSidebar({
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
         className={`
           relative flex flex-col h-full shrink-0
-          border-r border-white/5
-          bg-black/20 backdrop-blur-xl
+          border-r border-[var(--glass-border)]
+          bg-[var(--surface-overlay)] backdrop-blur-xl
           overflow-hidden
           max-md:fixed max-md:left-0 max-md:top-0 max-md:z-40 max-md:h-dvh
           ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}
@@ -284,10 +284,10 @@ export default function WorkspaceSidebar({
       <div ref={focusTrapRef} className="flex flex-col h-full">
       {/* ── Header ── */}
       <div
-        className={`
-          flex items-center h-14 px-3 shrink-0
-          border-b border-white/5
-          ${sidebarCollapsed ? "justify-center" : "justify-between"}
+className={`
+           flex items-center h-14 px-3 shrink-0
+           border-b border-[var(--glass-border)]
+           ${sidebarCollapsed ? "justify-center" : "justify-between"}
         `}
       >
         {!sidebarCollapsed && (
@@ -326,8 +326,8 @@ export default function WorkspaceSidebar({
             group flex items-center gap-3 w-full px-3 py-2.5 rounded-xl
             transition-all duration-200 border
             ${!activeTool
-              ? "bg-accent/15 text-accent font-black border-accent/25"
-              : "text-muted hover:text-foreground hover:bg-white/5 font-semibold border-transparent"
+              ? "bg-accent/15 text-accent font-black border-accent/25 shadow-[0_0_12px_var(--accent-glow)]"
+              : "text-muted hover:text-foreground hover:bg-[var(--surface)] font-semibold border-transparent"
             }
           `}
           title={sidebarCollapsed ? "All Modules" : undefined}
@@ -345,7 +345,7 @@ export default function WorkspaceSidebar({
         </button>
 
         {/* Divider */}
-        <div className="my-1 h-px bg-white/5" />
+        <div className="my-1 h-px bg-[var(--glass-border)]" />
 
         {/* Categories */}
         {categoryList.map((cat) => (
@@ -360,10 +360,10 @@ export default function WorkspaceSidebar({
 
       {/* ── Footer ── */}
       {!sidebarCollapsed && (
-        <div className="shrink-0 px-3 pb-4 pt-2 border-t border-white/5">
+        <div className="shrink-0 px-3 pb-4 pt-2 border-t border-[var(--glass-border)]">
           <div className="flex items-center gap-2">
             <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-muted/40 truncate">
+            <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted/40 truncate">
               Systems Nominal
             </span>
           </div>
@@ -375,7 +375,7 @@ export default function WorkspaceSidebar({
       <button
         data-sidebar-close
         onClick={onMobileClose}
-        className="absolute top-3 right-3 z-50 flex md:hidden items-center justify-center size-8 rounded-xl text-muted hover:text-foreground hover:bg-white/5 transition-all"
+        className="absolute top-3 right-3 z-50 flex md:hidden items-center justify-center size-8 rounded-xl text-muted hover:text-foreground hover:bg-[var(--surface)] transition-all"
         aria-label="Close sidebar"
       >
         <X className="size-4" />

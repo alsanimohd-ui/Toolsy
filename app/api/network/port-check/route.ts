@@ -1,6 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
 import net from "net";
 import dgram from "dgram";
+import { promises as dns } from "dns";
+import {
+  isPrivateIP,
+  isPrivateHostname,
+  isIPv4Literal,
+  isPrivateIPv6,
+  normalizeHost,
+} from "@/lib/ssrf-utils";
+
+async function validateHost(rawHost: string): Promise<{ blocked: boolean; reason?: string }> {
+  const host = normalizeHost(rawHost);
+
+  if (isPrivateHostname(host)) {
+    return { blocked: true, reason: "Scanning local/loopback addresses is not allowed" };
+  }
+
+  if (isIPv4Literal(host) && isPrivateIP(host)) {
+    return { blocked: true, reason: "Scanning private/reserved IP ranges is not allowed" };
+  }
+
+  if (host.includes(":") && isPrivateIPv6(host)) {
+    return { blocked: true, reason: "Scanning private/reserved IPv6 ranges is not allowed" };
+  }
+
+  try {
+    const v4Addresses = await dns.resolve4(host);
+    for (const addr of v4Addresses) {
+      if (isPrivateIP(addr)) {
+        return { blocked: true, reason: "Target host resolves to a private/reserved address" };
+      }
+    }
+  } catch {
+    // DNS resolution failed — port scan will likely fail too
+  }
+
+  try {
+    const v6Addresses = await dns.resolve6(host);
+    for (const addr of v6Addresses) {
+      if (isPrivateIPv6(addr)) {
+        return { blocked: true, reason: "Target host resolves to a private/reserved address" };
+      }
+    }
+  } catch {
+    // DNS resolution failed — port scan will likely fail too
+  }
+
+  return { blocked: false };
+}
 
 interface ScanResult {
   host: string;
@@ -130,9 +178,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No valid ports specified." }, { status: 400 });
     }
 
-    // Limit to 100 ports per request
     if (portList.length > 100) {
       return NextResponse.json({ error: "Maximum 100 ports per request." }, { status: 400 });
+    }
+
+    const hostValidation = await validateHost(host);
+    if (hostValidation.blocked) {
+      return NextResponse.json({ error: hostValidation.reason }, { status: 403 });
     }
 
     const protocolType = protocol === "udp" ? "udp" : "tcp";

@@ -28,6 +28,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
 import { calculateEntropy, extractIOCs, extractPrintableStrings, detectMimeTypeFromMagic } from "@/lib/threat-analysis";
+import forge from "node-forge";
 
 /* ─────────────────────────────────────────────
    Types & Interfaces
@@ -96,7 +97,10 @@ export default function ThreatInspectorClient() {
 
       const sha256 = await hashBuffer("SHA-256");
       const sha1 = await hashBuffer("SHA-1");
-      const md5 = await hashBuffer("MD5");
+      const md5 = forge.md.md5.create()
+        .update(forge.util.binary.raw.encode(new Uint8Array(buffer)))
+        .digest()
+        .toHex();
 
       // Entropy & IOCs
       const entropy = calculateEntropy(buffer);

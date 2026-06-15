@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ipToNum, isPrivateIP, isPrivateHostname, isIPv4Literal } from "@/lib/ssrf-utils";
+import { ipToNum, isPrivateIP, isPrivateHostname, isIPv4Literal, isPrivateIPv6, normalizeHost } from "@/lib/ssrf-utils";
 
 describe("ssrf-utils", () => {
   describe("ipToNum", () => {
@@ -67,9 +67,100 @@ describe("ssrf-utils", () => {
       expect(isPrivateIP("142.250.80.46")).toBe(false);
     });
 
-    it("skips IPv6 addresses", () => {
-      expect(isPrivateIP("::1")).toBe(false);
+    it("detects new reserved IPv4 ranges", () => {
+      expect(isPrivateIP("100.64.0.1")).toBe(true);
+      expect(isPrivateIP("100.127.255.254")).toBe(true);
+      expect(isPrivateIP("192.0.0.1")).toBe(true);
+      expect(isPrivateIP("192.0.2.1")).toBe(true);
+      expect(isPrivateIP("198.51.100.1")).toBe(true);
+      expect(isPrivateIP("203.0.113.1")).toBe(true);
+      expect(isPrivateIP("198.18.0.1")).toBe(true);
+      expect(isPrivateIP("224.0.0.1")).toBe(true);
+      expect(isPrivateIP("240.0.0.1")).toBe(true);
+    });
+
+    it("detects private IPv6 addresses", () => {
+      expect(isPrivateIP("::1")).toBe(true);
+      expect(isPrivateIP("::")).toBe(true);
+      expect(isPrivateIP("fe80::1")).toBe(true);
+      expect(isPrivateIP("fc00::1")).toBe(true);
+      expect(isPrivateIP("fd00::1")).toBe(true);
+      expect(isPrivateIP("ff00::1")).toBe(true);
+    });
+
+    it("allows public IPv6 addresses", () => {
       expect(isPrivateIP("2001:db8::1")).toBe(false);
+      expect(isPrivateIP("2607:f8b0:4004:800::200e")).toBe(false);
+    });
+
+    it("allows public IPs", () => {
+      expect(isPrivateIP("8.8.8.8")).toBe(false);
+      expect(isPrivateIP("1.1.1.1")).toBe(false);
+      expect(isPrivateIP("142.250.80.46")).toBe(false);
+    });
+  });
+
+  describe("isPrivateIPv6", () => {
+    it("detects loopback ::1", () => {
+      expect(isPrivateIPv6("::1")).toBe(true);
+    });
+
+    it("detects unspecified ::", () => {
+      expect(isPrivateIPv6("::")).toBe(true);
+    });
+
+    it("detects bracketed ::1", () => {
+      expect(isPrivateIPv6("[::1]")).toBe(true);
+    });
+
+    it("detects link-local fe80::/10", () => {
+      expect(isPrivateIPv6("fe80::1")).toBe(true);
+      expect(isPrivateIPv6("fe80::ff:fe00:1")).toBe(true);
+    });
+
+    it("detects unique local fc00::/7", () => {
+      expect(isPrivateIPv6("fc00::1")).toBe(true);
+      expect(isPrivateIPv6("fd00::1")).toBe(true);
+      expect(isPrivateIPv6("fd12:3456:7890::1")).toBe(true);
+    });
+
+    it("detects multicast ff00::/8", () => {
+      expect(isPrivateIPv6("ff00::1")).toBe(true);
+      expect(isPrivateIPv6("ff02::1")).toBe(true);
+    });
+
+    it("detects IPv4-mapped private addresses", () => {
+      expect(isPrivateIPv6("::ffff:127.0.0.1")).toBe(true);
+      expect(isPrivateIPv6("::ffff:10.0.0.1")).toBe(true);
+      expect(isPrivateIPv6("::ffff:192.168.1.1")).toBe(true);
+    });
+
+    it("allows IPv4-mapped public addresses", () => {
+      expect(isPrivateIPv6("::ffff:8.8.8.8")).toBe(false);
+    });
+
+    it("allows public IPv6 addresses", () => {
+      expect(isPrivateIPv6("2001:db8::1")).toBe(false);
+      expect(isPrivateIPv6("2607:f8b0:4004:800::200e")).toBe(false);
+    });
+  });
+
+  describe("normalizeHost", () => {
+    it("lowercases hostnames", () => {
+      expect(normalizeHost("Google.COM")).toBe("google.com");
+    });
+
+    it("trims whitespace", () => {
+      expect(normalizeHost("  example.com  ")).toBe("example.com");
+    });
+
+    it("strips brackets from IPv6 literals", () => {
+      expect(normalizeHost("[::1]")).toBe("::1");
+      expect(normalizeHost("[fe80::1]")).toBe("fe80::1");
+    });
+
+    it("leaves IPv4 literals unchanged", () => {
+      expect(normalizeHost("192.168.1.1")).toBe("192.168.1.1");
     });
   });
 
@@ -88,6 +179,17 @@ describe("ssrf-utils", () => {
 
     it("detects ::1", () => {
       expect(isPrivateHostname("::1")).toBe(true);
+    });
+
+    it("detects cloud metadata hostnames", () => {
+      expect(isPrivateHostname("metadata.google.internal")).toBe(true);
+      expect(isPrivateHostname("metadata.azure.internal")).toBe(true);
+    });
+
+    it("detects IPv6 loopback hostnames", () => {
+      expect(isPrivateHostname("[::1]")).toBe(true);
+      expect(isPrivateHostname("ip6-localhost")).toBe(true);
+      expect(isPrivateHostname("ip6-loopback")).toBe(true);
     });
 
     it("allows public hostnames", () => {

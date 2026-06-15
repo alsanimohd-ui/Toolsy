@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const VT_API_KEY = process.env.VIRUSTOTAL_API_KEY;
+const MAX_FILE_SIZE = 32 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   if (!VT_API_KEY) {
@@ -16,6 +17,13 @@ export async function POST(request: NextRequest) {
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `File exceeds maximum size of ${MAX_FILE_SIZE / 1024 / 1024}MB.` },
+        { status: 413 }
+      );
     }
 
     // Proxy the file to VirusTotal
