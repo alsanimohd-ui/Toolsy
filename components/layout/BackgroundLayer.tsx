@@ -21,8 +21,8 @@ export default function BackgroundLayer() {
         style={{
           background: `
             radial-gradient(ellipse 72% 60% at 50% 46%, var(--atmos-core-glow) 0%, transparent 62%),
-            radial-gradient(ellipse 45% 38% at 18% 22%, rgba(59,130,246,0.06) 0%, transparent 58%),
-            radial-gradient(ellipse 42% 36% at 82% 26%, rgba(239,68,68,0.04) 0%, transparent 55%)
+            radial-gradient(ellipse 45% 38% at 18% 22%, var(--atmos-dot) 0%, transparent 58%),
+            radial-gradient(ellipse 42% 36% at 82% 26%, var(--atmos-dot) 0%, transparent 55%)
           `,
         }}
       />

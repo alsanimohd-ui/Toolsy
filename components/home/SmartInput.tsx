@@ -57,18 +57,18 @@ export default function SmartInput({ onTypeDetected }: SmartInputProps) {
     <div className="w-full max-w-2xl mx-auto flex flex-col gap-4 px-6 relative z-30">
       <div className="relative group">
         {/* Glow Background - Reduced for clarity */}
-        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-purple-500 to-red-500 rounded-2xl blur-xl opacity-5 group-focus-within:opacity-10 transition duration-1000"></div>
+        <div className="absolute -inset-1 bg-gradient-to-r from-accent/20 via-purple-500/20 to-accent/20 rounded-2xl blur-xl opacity-5 group-focus-within:opacity-10 transition duration-1000"></div>
         
-        <div className="relative flex items-center bg-[var(--surface-overlay)] backdrop-blur-2xl border border-[var(--glass-border)] rounded-2xl px-6 py-4 shadow-2xl" style={{ boxShadow: "var(--card-shadow)" }}>
-          <Search className="w-5 h-5 text-[var(--content-muted)] mr-3" />
+        <div className="relative flex items-center bg-surface-overlay backdrop-blur-2xl border border-border-subtle rounded-2xl px-6 py-4" style={{ boxShadow: "var(--card-shadow)" }}>
+          <Search className="w-5 h-5 text-muted mr-3" />
           <input
             type="text"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Paste anything... JSON, logs, SSL, CSV..."
-            className="flex-1 bg-transparent border-none outline-none text-[var(--content-primary)] placeholder:text-[var(--content-muted)] text-sm font-medium"
+            className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:text-muted text-sm font-medium"
           />
-          <div className="flex items-center gap-2 text-[11px] font-bold text-[var(--content-muted)] bg-[var(--surface)] px-2 py-1 rounded-md border border-[var(--glass-border)]">
+          <div className="flex items-center gap-2 text-[11px] font-bold text-muted bg-surface px-2 py-1 rounded-md border border-border-subtle">
             <Sparkles className="w-3 h-3" />
             SMART ENGINE
           </div>
@@ -81,21 +81,21 @@ export default function SmartInput({ onTypeDetected }: SmartInputProps) {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="flex items-center justify-between p-4 rounded-xl bg-[var(--surface-overlay)] border border-[var(--glass-border)] backdrop-blur-md"
+            className="flex items-center justify-between p-4 rounded-xl bg-surface-overlay border border-border-subtle backdrop-blur-md"
           >
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-[var(--accent)]/20 flex items-center justify-center border border-[var(--accent)]/30">
-                <Sparkles className="w-4 h-4 text-[var(--accent)]" />
+<div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center border border-accent/30">
+              <Sparkles className="w-4 h-4 text-accent" />
               </div>
               <div className="flex flex-col">
-                <span className="text-[11px] text-[var(--content-muted)] font-bold uppercase tracking-widest">Matched System</span>
-                <span className="text-sm font-bold text-[var(--content-primary)]">Detected: {suggestion.name}</span>
+                <span className="text-[11px] text-muted font-bold uppercase tracking-widest">Matched System</span>
+                <span className="text-sm font-bold text-foreground">Detected: {suggestion.name}</span>
               </div>
             </div>
             <Link
               href={suggestion.route}
               target={suggestion.isExternal ? "_blank" : undefined}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-xs font-bold hover:bg-[var(--accent-hover)] transition-all shadow-lg shadow-[var(--accent-glow)]/20"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white text-xs font-bold hover:bg-accent-hover transition-all shadow-lg shadow-accent-glow"
             >
               Open Tool
               <ArrowRight className="w-3 h-3" />

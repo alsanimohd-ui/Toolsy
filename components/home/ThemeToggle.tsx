@@ -29,7 +29,7 @@ export default function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <div className="fixed top-6 right-6 md:top-8 md:right-8 z-50 flex items-center gap-3 px-4 py-2 rounded-full border border-border bg-white/70 dark:bg-black/30 backdrop-blur-xl h-[42px] w-[110px] opacity-0" />
+      <div className="fixed top-6 right-6 md:top-8 md:right-8 z-50 flex items-center gap-3 px-4 py-2 rounded-full border border-border bg-surface-overlay backdrop-blur-xl h-[42px] w-[110px] opacity-0" />
     );
   }
 
@@ -39,8 +39,8 @@ export default function ThemeToggle() {
       whileTap={{ scale: 0.95 }}
       onClick={toggleTheme}
       className="fixed top-6 right-6 md:top-8 md:right-8 z-50 flex items-center gap-3 px-4 py-2 rounded-full 
-        border border-border bg-white/70 dark:bg-black/30 backdrop-blur-xl 
-        shadow-[0_14px_40px_var(--card-shadow)] transition-all hover:border-accent/35 hover:bg-white/90 dark:hover:bg-black/45 group"
+        border border-border bg-surface-overlay backdrop-blur-xl 
+        shadow-[0_14px_40px_var(--card-shadow)] transition-all hover:border-accent/35 hover:bg-surface-raised group"
     >
       <div className="relative w-5 h-5 flex items-center justify-center">
         {theme === "dark" ? (

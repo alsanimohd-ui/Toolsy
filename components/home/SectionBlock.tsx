@@ -19,16 +19,16 @@ export function ToolCard({ tool, color }: ToolCardProps) {
       target={isExternal ? "_blank" : undefined}
       className="group relative block transition-all"
     >
-      <GlassCard className="p-6 h-full flex flex-col gap-4 border-slate-200/60 dark:border-white/5 hover:border-accent/40">
+      <GlassCard className="p-6 h-full flex flex-col gap-4 border-border-subtle hover:border-accent/40">
         <div className="flex items-start justify-between">
           <div 
-            className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border border-border-subtle bg-surface group-hover:bg-accent/5 transition-all shadow-inner"
+            className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border border-border-subtle bg-surface group-hover:bg-accent/5 transition-all"
             style={{ borderColor: `${color}44` }}
           >
             {tool.icon}
           </div>
           {isExternal && (
-            <span className="text-[10px] font-black tracking-widest text-muted uppercase border border-border-subtle px-2 py-1 rounded">
+            <span className="text-[10px] font-black tracking-widest text-muted uppercase border border-border-subtle px-2 py-1 rounded-md">
               External
             </span>
           )}

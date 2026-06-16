@@ -65,7 +65,7 @@ className={`
             text-left transition-all duration-200 text-xs
             ${isActive
               ? "bg-accent/15 text-accent font-black border border-accent/25 shadow-[0_0_12px_var(--accent-glow)]"
-              : "text-muted hover:text-foreground hover:bg-[var(--surface)] font-semibold border border-transparent"
+              : "text-muted hover:text-foreground hover:bg-surface font-semibold border border-transparent"
             }
           `}
         title={collapsed ? tool.name : tool.name}
@@ -89,7 +89,7 @@ className={`
           ${collapsed ? "size-8" : "size-6"}
 ${isActive
                 ? "bg-accent/20 text-accent"
-                : "bg-[var(--surface)] text-muted group-hover:bg-[var(--surface-raised)] group-hover:text-foreground"
+                : "bg-surface text-muted group-hover:bg-surface-raised group-hover:text-foreground"
               }
         `}
       >
@@ -165,7 +165,7 @@ function CategorySection({
           style={{
             backgroundColor: isExpanded || hasActiveChild
               ? `${category.color}20`
-              : "var(--surface)",
+              : "var(--surface-raised)",
             color: isExpanded || hasActiveChild
               ? category.color
               : undefined,
@@ -200,7 +200,7 @@ function CategorySection({
               transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
               className="overflow-hidden pl-3"
             >
-              <div className="flex flex-col gap-0.5 pt-0.5 pb-1 border-l border-[var(--glass-border)] pl-3 ml-3.5">
+              <div className="flex flex-col gap-0.5 pt-0.5 pb-1 border-l border-border-subtle pl-3 ml-3.5">
                 {categoryTools.map((tool) => (
                   <ToolItem
                     key={tool.slug}
@@ -273,8 +273,8 @@ export default function WorkspaceSidebar({
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
         className={`
           relative flex flex-col h-full shrink-0
-          border-r border-[var(--glass-border)]
-          bg-[var(--surface-overlay)] backdrop-blur-xl
+          border-r border-border-subtle
+          bg-surface-overlay backdrop-blur-xl
           overflow-hidden
           max-md:fixed max-md:left-0 max-md:top-0 max-md:z-40 max-md:h-dvh
           ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}
@@ -286,7 +286,7 @@ export default function WorkspaceSidebar({
       <div
 className={`
            flex items-center h-14 px-3 shrink-0
-           border-b border-[var(--glass-border)]
+           border-b border-border-subtle
            ${sidebarCollapsed ? "justify-center" : "justify-between"}
         `}
       >
@@ -297,7 +297,7 @@ className={`
             className="flex items-center gap-2"
           >
             <MiIcon className="size-4 shrink-0" />
-            <span className="text-[10px] font-black uppercase tracking-[0.28em] text-muted/70">
+            <span className="text-[10px] font-black uppercase tracking-[0.28em] text-muted">
               Mi Workspace
             </span>
           </motion.div>
@@ -306,7 +306,7 @@ className={`
         {/* Collapse toggle */}
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="flex items-center justify-center size-8 rounded-lg text-muted hover:text-foreground hover:bg-white/5 transition-all shrink-0"
+          className="flex items-center justify-center size-8 rounded-lg text-muted hover:text-foreground hover:bg-surface transition-all shrink-0"
           title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {sidebarCollapsed ? (
@@ -327,7 +327,7 @@ className={`
             transition-all duration-200 border
             ${!activeTool
               ? "bg-accent/15 text-accent font-black border-accent/25 shadow-[0_0_12px_var(--accent-glow)]"
-              : "text-muted hover:text-foreground hover:bg-[var(--surface)] font-semibold border-transparent"
+              : "text-muted hover:text-foreground hover:bg-surface font-semibold border-transparent"
             }
           `}
           title={sidebarCollapsed ? "All Modules" : undefined}
@@ -345,7 +345,7 @@ className={`
         </button>
 
         {/* Divider */}
-        <div className="my-1 h-px bg-[var(--glass-border)]" />
+        <div className="my-1 h-px bg-border-subtle" />
 
         {/* Categories */}
         {categoryList.map((cat) => (
@@ -360,10 +360,10 @@ className={`
 
       {/* ── Footer ── */}
       {!sidebarCollapsed && (
-        <div className="shrink-0 px-3 pb-4 pt-2 border-t border-[var(--glass-border)]">
+        <div className="shrink-0 px-3 pb-4 pt-2 border-t border-border-subtle">
           <div className="flex items-center gap-2">
             <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted/40 truncate">
+            <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted truncate">
               Systems Nominal
             </span>
           </div>
@@ -375,7 +375,7 @@ className={`
       <button
         data-sidebar-close
         onClick={onMobileClose}
-        className="absolute top-3 right-3 z-50 flex md:hidden items-center justify-center size-8 rounded-xl text-muted hover:text-foreground hover:bg-[var(--surface)] transition-all"
+        className="absolute top-3 right-3 z-50 flex md:hidden items-center justify-center size-8 rounded-xl text-muted hover:text-foreground hover:bg-surface transition-all"
         aria-label="Close sidebar"
       >
         <X className="size-4" />

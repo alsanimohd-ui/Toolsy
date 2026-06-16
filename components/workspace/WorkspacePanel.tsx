@@ -71,7 +71,7 @@ function ToolLoadingState({ name }: { name?: string }) {
         <div className="toolsy-skeleton w-3/4 h-6 rounded-lg" />
         <div className="toolsy-skeleton w-full h-40 rounded-2xl mt-4" />
       </div>
-      <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted/40">
+      <span className="toolsy-meta">
         {name ? `Loading ${name}…` : "Loading module…"}
       </span>
     </div>

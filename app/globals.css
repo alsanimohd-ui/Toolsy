@@ -3,23 +3,23 @@
 @tailwind utilities;
 
 :root {
-  /* Clean Bright Surfaces - Day Mode */
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --surface: #f8fafc;
-  --surface-raised: #f1f5f9;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --border-subtle: #cbd5e1;
-  
+  /* Layered Neutral Surfaces — Day Mode */
+  --background: #f5f5f7;
+  --foreground: #1d1d20;
+  --surface: #ededf0;
+  --surface-raised: #ffffff;
+  --muted: #71717a;
+  --border: #e4e4e8;
+  --border-subtle: #ededf0;
+
   --accent: #0eb3ba;
   --accent-rgb: 14, 179, 186;
   --accent-hover: #0c9da3;
   --accent-glow: rgba(14, 179, 186, 0.12);
 
   /* Semantic Glass Tokens - Light */
-  --glass-bg: rgba(255, 255, 255, 0.94);
-  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(0, 0, 0, 0.06);
   --glass-shadow: rgba(0, 0, 0, 0.04);
   --glass-blur: 20px;
 
@@ -31,44 +31,44 @@
   --home-footer-block: clamp(3.5rem, 9svh, 5.25rem);
 
   /* Semantic Content Tokens - Light */
-  --content-primary: #0f172a;
-  --content-secondary: #475569;
-  --content-muted: #94a3b8;
-  --surface-overlay: rgba(255, 255, 255, 0.7);
+  --content-primary: #1d1d20;
+  --content-secondary: #52525b;
+  --content-muted: #a1a1aa;
+  --surface-overlay: rgba(0, 0, 0, 0.03);
 
   /* Component Tokens - Light */
   --card-bg: #ffffff;
-  --card-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
   --card-hover-bg: #ffffff;
-  --card-hover-shadow: 0 20px 40px rgba(37, 99, 235, 0.08);
-  --panel-shadow: 0 8px 30px rgba(15, 23, 42, 0.03);
-  --input-bg: #f8fafc;
+  --card-hover-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02);
+  --input-bg: #ededf0;
   --input-focus-bg: #ffffff;
-  
+
   /* Atmospheric Tokens - Light */
   --atmos-core-glow: rgba(37, 99, 235, 0.03);
   --atmos-core-fade: transparent;
-  --atmos-ring: rgba(15, 23, 42, 0.02);
-  --atmos-dot: rgba(15, 23, 42, 0.06);
+  --atmos-ring: rgba(0, 0, 0, 0.02);
+  --atmos-dot: rgba(0, 0, 0, 0.06);
   --atmos-beam: rgba(37, 99, 235, 0.04);
   --atmos-beam-fade: transparent;
   --atmos-vignette-edge: transparent;
-  --atmos-vignette-shadow: rgba(15, 23, 42, 0.01);
+  --atmos-vignette-shadow: rgba(0, 0, 0, 0.01);
 
   /* Centerpiece Glass - Light */
   --cp-glass-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.60) 0%, rgba(255, 255, 255, 0.20) 50%, rgba(0, 0, 0, 0.02) 100%);
-  --cp-glass-shadow: 0 40px 120px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.6), 0 0 0 2px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.80), inset 0 -1px 0 rgba(15, 23, 42, 0.05), inset 0 0 60px rgba(255, 255, 255, 0.40);
+  --cp-glass-shadow: 0 40px 120px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.6), 0 0 0 2px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.80), inset 0 -1px 0 rgba(0, 0, 0, 0.05), inset 0 0 60px rgba(255, 255, 255, 0.40);
   --cp-glass-refract: radial-gradient(ellipse 75% 50% at 38% 22%, rgba(255, 255, 255, 0.7) 0%, transparent 60%);
-  --cp-mesh-color: rgba(15, 23, 42, 0.15);
-  --cp-ring-base: rgba(15, 23, 42, 0.8);
-  
+  --cp-mesh-color: rgba(0, 0, 0, 0.15);
+  --cp-ring-base: rgba(0, 0, 0, 0.8);
+
   /* Radial Menu Tokens - Light */
-  --rm-track-bg: rgba(15, 23, 42, 0.04);
-  --rm-track-border: rgba(15, 23, 42, 0.08);
-  --rm-edge: rgba(15, 23, 42, 0.25);
+  --rm-track-bg: rgba(0, 0, 0, 0.04);
+  --rm-track-border: rgba(0, 0, 0, 0.08);
+  --rm-edge: rgba(0, 0, 0, 0.25);
   --rm-node-bg: rgba(255, 255, 255, 0.85);
-  --rm-node-border: rgba(15, 23, 42, 0.1);
-  --rm-node-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
+  --rm-node-border: rgba(0, 0, 0, 0.1);
+  --rm-node-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
 .dark {
@@ -168,7 +168,7 @@ body {
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur)) saturate(180%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px 0 var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 }
 
@@ -287,16 +287,15 @@ body {
   }
 
   .toolsy-input {
-    @apply w-full rounded-2xl border border-border-subtle px-4 py-3 text-sm font-medium text-foreground outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply w-full rounded-xl border border-border-subtle px-4 py-2.5 text-sm font-medium text-foreground outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
     background-color: var(--input-bg);
-    border-color: rgba(var(--accent-rgb), 0.15);
+    border-color: var(--border-subtle);
   }
-  
+
   .toolsy-input:focus {
     background-color: var(--input-focus-bg);
-    @apply ring-4 ring-white/10;
     border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 55%, transparent);
-    --tw-ring-color: var(--category-glow, var(--accent-glow));
+    box-shadow: 0 0 0 3px var(--category-glow, var(--accent-glow));
   }
 
   /* ──────────────────────────────────────────────────────────── */
@@ -371,10 +370,12 @@ body {
   }
 
   .toolsy-button-secondary {
-    @apply border border-border-subtle bg-white/[0.68] text-foreground hover:-translate-y-0.5 hover:bg-white/[0.88] hover:text-accent-hover dark:bg-white/5 dark:hover:bg-white/[0.08];
+    @apply border border-border-subtle text-foreground hover:-translate-y-0.5 hover:text-accent-hover;
+    background-color: var(--surface);
   }
 
   .toolsy-button-secondary:hover {
+    background-color: var(--surface-raised);
     border-color: color-mix(in srgb, var(--category-accent, var(--accent)) 45%, transparent);
   }
 
@@ -388,6 +389,142 @@ body {
 
   .toolsy-empty-state {
     @apply toolsy-panel flex flex-col items-center justify-center p-8 text-center text-muted;
+  }
+
+  /* ═══════════════════════════════════════════════════════ */
+  /* UNIFIED COMPONENT UTILITIES                            */
+  /* ═══════════════════════════════════════════════════════ */
+
+  /* ── Badge / Tag ─────────────────────────────────────── */
+
+  .toolsy-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .toolsy-badge-sm { font-size: 10px; padding: 1px 6px; }
+  .toolsy-badge-lg { font-size: 11px; padding: 4px 12px; }
+
+  /* ── Empty State ─────────────────────────────────────── */
+
+  .toolsy-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 5rem 1.5rem;
+    gap: 0.75rem;
+    border: 2px dashed var(--glass-border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+  }
+
+  .toolsy-empty-icon { width: 48px; height: 48px; opacity: 0.4; }
+  .toolsy-empty-title { font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; }
+  .toolsy-empty-desc { font-size: 11px; font-weight: 500; }
+
+  /* ── Table ───────────────────────────────────────────── */
+
+  .toolsy-table { width: 100%; border-collapse: collapse; }
+
+  .toolsy-table-head {
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 0.5rem 1rem;
+    background: var(--surface-overlay);
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .toolsy-table-row {
+    border-bottom: 1px solid var(--glass-border);
+    transition: background 0.15s ease;
+  }
+
+  .toolsy-table-row:hover { background: var(--surface-overlay); }
+
+  .toolsy-table-cell { padding: 0.75rem 1rem; }
+
+  /* ── Tab / Toggle Group ──────────────────────────────── */
+
+  .toolsy-tab-group {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    background: var(--input-bg);
+    border-radius: 10px;
+  }
+
+  .toolsy-tab {
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--content-muted);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    white-space: nowrap;
+  }
+
+  .toolsy-tab:hover { color: var(--content-primary); }
+
+  .toolsy-tab-active {
+    background: var(--surface-raised);
+    color: var(--content-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  /* ── Loading State ───────────────────────────────────── */
+
+  .toolsy-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 5rem 1.5rem;
+    text-align: center;
+  }
+
+  @keyframes toolsy-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .toolsy-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--glass-border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: toolsy-spin 0.8s linear infinite;
+  }
+
+  .toolsy-loading-title {
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+  }
+
+  .toolsy-loading-desc {
+    font-size: 11px;
+    font-weight: 500;
   }
 
   /* ═══════════════════════════════════════════════════════ */

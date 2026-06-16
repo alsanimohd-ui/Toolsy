@@ -21,7 +21,7 @@ function WorkspaceShell({ children }: { children: ReactNode }) {
       <button
         ref={hamburgerRef}
         onClick={() => setMobileSidebarOpen((v) => !v)}
-        className="fixed top-3 left-3 z-50 flex md:hidden items-center justify-center size-9 rounded-xl bg-black/40 backdrop-blur-xl border border-white/10 text-muted hover:text-foreground transition-colors"
+        className="fixed top-3 left-3 z-50 flex md:hidden items-center justify-center size-9 rounded-xl bg-surface-overlay backdrop-blur-xl border border-border-subtle text-muted hover:text-foreground transition-colors"
         aria-label={mobileSidebarOpen ? "Close menu" : "Open menu"}
       >
         {mobileSidebarOpen ? <X className="size-4" /> : <Menu className="size-4" />}
