@@ -28,6 +28,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
 import { PORT_ENCYCLOPEDIA, PortIntelligence } from "@/lib/port-intelligence";
+import { parseClientPorts, scanPortLocally } from "@/lib/local-port-scanner";
 
 /* ─────────────────────────────────────────────
    Types & Interfaces
@@ -110,6 +111,33 @@ export default function PortCheckerClient() {
         });
         const data = await res.json();
         setScanResult(data);
+      } else {
+        const parsed = parseClientPorts(portInput);
+        if (protocol === "udp") {
+          const results: ScanResult[] = parsed.map(p => ({
+            host,
+            port: p,
+            protocol: "udp",
+            status: "ERROR",
+            latency: 0,
+            message: "UDP scanning is not supported in browser-local mode."
+          }));
+          setScanResult({ host, protocol: "udp", results });
+        } else {
+          const results: ScanResult[] = [];
+          for (const p of parsed) {
+            const res = await scanPortLocally(host, p, timeoutMs);
+            results.push({
+              host: res.host,
+              port: res.port,
+              protocol: res.protocol,
+              status: res.status as any,
+              latency: res.latency,
+              message: res.message
+            });
+          }
+          setScanResult({ host, protocol: "tcp", results });
+        }
       }
     } catch {
       // ignore

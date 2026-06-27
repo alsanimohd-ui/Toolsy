@@ -1,43 +1,9 @@
 import { NextResponse } from "next/server";
-import { promises as dns } from "dns";
-import { isPrivateIP, isPrivateHostname, isIPv4Literal } from "@/lib/ssrf-utils";
+import { validateTarget } from "@/lib/ssrf-utils";
 
 async function validateUrl(targetUrl: string): Promise<string | null> {
-  let parsed: URL;
-  try {
-    parsed = new URL(targetUrl);
-  } catch {
-    return "Invalid URL format";
-  }
-
-  const { protocol, hostname } = parsed;
-
-  if (protocol !== "http:" && protocol !== "https:") {
-    return `Protocol "${protocol}" is not allowed. Only HTTP/HTTPS are permitted.`;
-  }
-
-  const host = hostname.toLowerCase();
-
-  if (isPrivateHostname(host)) {
-    return "Requests to local/loopback addresses are not allowed";
-  }
-
-  if (isIPv4Literal(host) && isPrivateIP(host)) {
-    return "Requests to private IP ranges are not allowed";
-  }
-
-  try {
-    const addresses = await dns.resolve4(host);
-    for (const addr of addresses) {
-      if (isPrivateIP(addr)) {
-        return `Target resolves to a private IP (${addr})`;
-      }
-    }
-  } catch {
-    // DNS resolution failed — the request will fail downstream
-  }
-
-  return null;
+  const result = await validateTarget(targetUrl, { allowedProtocols: ["http:", "https:"] });
+  return result.allowed ? null : result.reason || "SSRF validation failed";
 }
 
 export async function POST(req: Request) {
