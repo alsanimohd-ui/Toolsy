@@ -74,7 +74,7 @@ const PRESETS: Preset[] = [
   { port: 8080, label: "HTTP-ALT", desc: "Alternative Web Server" },
 ];
 
-const STATUS_FILTERS = ["ALL", "OPEN", "CLOSED", "TIMEOUT", "UNREACHABLE"] as const;
+const STATUS_FILTERS = ["ALL", "OPEN", "CLOSED", "TIMEOUT", "UNREACHABLE", "ERROR"] as const;
 
 /* ─────────────────────────────────────────────
    Component
@@ -120,7 +120,7 @@ export default function PortCheckerClient() {
             protocol: "udp",
             status: "ERROR",
             latency: 0,
-            message: "UDP scanning is not supported in browser-local mode."
+            message: "UDP scanning is not supported in browser-local mode. The browser sandbox environment lacks raw UDP socket capabilities."
           }));
           setScanResult({ host, protocol: "udp", results });
         } else {
@@ -131,7 +131,7 @@ export default function PortCheckerClient() {
               host: res.host,
               port: res.port,
               protocol: res.protocol,
-              status: res.status as any,
+              status: res.status as ScanResult["status"],
               latency: res.latency,
               message: res.message
             });
@@ -199,6 +199,7 @@ export default function PortCheckerClient() {
       case "CLOSED": return { color: "text-red-400", bg: "bg-red-500/10", icon: XCircle, border: "border-red-500/20" };
       case "TIMEOUT": return { color: "text-amber-400", bg: "bg-amber-500/10", icon: Clock, border: "border-amber-500/20" };
       case "UNREACHABLE": return { color: "text-red-400", bg: "bg-red-500/10", icon: AlertTriangle, border: "border-red-500/20" };
+      case "ERROR": return { color: "text-rose-500", bg: "bg-rose-500/10", icon: AlertTriangle, border: "border-rose-500/20" };
       default: return { color: "text-muted", bg: "bg-white/5", icon: AlertTriangle, border: "border-white/10" };
     }
   };
@@ -344,6 +345,18 @@ export default function PortCheckerClient() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {scanMode === "local" && protocol === "udp" && (
+              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10 flex items-start gap-3">
+                <AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">UDP Scan Unsupported Locally</span>
+                  <p className="text-[11px] text-amber-200/60 font-medium leading-relaxed">
+                    UDP scanning is technically unsupported inside browser sandboxes. The browser sandbox environment lacks raw UDP socket capabilities.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <button 
               onClick={handleScan}

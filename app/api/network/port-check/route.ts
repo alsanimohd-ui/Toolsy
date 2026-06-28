@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import net from "net";
 import dgram from "dgram";
-import { promises as dns } from "dns";
 import { validateTarget } from "@/lib/ssrf-utils";
 
 async function validateHost(rawHost: string): Promise<{ blocked: boolean; reason?: string }> {

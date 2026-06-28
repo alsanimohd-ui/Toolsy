@@ -60,11 +60,12 @@ export async function scanPortLocally(
       latency,
       message: `Connection established (local prober resolved in ${latency}ms)`,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(id);
     const latency = Date.now() - start;
 
-    if (err.name === "AbortError" || err.message?.includes("aborted")) {
+    const error = err as Error;
+    if (error.name === "AbortError" || error.message?.includes("aborted")) {
       return {
         host,
         port,
