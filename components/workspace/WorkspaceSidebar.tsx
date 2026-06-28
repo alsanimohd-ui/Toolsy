@@ -16,6 +16,7 @@ import { categoryList, tools, type CategoryId, type Tool } from "@/lib/tools";
 import { useWorkspace } from "./WorkspaceContext";
 import { MiIcon } from "@/components/ui/MiLogo";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import ThemeToggle from "@/components/home/ThemeToggle";
 
 /* ───────────────────────────────────────────────────────────────────── */
 /*  Category Icon Map                                                    */
@@ -357,16 +358,17 @@ className={`
       </nav>
 
       {/* ── Footer ── */}
-      {!sidebarCollapsed && (
-        <div className="shrink-0 px-3 pb-4 pt-2 border-t border-border-subtle">
-          <div className="flex items-center gap-2">
+      <div className="shrink-0 px-3 pb-4 pt-2 border-t border-border-subtle flex flex-col gap-2">
+        {!sidebarCollapsed && (
+          <div className="flex items-center gap-2 px-1">
             <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted truncate">
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted truncate">
               Systems Nominal
             </span>
           </div>
-        </div>
-      )}
+        )}
+        <ThemeToggle inline={true} collapsed={sidebarCollapsed} />
+      </div>
     </div>
     {/* Mobile close button */}
     {mobileOpen && (
