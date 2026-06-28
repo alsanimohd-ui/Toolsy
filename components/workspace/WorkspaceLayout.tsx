@@ -5,6 +5,7 @@ import { Menu, X } from "lucide-react";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceContext";
 import WorkspaceSidebar from "@/components/workspace/WorkspaceSidebar";
 import WorkspacePanel from "@/components/workspace/WorkspacePanel";
+import QuickSwitcher from "@/components/workspace/QuickSwitcher";
 
 /* ───────────────────────────────────────────────────────────────────── */
 /*  Workspace Shell                                                      */
@@ -38,6 +39,9 @@ function WorkspaceShell({ children }: { children: ReactNode }) {
 
       {/* Right: Dynamic tool panel */}
       <WorkspacePanel>{children}</WorkspacePanel>
+
+      {/* Quick command switcher switcher */}
+      <QuickSwitcher />
     </div>
   );
 }

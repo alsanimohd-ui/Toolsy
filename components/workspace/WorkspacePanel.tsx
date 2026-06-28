@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { useMemo, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWorkspace } from "./WorkspaceContext";
+import { tools, getCategory } from "@/lib/tools";
+import { X } from "lucide-react";
 
 /* ───────────────────────────────────────────────────────────────────── */
 /*  Lazy-loaded Tool Map                                                 */
@@ -88,7 +90,7 @@ interface WorkspacePanelProps {
 }
 
 export default function WorkspacePanel({ children }: WorkspacePanelProps) {
-  const { activeTool } = useWorkspace();
+  const { activeTool, openTools, openTool, closeTool } = useWorkspace();
 
   // Memoize the component reference to avoid re-creating on every render
   const ToolComponent = useMemo(() => {
@@ -97,32 +99,88 @@ export default function WorkspacePanel({ children }: WorkspacePanelProps) {
   }, [activeTool?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div id="main-content" role="main" className="workspace-panel relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-      <AnimatePresence mode="wait" initial={false}>
-        {activeTool && ToolComponent ? (
-          <motion.div
-            key={activeTool.slug}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-          >
-            <Suspense fallback={<ToolLoadingState name={activeTool.slug} />}>
-              <ToolComponent />
-            </Suspense>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="tools-grid"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-          >
-            {children}
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="flex flex-col h-full overflow-hidden w-full relative">
+      {/* Dynamic Tab Bar */}
+      {openTools.length > 0 && (
+        <div className="flex items-center w-full h-11 border-b border-border-subtle bg-slate-900/40 backdrop-blur-xl shrink-0 overflow-x-auto overflow-y-hidden select-none z-20">
+          {openTools.map((t) => {
+            const toolData = tools.find(tool => tool.slug === t.slug);
+            const category = getCategory(t.categoryId);
+            const isActive = activeTool?.slug === t.slug;
+            
+            return (
+              <div
+                key={t.slug}
+                onClick={() => openTool(t)}
+                className={`flex items-center gap-2 h-full px-4 border-r border-border-subtle cursor-pointer transition-all relative group text-[10px] font-black uppercase tracking-wider ${
+                  isActive
+                    ? "bg-white/[0.02] text-white"
+                    : "text-muted hover:text-foreground hover:bg-white/[0.01]"
+                }`}
+              >
+                {/* Active indicator bar */}
+                {isActive && (
+                  <motion.div
+                    layoutId="active-tab-line"
+                    className="absolute bottom-0 left-0 right-0 h-0.5"
+                    style={{ backgroundColor: category?.color || "var(--accent)" }}
+                  />
+                )}
+                
+                {/* Icon */}
+                <span className="opacity-70 group-hover:opacity-100 transition-opacity">
+                  {toolData?.icon || "⚙️"}
+                </span>
+                
+                {/* Label */}
+                <span className="truncate max-w-[120px]">
+                  {toolData?.name || t.slug}
+                </span>
+                
+                {/* Close Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTool(t.slug);
+                  }}
+                  className="flex items-center justify-center size-4 rounded-md hover:bg-white/10 text-muted hover:text-foreground transition-colors ml-1"
+                >
+                  <X className="size-2.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Content panel */}
+      <div id="main-content" role="main" className="workspace-panel relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+        <AnimatePresence mode="wait" initial={false}>
+          {activeTool && ToolComponent ? (
+            <motion.div
+              key={activeTool.slug}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            >
+              <Suspense fallback={<ToolLoadingState name={activeTool.slug} />}>
+                <ToolComponent />
+              </Suspense>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="tools-grid"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            >
+              {children}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

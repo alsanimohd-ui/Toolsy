@@ -95,24 +95,46 @@ export default function PortCheckerClient() {
   const [sortAsc, setSortAsc] = useState(true);
   const [showResultsTable, setShowResultsTable] = useState(true);
 
+  // Real-time scan states
+  const [currentScanningPort, setCurrentScanningPort] = useState<number | null>(null);
+  const [localScanProgress, setLocalScanProgress] = useState<number>(0);
+  const [totalToScan, setTotalToScan] = useState<number>(0);
+  const [scanningResults, setScanningResults] = useState<ScanResult[]>([]);
+
   const handleScan = async () => {
     if (!host || !portInput) return;
     
     setIsScanning(true);
     setScanResult(null);
+    setScanningResults([]);
     setSelectedPort(null);
+    setCurrentScanningPort(null);
+    setLocalScanProgress(0);
 
     try {
       if (scanMode === "remote") {
-        const res = await fetch("/api/network/port-check", {
+        const parsed = parseClientPorts(portInput);
+        setTotalToScan(parsed.length);
+        
+        // Start API fetch
+        const apiPromise = fetch("/api/network/port-check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ host, port: portInput, protocol, timeout: timeoutMs }),
-        });
-        const data = await res.json();
+        }).then(res => res.json());
+
+        // Increment scan progress visually
+        for (let i = 0; i < parsed.length; i++) {
+          setCurrentScanningPort(parsed[i]);
+          setLocalScanProgress(i + 1);
+          await new Promise(r => setTimeout(r, Math.min(80, 800 / parsed.length)));
+        }
+
+        const data = await apiPromise;
         setScanResult(data);
       } else {
         const parsed = parseClientPorts(portInput);
+        setTotalToScan(parsed.length);
         if (protocol === "udp") {
           const results: ScanResult[] = parsed.map(p => ({
             host,
@@ -122,19 +144,27 @@ export default function PortCheckerClient() {
             latency: 0,
             message: "UDP scanning is not supported in browser-local mode. The browser sandbox environment lacks raw UDP socket capabilities."
           }));
+          setScanningResults(results);
           setScanResult({ host, protocol: "udp", results });
         } else {
           const results: ScanResult[] = [];
-          for (const p of parsed) {
+          for (let i = 0; i < parsed.length; i++) {
+            const p = parsed[i];
+            setCurrentScanningPort(p);
+            setLocalScanProgress(i + 1);
+            
             const res = await scanPortLocally(host, p, timeoutMs);
-            results.push({
+            const intermediateResult: ScanResult = {
               host: res.host,
               port: res.port,
               protocol: res.protocol,
               status: res.status as ScanResult["status"],
               latency: res.latency,
               message: res.message
-            });
+            };
+            results.push(intermediateResult);
+            // Append intermediate result so UI renders it immediately
+            setScanningResults([...results]);
           }
           setScanResult({ host, protocol: "tcp", results });
         }
@@ -143,6 +173,7 @@ export default function PortCheckerClient() {
       // ignore
     } finally {
       setIsScanning(false);
+      setCurrentScanningPort(null);
     }
   };
 
@@ -159,9 +190,15 @@ export default function PortCheckerClient() {
     }
   };
 
+  const displayResults = useMemo(() => {
+    if (isScanning && scanMode === "local") {
+      return scanningResults;
+    }
+    return scanResult ? scanResult.results : [];
+  }, [isScanning, scanMode, scanningResults, scanResult]);
+
   const filteredResults = useMemo(() => {
-    if (!scanResult) return [];
-    let results = scanResult.results;
+    let results = displayResults;
     if (statusFilter !== "ALL") {
       results = results.filter(r => r.status === statusFilter);
     }
@@ -173,7 +210,7 @@ export default function PortCheckerClient() {
       return sortAsc ? cmp : -cmp;
     });
     return results;
-  }, [scanResult, statusFilter, sortField, sortAsc]);
+  }, [displayResults, statusFilter, sortField, sortAsc]);
 
   const toggleSort = (field: "port" | "latency" | "status") => {
     if (sortField === field) {
@@ -189,9 +226,9 @@ export default function PortCheckerClient() {
     return PORT_ENCYCLOPEDIA[selectedPort] || null;
   }, [selectedPort]);
 
-  const openCount = useMemo(() => scanResult?.results.filter(r => r.status === "OPEN").length || 0, [scanResult]);
-  const closedCount = useMemo(() => scanResult?.results.filter(r => r.status === "CLOSED").length || 0, [scanResult]);
-  const timeoutCount = useMemo(() => scanResult?.results.filter(r => r.status === "TIMEOUT").length || 0, [scanResult]);
+  const openCount = useMemo(() => displayResults.filter(r => r.status === "OPEN").length || 0, [displayResults]);
+  const closedCount = useMemo(() => displayResults.filter(r => r.status === "CLOSED").length || 0, [displayResults]);
+  const timeoutCount = useMemo(() => displayResults.filter(r => r.status === "TIMEOUT").length || 0, [displayResults]);
 
   const getStatusInfo = (status: string) => {
     switch (status) {
@@ -368,6 +405,82 @@ export default function PortCheckerClient() {
             </button>
           </GlassCard>
         </section>
+
+        {/* Real-time scan visualizer timeline */}
+        {(isScanning || displayResults.length > 0) && (
+          <section className="flex flex-col gap-4">
+            <div className="flex items-center justify-between ml-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-accent/70 flex items-center gap-2">
+                <Activity className="size-4 animate-pulse" /> Radar Scan Feed
+              </span>
+              {isScanning && (
+                <span className="text-[9px] font-mono text-muted/60 uppercase">
+                  Checking port <span className="text-accent font-black">:{currentScanningPort}</span> ({localScanProgress}/{totalToScan})
+                </span>
+              )}
+            </div>
+            
+            <GlassCard className="p-6 flex flex-col gap-6 relative overflow-hidden">
+              {/* Progress bar */}
+              {isScanning && (
+                <div className="absolute top-0 left-0 right-0 h-1 bg-white/5">
+                  <motion.div
+                    className="h-full bg-accent"
+                    initial={{ width: "0%" }}
+                    animate={{ width: `${(localScanProgress / totalToScan) * 100}%` }}
+                    transition={{ ease: "easeInOut", duration: 0.1 }}
+                  />
+                </div>
+              )}
+              
+              {/* Port Matrix Grid */}
+              <div className="flex flex-wrap gap-2.5 max-h-36 overflow-y-auto p-1 custom-scrollbar">
+                {parseClientPorts(portInput).map((portNum) => {
+                  const res = displayResults.find(r => r.port === portNum);
+                  const isCurrent = currentScanningPort === portNum;
+                  
+                  let bg = "bg-white/[0.02] border-white/5 text-muted/40";
+                  let border = "border-white/5";
+                  let text = "text-muted/40";
+                  
+                  if (res) {
+                    if (res.status === "OPEN") {
+                      bg = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]";
+                      border = "border-emerald-500/30";
+                      text = "text-emerald-400";
+                    } else if (res.status === "CLOSED") {
+                      bg = "bg-red-500/10 text-red-400 border-red-500/25";
+                      border = "border-red-500/25";
+                      text = "text-red-400";
+                    } else if (res.status === "TIMEOUT") {
+                      bg = "bg-amber-500/10 text-amber-400 border-amber-500/25";
+                      border = "border-amber-500/25";
+                      text = "text-amber-400";
+                    } else {
+                      bg = "bg-rose-500/10 text-rose-400 border-rose-500/25";
+                      border = "border-rose-500/25";
+                      text = "text-rose-400";
+                    }
+                  } else if (isCurrent) {
+                    bg = "bg-accent/20 border-accent text-accent animate-pulse shadow-[0_0_12px_var(--accent-glow)]";
+                    border = "border-accent";
+                    text = "text-accent";
+                  }
+
+                  return (
+                    <div
+                      key={portNum}
+                      onClick={() => res && setSelectedPort(portNum)}
+                      className={`px-3 py-1.5 rounded-lg border text-[10px] font-mono font-black tracking-wider flex items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95 ${bg} ${border} ${text}`}
+                    >
+                      {portNum}
+                    </div>
+                  );
+                })}
+              </div>
+            </GlassCard>
+          </section>
+        )}
 
         {/* RESULTS SECTION */}
         <section className="flex flex-col gap-6">

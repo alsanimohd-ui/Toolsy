@@ -24,8 +24,12 @@ export interface ActiveTool {
 interface WorkspaceContextValue {
   /** Currently active tool, or null for the tools-grid view */
   activeTool: ActiveTool | null;
+  /** All currently open tools/tabs */
+  openTools: ActiveTool[];
   /** Switch to a tool — updates state + URL without full reload */
   openTool: (tool: ActiveTool) => void;
+  /** Close a specific tool/tab */
+  closeTool: (slug: string) => void;
   /** Return to the tools-grid default view */
   closeActiveTool: () => void;
   /** Currently expanded category in the sidebar */
@@ -77,6 +81,11 @@ export function WorkspaceProvider({
   }, [pathname]);
 
   const [activeTool, setActiveTool] = useState<ActiveTool | null>(initialTool ?? resolvedTool);
+  const [openTools, setOpenTools] = useState<ActiveTool[]>(() => {
+    const initial = initialTool ?? resolvedTool;
+    return initial ? [initial] : [];
+  });
+
   const [expandedCategory, setExpandedCategory] = useState<CategoryId | null>(
     (initialTool ?? resolvedTool)?.categoryId ?? null
   );
@@ -87,6 +96,10 @@ export function WorkspaceProvider({
     if (resolvedTool) {
       setActiveTool(resolvedTool);
       setExpandedCategory(resolvedTool.categoryId);
+      setOpenTools((prev) => {
+        if (prev.some((t) => t.slug === resolvedTool.slug)) return prev;
+        return [...prev, resolvedTool];
+      });
     } else if (pathname === "/tools") {
       setActiveTool(null);
     }
@@ -96,9 +109,34 @@ export function WorkspaceProvider({
     (tool: ActiveTool) => {
       setActiveTool(tool);
       setExpandedCategory(tool.categoryId);
+      setOpenTools((prev) => {
+        if (prev.some((t) => t.slug === tool.slug)) return prev;
+        return [...prev, tool];
+      });
       router.push(tool.route, { scroll: false });
     },
     [router]
+  );
+
+  const closeTool = useCallback(
+    (slug: string) => {
+      setOpenTools((prev) => {
+        const filtered = prev.filter((t) => t.slug !== slug);
+        // If we closed the active tool, switch active to another or null
+        if (activeTool?.slug === slug) {
+          if (filtered.length > 0) {
+            const nextActive = filtered[filtered.length - 1];
+            setActiveTool(nextActive);
+            router.push(nextActive.route, { scroll: false });
+          } else {
+            setActiveTool(null);
+            router.push("/tools", { scroll: false });
+          }
+        }
+        return filtered;
+      });
+    },
+    [activeTool, router]
   );
 
   const closeActiveTool = useCallback(() => {
@@ -110,7 +148,9 @@ export function WorkspaceProvider({
     <WorkspaceContext.Provider
       value={{
         activeTool,
+        openTools,
         openTool,
+        closeTool,
         closeActiveTool,
         expandedCategory,
         setExpandedCategory,
