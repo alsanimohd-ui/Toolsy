@@ -179,7 +179,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
                   animate={{ opacity: [0.5, 1, 0.5] }}
                   transition={{ duration: 1.5, repeat: Infinity }}
                 />
-                <span className="font-bold uppercase tracking-[0.3em] text-[var(--content-secondary)] text-[11px]">
+                <span className="font-bold uppercase tracking-[0.3em] text-[var(--content-secondary)] text-[13px]">
                   {activeCategory ? activeCategory.shortLabel : "ENTER"}
                 </span>
               </motion.div>
@@ -222,7 +222,7 @@ export default function Centerpiece({ activeSegment }: CenterpieceProps) {
               ) : (
                 <motion.p
                   key="cta"
-                  className="font-bold uppercase tracking-[0.25em] text-[var(--content-muted)] text-[11px]"
+                  className="font-bold uppercase tracking-[0.25em] text-[var(--content-muted)] text-[13px]"
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}

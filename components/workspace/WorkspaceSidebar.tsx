@@ -58,8 +58,6 @@ function ToolItem({
   return (
       <motion.button
         onClick={handleClick}
-        whileHover={{ x: 2 }}
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
 className={`
             group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
             text-left transition-all duration-200 text-xs

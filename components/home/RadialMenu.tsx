@@ -211,9 +211,9 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
 
       {/* Fanned-out Tool Name Label */}
       <foreignObject 
-        x={pos.x + labelOffsetX - 60} 
+        x={pos.x + labelOffsetX - 75} 
         y={pos.y + labelOffsetY - 16} 
-        width={120} 
+        width={150} 
         height={32} 
         className="overflow-visible pointer-events-auto cursor-pointer"
         onClick={handleClick}
@@ -225,7 +225,7 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
               opacity: isVisible ? 1 : 0,
               scale: isVisible ? (hovered ? 1.05 : 1) : 0.8,
             }}
-            className="px-3 py-1 rounded-md bg-black/80 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center transition-all duration-200 ease-in-out"
+            className="px-3 py-1 rounded-md bg-black/85 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center transition-all duration-200 ease-in-out"
             style={{
               boxShadow: hovered ? `0 0 12px ${color}2b` : "none",
               borderColor: hovered ? `${color}66` : "rgba(255,255,255,0.08)"
@@ -233,7 +233,7 @@ function ToolNode({ tool, color, isVisible, pos, idx }: ToolNodeProps) {
             transition={SPRING}
           >
             <span 
-              className="text-[9px] font-black text-white uppercase tracking-widest text-center leading-none whitespace-nowrap"
+              className="text-[11px] font-black text-white uppercase tracking-widest text-center leading-none whitespace-nowrap"
               style={{ textShadow: hovered ? `0 0 8px ${color}` : "none" }}
             >
               {tool.name}
@@ -279,7 +279,7 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
         </defs>
 
         {/* Outer Orbit Track */}
-        <circle cx={CX} cy={CY} r={NODE_R} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth={1} strokeDasharray="4 8" />
+        <circle cx={CX} cy={CY} r={NODE_R} fill="none" stroke="var(--rm-track-border)" strokeWidth={1} strokeDasharray="4 8" />
 
         {segments.map((s, sIdx) => {
           const isActive = active === s.id;
@@ -318,7 +318,7 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
               <motion.path
                 d={dArc}
                 fill="none"
-                stroke="rgba(255,255,255,0.02)"
+                stroke="var(--rm-track-bg)"
                 strokeWidth={ARC_WIDTH}
                 strokeLinecap="round"
                 animate={{ opacity: isFaded ? 0.4 : 1 }}
@@ -361,11 +361,11 @@ export default function RadialMenu({ activeSegment, onActiveSegmentChange }: Rad
               <motion.g animate={{ opacity: isActive ? 1 : 0.6 }}>
                 <text
                   style={{
-                    fontSize: "14px",
-                    fontWeight: 700,
+                    fontSize: "18px",
+                    fontWeight: 900,
                     letterSpacing: "0.25em",
                     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-                    fill: isActive ? "#fff" : "rgba(255,255,255,0.5)",
+                    fill: isActive ? "var(--foreground)" : "color-mix(in srgb, var(--foreground) 40%, transparent)",
                   }}
 > 
                 <title>{s.label}</title>

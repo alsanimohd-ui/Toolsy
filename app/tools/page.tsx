@@ -31,8 +31,6 @@ function ToolCard({ tool, categoryColor }: { tool: Tool; categoryColor: string }
 
   const content = (
     <motion.div
-      whileHover={{ y: -5, scale: 1.01 }}
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       className={`toolsy-card h-full flex flex-col p-8 group relative overflow-hidden transition-all duration-500 ${
         isActive ? "border-accent/60 shadow-[0_0_0_1px_var(--accent)]" : "hover:border-accent/40"
       }`}
@@ -192,12 +190,11 @@ export default function ToolsIndexPage() {
               href="/"
               className="flex items-center gap-2 px-4 h-14 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 transition-all group shrink-0"
             >
-              <motion.div
-                whileHover={{ x: -2 }}
+              <div
                 className="text-muted group-hover:text-white"
               >
                 <ArrowRight className="size-4 rotate-180" />
-              </motion.div>
+              </div>
               <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted group-hover:text-white">Portal</span>
             </Link>
 

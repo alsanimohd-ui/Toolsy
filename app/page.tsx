@@ -13,9 +13,14 @@ export default function HomePage() {
   const [activeSegment, setActiveSegment] = useState<CategoryId | null>(null);
 
   return (
-    <main className="toolsy-home-shell relative overflow-hidden bg-[#020205]">
+    <main className="toolsy-home-shell relative overflow-hidden">
       {/* Premium Sci-Fi Grid Mesh Pattern */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] opacity-40 z-0 pointer-events-none" />
+      <div 
+        className="absolute inset-0 bg-[size:4.5rem_4.5rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] opacity-40 z-0 pointer-events-none" 
+        style={{
+          backgroundImage: "linear-gradient(to right, var(--grid-line) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px)"
+        }}
+      />
 
       {/* Drifting Soft Ambient Sci-Fi Glowing Bursts */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden animate-ambient-drift">
@@ -63,9 +68,9 @@ export default function HomePage() {
               className="h-1.5 w-1.5 rounded-full bg-accent"
               style={{ boxShadow: "0 0 10px var(--accent-glow)" }}
             />
-            <span className="toolsy-meta text-white/45">
-              Mi <span className="text-white/25">by maker-ai.tech</span>&nbsp;
-              <span className="text-white/25">·</span>
+            <span className="text-xs font-black uppercase tracking-[0.22em] text-foreground/60">
+              Mi <span className="text-foreground/40">by maker-ai.tech</span>&nbsp;
+              <span className="text-foreground/35">·</span>
               &nbsp;OS v1.0
             </span>
           </div>
@@ -80,7 +85,7 @@ export default function HomePage() {
               <Link
                 key={label}
                 href={href}
-                className={`toolsy-meta text-white/40 transition-all duration-300 hover:text-white/90 hover:drop-shadow-[0_0_12px_var(--accent-glow)] ${hidden ? "hidden sm:inline" : ""}`}
+                className={`text-xs font-black uppercase tracking-[0.22em] text-foreground/60 transition-all duration-300 hover:text-accent hover:drop-shadow-[0_0_12px_var(--accent-glow)] ${hidden ? "hidden sm:inline" : ""}`}
               >
                 {label}
               </Link>

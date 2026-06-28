@@ -5,6 +5,7 @@
 :root {
   /* Layered Neutral Surfaces — Day Mode */
   --background: #f5f5f7;
+  --grid-line: rgba(0, 0, 0, 0.035);
   --foreground: #1d1d20;
   --surface: #ededf0;
   --surface-raised: #ffffff;
@@ -74,6 +75,7 @@
 .dark {
   /* Cinematic Dark - Night Mode */
   --background: #020205;
+  --grid-line: rgba(255, 255, 255, 0.015);
   --foreground: #f8fafc;
   --surface: #020202;
   --surface-raised: #050505;
@@ -270,7 +272,7 @@ body {
   }
 
   .toolsy-card-hover {
-    @apply hover:-translate-y-0.5;
+    @apply transition-all duration-300;
   }
 
   .toolsy-card-hover:hover {
@@ -361,7 +363,7 @@ body {
   .toolsy-button-primary {
     background-color: var(--category-accent, var(--accent));
     box-shadow: 0 14px 35px var(--category-glow, var(--accent-glow));
-    @apply text-white hover:-translate-y-0.5;
+    @apply text-white;
   }
 
   .toolsy-button-primary:hover {
@@ -370,7 +372,7 @@ body {
   }
 
   .toolsy-button-secondary {
-    @apply border border-border-subtle text-foreground hover:-translate-y-0.5 hover:text-accent-hover;
+    @apply border border-border-subtle text-foreground hover:text-accent-hover;
     background-color: var(--surface);
   }
 
