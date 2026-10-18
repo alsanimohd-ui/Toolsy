@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-06-15T20:57:27.172Z_
+_Generated: 2026-06-16T07:26:57.187Z_
 
 ---
 
@@ -60,13 +60,13 @@ _Generated: 2026-06-15T20:57:27.172Z_
 
 ## Design System
 
-CSS Variable Tokens: **52**  
+CSS Variable Tokens: **51**  
 
 clamp() Expressions: **13**  
 
-Utility Classes: 25  
+Utility Classes: 43  
 
-Keyframes: orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core, ambient
+Keyframes: toolsy, orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core, ambient
 
 
 ### Spacing Scale (clamp)
@@ -104,6 +104,7 @@ Keyframes: orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core, ambien
 - `ToolContainer.tsx`
 - `ToolFooter.tsx`
 - `ToolHeader.tsx`
+- `ToolInput.tsx`
 - `ToolSection.tsx`
 - `ToolTextarea.tsx`
 

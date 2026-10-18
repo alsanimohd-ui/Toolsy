@@ -1,93 +1,56 @@
-"use client";
+import { Lock, Wallet, Zap } from "lucide-react";
+import SiteHeader from "@/components/layout/SiteHeader";
+import SiteFooter from "@/components/layout/SiteFooter";
+import ToolsExplorer from "@/components/home/ToolsExplorer";
 
-import Centerpiece from "@/components/home/Centerpiece";
-import RadialMenu from "@/components/home/RadialMenu";
-import { motion } from "framer-motion";
-import Link from "next/link";
-import { useState } from "react";
-import type { CategoryId } from "@/lib/tools";
-
-
+const POINTS = [
+  { icon: Lock, title: "Private by design", text: "Most tools run in your browser. Your files and data stay on your device." },
+  { icon: Zap, title: "Fast and focused", text: "No sign-up, no clutter. Open a tool and get the job done." },
+  { icon: Wallet, title: "Free to use", text: "Built by an IT team for everyday work, and open to everyone." },
+];
 
 export default function HomePage() {
-  const [activeSegment, setActiveSegment] = useState<CategoryId | null>(null);
-
   return (
-    <main className="toolsy-home-shell relative overflow-hidden bg-[#020205]">
-      {/* Premium Sci-Fi Grid Mesh Pattern */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] opacity-40 z-0 pointer-events-none" />
+    <div className="flex min-h-[100dvh] flex-col">
+      <SiteHeader />
 
-      {/* Drifting Soft Ambient Sci-Fi Glowing Bursts */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden animate-ambient-drift">
-        {/* Deep Red Glow - Behind Network Security Arc Sector (top right) */}
-        <div className="absolute top-[15%] right-[15%] w-[38rem] h-[38rem] rounded-full bg-[#ef4444]/6 blur-[130px]" />
-        
-        {/* Blue Glow - Behind Data & Analytics Arc Sector (bottom left) */}
-        <div className="absolute bottom-[15%] left-[15%] w-[38rem] h-[38rem] rounded-full bg-[#3b82f6]/6 blur-[130px]" />
-        
-        {/* Purple Glow - Behind Dev & Automation Arc Sector (top left) */}
-        <div className="absolute top-[15%] left-[15%] w-[38rem] h-[38rem] rounded-full bg-[#8b5cf6]/6 blur-[130px]" />
-      </div>
-
-      {/* ═══════════════════════════════════════════════════ */}
-      {/* MAIN HERO STAGE                                     */}
-      {/* ═══════════════════════════════════════════════════ */}
-      <section className="toolsy-home-stage relative z-10">
-        <div className="toolsy-radial-scale relative flex items-center justify-center">
-
-          {/* Radial orbital category menu */}
-          <RadialMenu
-            activeSegment={activeSegment}
-            onActiveSegmentChange={setActiveSegment}
+      <main id="main-content" className="flex-1">
+        <section className="relative overflow-hidden border-b border-border">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(ellipse_60%_100%_at_50%_0%,rgba(14,179,186,0.18),transparent)]"
           />
-
-          {/* Living center core */}
-          <div className="relative z-30 aspect-square w-[30%]">
-            <Centerpiece activeSegment={activeSegment} />
+          <div className="relative mx-auto max-w-3xl px-4 pb-14 pt-16 text-center sm:px-6 sm:pt-24">
+            <p className="mb-4 text-sm font-semibold uppercase tracking-widest text-accent">Free IT tools</p>
+            <h1 className="text-4xl font-bold leading-tight tracking-tight text-foreground sm:text-5xl">
+              Everyday IT tools, <span className="text-accent">all in one place.</span>
+            </h1>
+            <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-muted">
+              Certificates, ports, logs, regex, encoding and more. Pick a tool and start working.
+            </p>
           </div>
+        </section>
 
-        </div>
-      </section>
+        <section id="tools" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6">
+          <ToolsExplorer />
+        </section>
 
-      {/* ═══════════════════════════════════════════════════ */}
-      {/* PORTAL FOOTER — minimal glass bar                  */}
-      {/* ═══════════════════════════════════════════════════ */}
-      <footer className="toolsy-portal-footer relative z-10 w-full shrink-0">
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-[var(--space-page-x)]">
-
-          {/* System status */}
-          <div className="flex items-center gap-2.5">
-            <motion.span
-              animate={{ opacity: [0.45, 1, 0.45] }}
-              transition={{ duration: 2.2, repeat: Infinity }}
-              className="h-1.5 w-1.5 rounded-full bg-accent"
-              style={{ boxShadow: "0 0 10px var(--accent-glow)" }}
-            />
-            <span className="toolsy-meta text-white/45">
-              Mi <span className="text-white/25">by maker-ai.tech</span>&nbsp;
-              <span className="text-white/25">·</span>
-              &nbsp;OS v1.0
-            </span>
-          </div>
-
-          {/* Nav links */}
-          <nav className="flex items-center gap-5">
-            {[
-              { label: "Enter", href: "/tools" },
-              { label: "Source", href: "https://github.com", hidden: true },
-              { label: "Docs", href: "#" },
-            ].map(({ label, href, hidden }) => (
-              <Link
-                key={label}
-                href={href}
-                className={`toolsy-meta text-white/40 transition-all duration-300 hover:text-white/90 hover:drop-shadow-[0_0_12px_var(--accent-glow)] ${hidden ? "hidden sm:inline" : ""}`}
-              >
-                {label}
-              </Link>
+        <section className="border-t border-border bg-surface/50">
+          <div className="mx-auto grid max-w-6xl gap-8 px-4 py-14 sm:grid-cols-3 sm:px-6">
+            {POINTS.map(({ icon: Icon, title, text }) => (
+              <div key={title} className="flex flex-col gap-2">
+                <span className="flex size-10 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                  <Icon className="size-5" />
+                </span>
+                <h2 className="font-semibold text-foreground">{title}</h2>
+                <p className="text-sm leading-relaxed text-muted">{text}</p>
+              </div>
             ))}
-          </nav>
-        </div>
-      </footer>
-    </main>
+          </div>
+        </section>
+      </main>
+
+      <SiteFooter />
+    </div>
   );
 }

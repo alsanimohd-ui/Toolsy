@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T20:57:27.167Z",
+  "generatedAt": "2026-06-16T07:26:57.180Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -132,6 +132,7 @@
         "ToolContainer.tsx",
         "ToolFooter.tsx",
         "ToolHeader.tsx",
+        "ToolInput.tsx",
         "ToolSection.tsx",
         "ToolTextarea.tsx"
       ],
@@ -175,7 +176,7 @@
     "clientPages": []
   },
   "designSystem": {
-    "cssVariableTokens": 52,
+    "cssVariableTokens": 51,
     "clampExpressions": [
       "1rem, 3vw, 2.5rem",
       "1.25rem, 4svh, 5rem",
@@ -192,6 +193,9 @@
       "4.5rem, 13dvh, 6.25rem"
     ],
     "utilityClasses": [
+      ".toolsy-badge",
+      ".toolsy-badge-lg",
+      ".toolsy-badge-sm",
       ".toolsy-button",
       ".toolsy-button-ghost",
       ".toolsy-button-primary",
@@ -201,13 +205,21 @@
       ".toolsy-content",
       ".toolsy-description",
       ".toolsy-divider",
+      ".toolsy-empty",
+      ".toolsy-empty-desc",
+      ".toolsy-empty-icon",
       ".toolsy-empty-state",
+      ".toolsy-empty-title",
       ".toolsy-glass",
       ".toolsy-home-shell",
       ".toolsy-home-stage",
       ".toolsy-input",
       ".toolsy-kicker",
       ".toolsy-label",
+      ".toolsy-loading",
+      ".toolsy-loading-desc",
+      ".toolsy-loading-spinner",
+      ".toolsy-loading-title",
       ".toolsy-meta",
       ".toolsy-page-shell",
       ".toolsy-page-title",
@@ -216,9 +228,17 @@
       ".toolsy-radial-scale",
       ".toolsy-section-title",
       ".toolsy-skeleton",
+      ".toolsy-tab",
+      ".toolsy-tab-active",
+      ".toolsy-tab-group",
+      ".toolsy-table",
+      ".toolsy-table-cell",
+      ".toolsy-table-head",
+      ".toolsy-table-row",
       ".toolsy-textarea"
     ],
     "keyframes": [
+      "toolsy",
       "orbital",
       "core",
       "core",

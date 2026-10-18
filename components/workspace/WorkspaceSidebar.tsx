@@ -15,6 +15,9 @@ import {
 import { categoryList, tools, type CategoryId, type Tool } from "@/lib/tools";
 import { useWorkspace } from "./WorkspaceContext";
 import { MiIcon } from "@/components/ui/MiLogo";
+import ToolIcon from "@/components/ui/ToolIcon";
+import ThemeToggle from "@/components/home/ThemeToggle";
+import Link from "next/link";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 /* ───────────────────────────────────────────────────────────────────── */
@@ -84,8 +87,7 @@ className={`
       {/* Icon badge */}
       <span
         className={`
-          shrink-0 flex items-center justify-center rounded-lg
-          text-[9px] font-black tracking-wider transition-all duration-200
+          shrink-0 flex items-center justify-center rounded-lg transition-all duration-200
           ${collapsed ? "size-8" : "size-6"}
 ${isActive
                 ? "bg-accent/20 text-accent"
@@ -93,7 +95,7 @@ ${isActive
               }
         `}
       >
-        {tool.icon}
+        <ToolIcon slug={tool.slug} className="size-3.5" />
       </span>
 
       {/* Label */}
@@ -296,10 +298,10 @@ className={`
             animate={{ opacity: 1 }}
             className="flex items-center gap-2"
           >
-            <MiIcon className="size-4 shrink-0" />
-            <span className="text-[10px] font-black uppercase tracking-[0.28em] text-muted">
-              Mi Workspace
-            </span>
+            <Link href="/" className="flex items-center gap-2 text-foreground" aria-label="Mi home">
+              <MiIcon className="size-5 shrink-0" />
+              <span className="text-sm font-bold text-foreground">Mi</span>
+            </Link>
           </motion.div>
         )}
 
@@ -340,7 +342,7 @@ className={`
             } ${!activeTool ? "text-accent" : "text-muted group-hover:text-foreground"}`}
           />
           {!sidebarCollapsed && (
-            <span className="text-[11px] truncate">All Modules</span>
+            <span className="text-[11px] truncate">All Tools</span>
           )}
         </button>
 
@@ -361,11 +363,14 @@ className={`
       {/* ── Footer ── */}
       {!sidebarCollapsed && (
         <div className="shrink-0 px-3 pb-4 pt-2 border-t border-border-subtle">
-          <div className="flex items-center gap-2">
-            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted truncate">
-              Systems Nominal
-            </span>
+          <div className="flex items-center justify-between gap-2">
+            <a
+              href="https://maker-ai.tech"
+              className="truncate text-xs text-muted transition-colors hover:text-accent"
+            >
+              A Maker AI platform
+            </a>
+            <ThemeToggle className="!size-8" />
           </div>
         </div>
       )}

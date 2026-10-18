@@ -4,13 +4,13 @@
 
 :root {
   /* Layered Neutral Surfaces — Day Mode */
-  --background: #f5f5f7;
+  --background: #f3f8f9;
   --foreground: #1d1d20;
-  --surface: #ededf0;
+  --surface: #e8f1f2;
   --surface-raised: #ffffff;
   --muted: #71717a;
-  --border: #e4e4e8;
-  --border-subtle: #ededf0;
+  --border: #d5e5e7;
+  --border-subtle: #e2eeef;
 
   --accent: #0eb3ba;
   --accent-rgb: 14, 179, 186;
@@ -42,15 +42,15 @@
   --card-hover-bg: #ffffff;
   --card-hover-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06);
   --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02);
-  --input-bg: #ededf0;
+  --input-bg: #e8f1f2;
   --input-focus-bg: #ffffff;
 
   /* Atmospheric Tokens - Light */
-  --atmos-core-glow: rgba(37, 99, 235, 0.03);
+  --atmos-core-glow: rgba(14, 179, 186, 0.05);
   --atmos-core-fade: transparent;
   --atmos-ring: rgba(0, 0, 0, 0.02);
   --atmos-dot: rgba(0, 0, 0, 0.06);
-  --atmos-beam: rgba(37, 99, 235, 0.04);
+  --atmos-beam: rgba(14, 179, 186, 0.05);
   --atmos-beam-fade: transparent;
   --atmos-vignette-edge: transparent;
   --atmos-vignette-shadow: rgba(0, 0, 0, 0.01);
@@ -73,13 +73,13 @@
 
 .dark {
   /* Cinematic Dark - Night Mode */
-  --background: #020205;
+  --background: #061316;
   --foreground: #f8fafc;
-  --surface: #020202;
-  --surface-raised: #050505;
-  --border: #1e1e2e;
-  --border-subtle: #2a2a3d;
-  --muted: #94a3b8;
+  --surface: #0a1b1f;
+  --surface-raised: #0d2227;
+  --border: #18383e;
+  --border-subtle: #14302f;
+  --muted: #8fb0b5;
   
   --accent: #0eb3ba;
   --accent-rgb: 14, 179, 186;
@@ -87,7 +87,7 @@
   --accent-glow: rgba(14, 179, 186, 0.25);
 
   /* Semantic Glass Tokens - Dark */
-  --glass-bg: rgba(10, 10, 15, 0.75);
+  --glass-bg: rgba(10, 27, 31, 0.8);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-shadow: rgba(0, 0, 0, 0.3);
   --glass-blur: 24px;
@@ -95,24 +95,24 @@
   /* Semantic Content Tokens - Dark */
   --content-primary: #f8fafc;
   --content-secondary: #cbd5e1;
-  --content-muted: #64748b;
-  --surface-overlay: rgba(0, 0, 0, 0.45);
+  --content-muted: #6f8d92;
+  --surface-overlay: rgba(10, 27, 31, 0.85);
 
   /* Component Tokens - Dark */
-  --card-bg: rgba(0, 0, 0, 0.45);
-  --card-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
-  --card-hover-bg: rgba(0, 0, 0, 0.46);
-  --card-hover-shadow: 0 28px 80px rgba(124, 106, 255, 0.14);
+  --card-bg: #0b1e22;
+  --card-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  --card-hover-bg: #0e262b;
+  --card-hover-shadow: 0 12px 40px rgba(14, 179, 186, 0.14);
   --panel-shadow: 0 16px 45px rgba(0, 0, 0, 0.26);
-  --input-bg: rgba(0, 0, 0, 0.24);
+  --input-bg: rgba(0, 0, 0, 0.25);
   --input-focus-bg: rgba(0, 0, 0, 0.34);
   
   /* Atmospheric Tokens - Dark */
-  --atmos-core-glow: rgba(124, 106, 255, 0.22);
-  --atmos-core-fade: rgba(124, 106, 255, 0.08);
+  --atmos-core-glow: rgba(14, 179, 186, 0.22);
+  --atmos-core-fade: rgba(14, 179, 186, 0.08);
   --atmos-ring: rgba(255, 255, 255, 0.04);
   --atmos-dot: rgba(255, 255, 255, 0.35);
-  --atmos-beam: rgba(124, 106, 255, 0.14);
+  --atmos-beam: rgba(14, 179, 186, 0.14);
   --atmos-beam-fade: rgba(255, 255, 255, 0.03);
   --atmos-vignette-edge: rgba(0, 0, 0, 0.18);
   --atmos-vignette-shadow: rgba(0, 0, 0, 0.12);
@@ -152,6 +152,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.5s ease, color 0.5s ease;
   overflow-x: hidden;
+}
+
+/* ── Accessibility: Focus states ──────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+*:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* Cross-Browser Normalization */
@@ -526,6 +537,176 @@ body {
     font-size: 11px;
     font-weight: 500;
   }
+
+  /* ═══════════════════════════════════════════════════════ */
+  /* LANDING PAGE KEYFRAMES & UTILITIES                    */
+  /* ═══════════════════════════════════════════════════════ */
+
+  @keyframes grid-drift {
+    from { background-position: 0 0; }
+    to { background-position: 4.5rem 4.5rem; }
+  }
+
+  @keyframes hud-float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+
+  @keyframes gradient-pan {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  @keyframes pulse-ring {
+    0% { transform: scale(0.8); opacity: 0.5; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+
+  @keyframes orbit-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes orbit-spin-rev {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0deg); }
+  }
+
+  .animate-grid-drift { animation: grid-drift 8s linear infinite; }
+  .animate-hud-float { animation: hud-float 6s ease-in-out infinite; }
+  .animate-gradient-pan { animation: gradient-pan 8s ease infinite; background-size: 200% 200%; }
+  .animate-pulse-ring { animation: pulse-ring 3s ease-out infinite; }
+  .animate-orbit-slow { animation: orbit-spin 40s linear infinite; }
+  .animate-orbit-mid { animation: orbit-spin-rev 28s linear infinite; }
+  .animate-orbit-fast { animation: orbit-spin 20s linear infinite; }
+
+  /* Spotlight card utility */
+  .toolsy-spotlight {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .toolsy-spotlight::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      300px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+      rgba(var(--accent-rgb), 0.06),
+      transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+
+  .toolsy-spotlight:hover::before { opacity: 1; }
+
+  /* Neon border glow on hover */
+  .toolsy-neon-border {
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .toolsy-neon-border:hover {
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
+      0 0 20px color-mix(in srgb, var(--accent) 10%, transparent),
+      var(--card-hover-shadow);
+  }
+
+  /* 3D tilt perspective container */
+  .toolsy-tilt {
+    transform-style: preserve-3d;
+    perspective: 800px;
+  }
+
+  /* Glass reflection sweep on hover */
+  .toolsy-reflection {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .toolsy-reflection::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.08) 45%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.08) 55%,
+      transparent 70%
+    );
+    transform: translateX(-100%);
+    transition: transform 0.7s ease;
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  .toolsy-reflection:hover::after {
+    transform: translateX(100%);
+  }
+
+  /* Gradient text */
+  .toolsy-gradient-text {
+    background: linear-gradient(
+      135deg,
+      var(--foreground) 0%,
+      var(--accent) 50%,
+      var(--foreground) 100%
+    );
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: text-gradient-shift 5s ease infinite;
+  }
+
+  @keyframes text-gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  @keyframes scan-beam {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes hex-pulse {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 0.5; }
+  }
+
+  @keyframes aurora-shift {
+    0%, 100% { transform: translate(0%, 0%) rotate(0deg) scale(1); }
+    33% { transform: translate(3%, -2%) rotate(3deg) scale(1.05); }
+    66% { transform: translate(-2%, 3%) rotate(-3deg) scale(0.98); }
+  }
+
+  @keyframes connection-pulse {
+    0%, 100% { opacity: 0.15; }
+    50% { opacity: 0.4; }
+  }
+
+  @keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+
+  @keyframes bar-shimmer {
+    0%, 100% { transform: scaleX(1); }
+    50% { transform: scaleX(0.92); }
+  }
+
+  .animate-scan-beam { animation: scan-beam 4s linear infinite; }
+  .animate-aurora { animation: aurora-shift 16s ease-in-out infinite; }
+  .animate-connection-pulse { animation: connection-pulse 2.5s ease-in-out infinite; }
+  .animate-blink { animation: blink 1s step-end infinite; }
+  .animate-bar-shimmer { animation: bar-shimmer 2s ease-in-out infinite; }
 
   /* ═══════════════════════════════════════════════════════ */
   /* PREMIUM ANIMATION UTILITIES */

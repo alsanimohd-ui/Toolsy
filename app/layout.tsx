@@ -17,8 +17,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Mi",
-  description: "A modular platform for developer tools by maker-ai.tech — fast, focused, and extensible.",
+  title: "Mi — Free IT Tools by Maker AI",
+  description: "Free, fast and private IT tools in one place. A Maker AI platform.",
   icons: {
     icon: [
       { url: "/icon.png", type: "image/png" },
@@ -33,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}>
         <SkipToContent />
         <AppLayout>{children}</AppLayout>
