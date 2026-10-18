@@ -50,6 +50,7 @@ export function useWorkspace() {
 
 const RECENT_KEY = "mi-recent-tools";
 const PINNED_KEY = "mi-pinned-tools";
+const TABS_KEY = "mi-open-tabs";
 const MAX_RECENT = 6;
 
 export function WorkspaceProvider({
@@ -82,6 +83,8 @@ export function WorkspaceProvider({
   const [pinnedTools, setPinnedTools] = useState<string[]>([]);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
+  const [tabsRestored, setTabsRestored] = useState(false);
+
   // Load persisted state
   useEffect(() => {
     try {
@@ -89,8 +92,31 @@ export function WorkspaceProvider({
       if (recent) setRecentTools(JSON.parse(recent));
       const pinned = localStorage.getItem(PINNED_KEY);
       if (pinned) setPinnedTools(JSON.parse(pinned));
+
+      // Restore open tabs (only tools that still exist and run inside the workspace)
+      const savedTabs: unknown = JSON.parse(localStorage.getItem(TABS_KEY) ?? "[]");
+      if (Array.isArray(savedTabs)) {
+        const restored: ActiveTool[] = [];
+        for (const slug of savedTabs) {
+          const t = tools.find((x) => x.slug === slug && !x.isExternal);
+          if (t) restored.push({ slug: t.slug, categoryId: t.categoryId, route: t.route });
+        }
+        if (restored.length > 0) {
+          setOpenTools((prev) => [
+            ...restored,
+            ...prev.filter((p) => !restored.some((r) => r.slug === p.slug)),
+          ]);
+        }
+      }
     } catch {}
+    setTabsRestored(true);
   }, []);
+
+  // Persist open tabs (after restore, so the initial empty state never overwrites them)
+  useEffect(() => {
+    if (!tabsRestored) return;
+    try { localStorage.setItem(TABS_KEY, JSON.stringify(openTools.map((t) => t.slug))); } catch {}
+  }, [openTools, tabsRestored]);
 
   // Persist
   useEffect(() => {

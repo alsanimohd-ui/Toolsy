@@ -1,6 +1,7 @@
 "use client";
 
 import ToolIcon from "@/components/ui/ToolIcon";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useWorkspace } from "./WorkspaceContext";
 import { tools, getCategory } from "@/lib/tools";
@@ -18,6 +19,19 @@ interface WorkspacePanelProps {
 
 export default function WorkspacePanel({ children }: WorkspacePanelProps) {
   const { activeTool, openTools, openTool, closeTool } = useWorkspace();
+
+  // Tools are mounted the first time their tab is shown (restored tabs load lazily),
+  // and unmounted when their tab is closed.
+  const [visited, setVisited] = useState<string[]>([]);
+  const activeSlug = activeTool?.slug;
+  useEffect(() => {
+    setVisited((prev) => {
+      const open = openTools.map((t) => t.slug);
+      const next = prev.filter((s) => open.includes(s));
+      if (activeSlug && open.includes(activeSlug) && !next.includes(activeSlug)) next.push(activeSlug);
+      return next.length === prev.length && next.every((s, i) => s === prev[i]) ? prev : next;
+    });
+  }, [openTools, activeSlug]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden w-full relative">
@@ -79,7 +93,7 @@ export default function WorkspacePanel({ children }: WorkspacePanelProps) {
         {/* Open tools stay mounted (hidden when inactive) so tabs keep their state */}
         {openTools.map((t) => {
           const ToolComponent = TOOL_MODULES[t.slug];
-          if (!ToolComponent) return null;
+          if (!ToolComponent || (!visited.includes(t.slug) && activeTool?.slug !== t.slug)) return null;
           return (
             <div key={t.slug} hidden={activeTool?.slug !== t.slug}>
               <ToolComponent />
