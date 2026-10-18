@@ -56,7 +56,7 @@ Then add it to the privacy table in `architecture/QUALITY_SAFEGUARDS.md`.
 ## Gotchas
 
 - **Windows + Git:** git may report `dubious ownership`. Use `git -c safe.directory=E:/CODE/Projects/Toolsy <cmd>` (do not change global config unless the user asks). `git status` with no path can fail because of stale entries in `.claude/worktrees`; limit it to paths, e.g. `git status --short -- app components lib`.
-- **post-commit hook** regenerates `architecture/manifest.json` and `MANIFEST.md` after each commit, so they show up as modified. Either commit them in a follow-up or restore them with `git restore -- architecture`. Do not hand-edit them.
+- **pre-commit hook** (local, in `.git/hooks`, not versioned) regenerates `architecture/manifest.json` and `MANIFEST.md` and adds them to the same commit. Do not hand-edit them. On a fresh clone the hook is missing; run `npm run manifest` and commit the result if the manifest is stale.
 - **Git identity** is not configured on this machine. Use `-c user.name=maker -c user.email=alsani.mohd@gmail.com` per command, or ask.
 - **GitHub push:** remote is `alsanimohd-ui/Toolsy`. A 403 naming a different user means the cached Windows/Git Credential Manager login is the wrong account; the user signs in themselves. Pushes that need a login popup work from the user's own terminal tab, not the sandbox shell.
 - **Line endings:** files may show CRLF warnings. Do not mass-convert.
