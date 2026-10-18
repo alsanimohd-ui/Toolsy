@@ -25,14 +25,7 @@ export type KeyMatch = "match" | "mismatch" | "encrypted" | "wrong-password" | "
 export interface PemCollection {
   keys: string[];
   certs: string[];
-  csr: string | null;
-}
-
-export interface OrganizedCerts {
-  leaf: string | null;
-  /** Ordered from the leaf's issuer upwards. Unrelated certificates come last. */
-  chain: string[];
-  chainStatus: ChainStatus;
+  csrs: string[];
 }
 
 export type DecodedUpload =
@@ -95,11 +88,11 @@ export const classifyText = (name: string, text: string): string => {
   return "Unknown";
 };
 
-/** Collects keys, certificates (including those inside PKCS#7 blocks) and the CSR from text sources. */
+/** Collects keys, certificates (including those inside PKCS#7 blocks) and CSRs from text sources. */
 export const collectPem = (texts: string[]): PemCollection => {
   const keys: string[] = [];
   const certs: string[] = [];
-  let csr: string | null = null;
+  const csrs: string[] = [];
   const seen = new Set<string>();
   const addCert = (pem: string) => {
     const k = pem.replace(/\s+/g, "");
@@ -113,7 +106,7 @@ export const collectPem = (texts: string[]): PemCollection => {
       if (label.endsWith("PRIVATE KEY")) {
         if (!keys.includes(pem)) keys.push(pem);
       } else if (label.includes("CERTIFICATE REQUEST")) {
-        csr = pem;
+        if (!csrs.includes(pem)) csrs.push(pem);
       } else if (label === "CERTIFICATE") {
         addCert(pem);
       } else if (label === "PKCS7") {
@@ -121,7 +114,7 @@ export const collectPem = (texts: string[]): PemCollection => {
       }
     }
   }
-  return { keys, certs, csr };
+  return { keys, certs, csrs };
 };
 
 /**
@@ -138,6 +131,15 @@ export const decodeUpload = (name: string, bytes: Uint8Array): DecodedUpload => 
   if (looksPem) {
     const text = new TextDecoder().decode(bytes);
     return { kind: "text", text, displayType: classifyText(name, text) };
+  }
+
+  // A binary .cer/.der file holds a single DER certificate.
+  try {
+    const cert = forge.pki.certificateFromAsn1(forge.asn1.fromDer(bytesToBinary(bytes)));
+    const text = forge.pki.certificateToPem(cert);
+    return { kind: "text", text, displayType: "Certificate" };
+  } catch {
+    /* not a certificate */
   }
 
   if (lower.endsWith(".p7b") || lower.endsWith(".p7c")) {
@@ -225,6 +227,11 @@ export const certSerial = (pem: string): string | null => parseCert(pem)?.serial
 
 const isSelfSigned = (cert: forge.pki.Certificate) => cert.subject.hash === cert.issuer.hash;
 
+const isCaCert = (cert: forge.pki.Certificate) => {
+  const bc = cert.getExtension("basicConstraints") as { cA?: boolean } | null;
+  return bc?.cA === true;
+};
+
 const signedBy = (child: forge.pki.Certificate, issuer: forge.pki.Certificate): boolean => {
   try {
     return issuer.verify(child) === true;
@@ -233,51 +240,71 @@ const signedBy = (child: forge.pki.Certificate, issuer: forge.pki.Certificate): 
   }
 };
 
-/**
- * Picks the leaf and orders the rest of the certificates by following issuer links,
- * regardless of the order they were uploaded in.
- */
-export const organizeCertificates = (pems: string[]): OrganizedCerts => {
-  const parsed = pems
-    .map(pem => ({ pem, cert: parseCert(pem) }))
-    .filter((x): x is { pem: string; cert: forge.pki.Certificate } => x.cert !== null);
+interface ParsedCert {
+  pem: string;
+  cert: forge.pki.Certificate;
+}
 
-  if (parsed.length === 0) return { leaf: null, chain: [], chainStatus: "none" };
-
-  const issuesOthers = (c: forge.pki.Certificate) =>
-    parsed.some(o => o.cert !== c && o.cert.issuer.hash === c.subject.hash);
-
-  const leafEntry =
-    parsed.find(p => !issuesOthers(p.cert) && !isSelfSigned(p.cert)) ??
-    parsed.find(p => !issuesOthers(p.cert)) ??
-    parsed[0];
-
-  const used = new Set([leafEntry]);
-  const chain: string[] = [];
-  let current = leafEntry;
+/** Follows issuer links upwards from a leaf. Intermediates may be shared between leaves. */
+const walkChain = (leaf: ParsedCert, all: ParsedCert[]): { chain: string[]; chainStatus: ChainStatus; used: ParsedCert[] } => {
+  const used: ParsedCert[] = [];
+  let current = leaf;
   let verified = true;
-  let reachedRoot = isSelfSigned(leafEntry.cert);
+  let reachedRoot = isSelfSigned(leaf.cert);
 
   while (!reachedRoot) {
-    const next = parsed.find(p => !used.has(p) && p.cert.subject.hash === current.cert.issuer.hash);
+    const candidates = all.filter(p => p !== current && !used.includes(p) && p !== leaf && p.cert.subject.hash === current.cert.issuer.hash);
+    const next = candidates.find(p => signedBy(current.cert, p.cert)) ?? candidates[0];
     if (!next) break;
     if (!signedBy(current.cert, next.cert)) verified = false;
-    used.add(next);
-    chain.push(next.pem);
+    used.push(next);
     current = next;
     reachedRoot = isSelfSigned(next.cert);
   }
 
-  const leftovers = parsed.filter(p => !used.has(p));
-  leftovers.forEach(p => chain.push(p.pem));
-
   let chainStatus: ChainStatus;
-  if (chain.length === 0) chainStatus = "none";
-  else if (!verified || leftovers.length > 0) chainStatus = "broken";
-  else if (reachedRoot) chainStatus = "complete";
-  else chainStatus = "incomplete";
+  // A lone self-signed certificate has no chain to report; a lone non-root leaf is missing its issuer.
+  if (used.length === 0) chainStatus = reachedRoot ? "none" : "incomplete";
+  else if (!verified) chainStatus = "broken";
+  else chainStatus = reachedRoot ? "complete" : "incomplete";
+  return { chain: used.map(u => u.pem), chainStatus, used };
+};
 
-  return { leaf: leafEntry.pem, chain, chainStatus };
+export interface RawCertSet {
+  leaf: string;
+  /** Ordered from the leaf's issuer upwards. */
+  chain: string[];
+  chainStatus: ChainStatus;
+}
+
+/**
+ * Splits a pool of certificates into one set per end-entity certificate, ordering each
+ * chain by issuer links (not upload order). CA certificates that belong to no chain are returned apart.
+ */
+export const buildCertSets = (pems: string[]): { sets: RawCertSet[]; strayCas: string[] } => {
+  const parsed: ParsedCert[] = [];
+  const seen = new Set<string>();
+  for (const pem of pems) {
+    const cert = parseCert(pem);
+    const key = pem.replace(/\s+/g, "");
+    if (!cert || seen.has(key)) continue;
+    seen.add(key);
+    parsed.push({ pem, cert });
+  }
+
+  const issuesOthers = (c: ParsedCert) =>
+    parsed.some(o => o !== c && !isSelfSigned(o.cert) && o.cert.issuer.hash === c.cert.subject.hash);
+
+  const leaves = parsed.filter(p => !issuesOthers(p) && !isCaCert(p.cert));
+  const inChain = new Set<ParsedCert>();
+  const sets = leaves.map(l => {
+    const walked = walkChain(l, parsed);
+    walked.used.forEach(u => inChain.add(u));
+    return { leaf: l.pem, chain: walked.chain, chainStatus: walked.chainStatus };
+  });
+
+  const strayCas = parsed.filter(p => !leaves.includes(p) && !inChain.has(p)).map(p => p.pem);
+  return { sets, strayCas };
 };
 
 /* ─────────────────────────────────────────────
@@ -413,4 +440,209 @@ export const certBaseName = (overview: CertOverview | null): string => {
     return overview.domain.replace("*.", "").replace(/[^a-zA-Z0-9._-]/g, "_");
   }
   return "ssl-output";
+};
+
+/* ─────────────────────────────────────────────
+   Inventory: many certificates, keys and CSRs at once
+  ───────────────────────────────────────────── */
+
+export interface CertSet extends RawCertSet {
+  key: string | null;
+  keyPassword?: string;
+  csr: string | null;
+}
+
+export type StrayKeyState = "no-certificate" | "encrypted" | "wrong-password" | "unsupported" | "invalid";
+
+export interface Inventory {
+  sets: CertSet[];
+  strayCas: string[];
+  strayKeys: { pem: string; state: StrayKeyState }[];
+  strayCsrs: string[];
+}
+
+type ResolvedKey =
+  | { pem: string; status: "ok"; key: forge.pki.rsa.PrivateKey; password?: string }
+  | { pem: string; status: "encrypted" | "wrong-password" | "unsupported" | "invalid" };
+
+const resolveKey = (pem: string, passwords: string[]): ResolvedKey => {
+  if (!isEncryptedKey(pem)) {
+    const r = parsePrivateKey(pem);
+    return r.status === "ok" ? { pem, status: "ok", key: r.key } : { pem, status: r.status };
+  }
+  if (passwords.length === 0) return { pem, status: "encrypted" };
+  for (const password of passwords) {
+    const r = parsePrivateKey(pem, password);
+    if (r.status === "ok") return { pem, status: "ok", key: r.key, password };
+  }
+  return { pem, status: "wrong-password" };
+};
+
+const rsaPublic = (pem: string) => {
+  const pub = parseCert(pem)?.publicKey as unknown as forge.pki.rsa.PublicKey | undefined;
+  return pub?.n ? pub : null;
+};
+
+const csrPublic = (pem: string) => {
+  try {
+    const pub = forge.pki.certificationRequestFromPem(pem).publicKey as unknown as forge.pki.rsa.PublicKey | undefined;
+    return pub?.n ? pub : null;
+  } catch {
+    return null;
+  }
+};
+
+const samePublicKey = (a: forge.pki.rsa.PublicKey, b: forge.pki.rsa.PublicKey) =>
+  a.n.compareTo(b.n) === 0 && a.e.compareTo(b.e) === 0;
+
+/**
+ * Groups everything the user uploaded by certificate: each end-entity certificate gets its ordered chain,
+ * the private key that matches it and its CSR. Whatever does not belong to a certificate is reported apart.
+ * `passwords` are tried on every encrypted key.
+ */
+export const buildInventory = (input: { certs: string[]; keys: string[]; csrs: string[] }, passwords: string[] = []): Inventory => {
+  const { sets: raw, strayCas } = buildCertSets(input.certs);
+  const resolved = input.keys.map(k => resolveKey(k, passwords));
+  const keyUsed = new Set<number>();
+  const csrUsed = new Set<number>();
+
+  const sets: CertSet[] = raw.map(s => {
+    const pub = rsaPublic(s.leaf);
+    let key: string | null = null;
+    let keyPassword: string | undefined;
+    let csr: string | null = null;
+    if (pub) {
+      resolved.forEach((r, i) => {
+        if (key === null && r.status === "ok" && samePublicKey(r.key as unknown as forge.pki.rsa.PublicKey, pub)) {
+          key = r.pem;
+          keyPassword = r.password;
+        }
+        if (r.status === "ok" && key === r.pem) keyUsed.add(i);
+      });
+      input.csrs.forEach((c, i) => {
+        const cp = csrPublic(c);
+        if (csr === null && cp && samePublicKey(cp, pub)) {
+          csr = c;
+          csrUsed.add(i);
+        }
+      });
+    }
+    return { ...s, key, keyPassword, csr };
+  });
+
+  const strayKeys = resolved
+    .map((r, i) => ({ r, i }))
+    .filter(({ i }) => !keyUsed.has(i))
+    .map(({ r }) => ({ pem: r.pem, state: (r.status === "ok" ? "no-certificate" : r.status) as StrayKeyState }));
+  const strayCsrs = input.csrs.filter((_, i) => !csrUsed.has(i));
+
+  const days = (s: CertSet) => getCertOverview(s.leaf)?.daysLeft ?? Number.POSITIVE_INFINITY;
+  sets.sort((a, b) => days(a) - days(b));
+  return { sets, strayCas, strayKeys, strayCsrs };
+};
+
+/* ─────────────────────────────────────────────
+   Per-certificate package
+  ───────────────────────────────────────────── */
+
+export interface PackageFile {
+  name: string;
+  content: string | Uint8Array;
+  description: string;
+}
+
+export interface SetPackage {
+  files: PackageFile[];
+  readme: string;
+  hasPfx: boolean;
+}
+
+export const setBaseName = (set: CertSet) => certBaseName(getCertOverview(set.leaf));
+
+/** Everything a user is likely to need for one certificate, named consistently. */
+export const buildSetPackage = (set: CertSet, pfxPassword: string, generatedAt: Date = new Date()): SetPackage => {
+  const overview = getCertOverview(set.leaf);
+  const base = certBaseName(overview);
+  const names = {
+    cert: `CERTIFICATE_${base}.crt`,
+    der: `CERTIFICATE_${base}.der.cer`,
+    key: `PRIVATE-KEY_${base}.key`,
+    chain: `CA-CHAIN_${base}.pem`,
+    fullchain: `FULLCHAIN_${base}.pem`,
+    bundle: `FULLCHAIN+KEY_${base}.pem`,
+    pfx: `PFX_${base}.pfx`,
+    p7b: `P7B_${base}.p7b`,
+    csr: `CSR_${base}.csr`,
+  };
+
+  // A key is only attached to a set once it has been decrypted and matched, so it can always be written unencrypted.
+  const plainKey = set.key ? unencryptedKeyPem(set.key, set.keyPassword) : null;
+  const keyMatches = plainKey !== null;
+  const keyName = names.key;
+  const fullchain = [set.leaf, ...set.chain].join("\n") + "\n";
+  const pfx = set.key && plainKey ? buildPfx(set.key, set.leaf, set.chain, pfxPassword, set.keyPassword) : null;
+  const p7b = buildP7b(set.leaf, set.chain);
+  const der = certToDer(set.leaf);
+
+  const files: PackageFile[] = [];
+  const add = (name: string, content: string | Uint8Array | null, description: string) => {
+    if (content !== null) files.push({ name, content, description });
+  };
+  add(names.cert, set.leaf + "\n", "Certificate (PEM). Apache SSLCertificateFile.");
+  add(names.der, der, "Certificate (DER binary). Windows and some appliances.");
+  if (plainKey) add(keyName, plainKey + "\n", "Private key (PEM, unencrypted).");
+  if (set.chain.length > 0) {
+    add(names.chain, set.chain.join("\n\n") + "\n", "CA chain (PEM), leaf excluded. Apache SSLCertificateChainFile.");
+    add(names.fullchain, fullchain, "Certificate + chain in one file. Nginx ssl_certificate.");
+  }
+  if (plainKey) add(names.bundle, `${fullchain}${plainKey}\n`, "Certificate + chain + key in one file. HAProxy and similar.");
+  if (pfx) {
+    add(names.pfx, pfx, "PKCS#12 archive for IIS, Windows and Azure. Password in PFX-PASSWORD.txt.");
+    add("PFX-PASSWORD.txt", `${pfxPassword}\n`, "Password for the PFX file.");
+  }
+  add(names.p7b, p7b, "PKCS#7 bundle (DER) for Java and Windows imports.");
+  if (set.csr) add(names.csr, set.csr + "\n", "Certificate signing request.");
+
+  const chainLabel = {
+    none: "none provided",
+    complete: "complete",
+    incomplete: "incomplete (an issuer is missing)",
+    broken: "broken (bad signature)",
+  }[set.chainStatus];
+
+  const readme = [
+    "SSL PACKAGE",
+    `Generated by Mi (mi.maker-ai.tech) on ${generatedAt.toISOString().replace("T", " ").substring(0, 19)} UTC`,
+    "",
+    "CERTIFICATE",
+    `Common Name (CN):     ${overview?.domain || "N/A"}`,
+    `Subject Alt Names:    ${overview?.sans.join(", ") || "None"}`,
+    `Issuer:               ${overview?.issuer || "N/A"}`,
+    `Serial Number:        ${certSerial(set.leaf) ?? "N/A"}`,
+    `SHA-256 Fingerprint:  ${certFingerprint(set.leaf) ?? "N/A"}`,
+    `Key:                  ${overview ? `${overview.keyType} ${overview.keySize} bit` : "N/A"}`,
+    `Signature Algorithm:  ${overview?.sigAlg || "N/A"}`,
+    `Valid from:           ${overview?.validFrom || "N/A"}`,
+    `Expires:              ${overview?.validTo || "N/A"}`,
+    `Days remaining:       ${overview ? overview.daysLeft : "N/A"}`,
+    "",
+    "CHECKS",
+    `Private key found and matches certificate: ${keyMatches ? "yes" : "NO KEY FOUND for this certificate"}`,
+    `Chain: ${chainLabel}`,
+    "",
+    "FILES IN THIS FOLDER",
+    ...files.filter(f => f.name !== "PFX-PASSWORD.txt").map(f => `${f.name.padEnd(42)} ${f.description}`),
+    ...(pfx ? [`${"PFX-PASSWORD.txt".padEnd(42)} Password for the PFX file.`] : []),
+    "",
+    "DEPLOYMENT",
+    `Nginx:   ssl_certificate ${names.fullchain}; ssl_certificate_key ${keyName};`,
+    `Apache:  SSLCertificateFile ${names.cert}, SSLCertificateKeyFile ${keyName}, SSLCertificateChainFile ${names.chain}`,
+    `HAProxy: bind :443 ssl crt ${names.bundle}`,
+    "IIS:     Server Certificates > Import, choose the .pfx and enter the password from PFX-PASSWORD.txt.",
+    "",
+    "This folder contains your private key. Keep it private.",
+    "Processed locally in your browser. No data was transmitted.",
+  ].join("\n");
+
+  return { files, readme, hasPfx: pfx !== null };
 };

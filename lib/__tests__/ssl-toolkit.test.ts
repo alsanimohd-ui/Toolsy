@@ -6,7 +6,9 @@ import {
   classifyText,
   collectPem,
   decodeUpload,
-  organizeCertificates,
+  buildCertSets,
+  buildInventory,
+  buildSetPackage,
   keyMatchesCert,
   parsePrivateKey,
   getCertOverview,
@@ -31,7 +33,7 @@ interface Made {
 
 const DAY = 86_400_000;
 
-function make(cn: string, opts: { issuer?: Made; days?: number; startDays?: number } = {}): Made {
+function make(cn: string, opts: { issuer?: Made; days?: number; startDays?: number; ca?: boolean } = {}): Made {
   const keys = forge.pki.rsa.generateKeyPair(1024);
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
@@ -41,7 +43,10 @@ function make(cn: string, opts: { issuer?: Made; days?: number; startDays?: numb
   const subject = [{ name: "commonName", value: cn }];
   cert.setSubject(subject);
   cert.setIssuer(opts.issuer ? opts.issuer.cert.subject.attributes : subject);
-  cert.setExtensions([{ name: "subjectAltName", altNames: [{ type: 2, value: cn }] }]);
+  cert.setExtensions([
+    { name: "subjectAltName", altNames: [{ type: 2, value: cn }] },
+    ...(opts.ca ? [{ name: "basicConstraints", cA: true }] : []),
+  ]);
   cert.sign(opts.issuer ? opts.issuer.keys.privateKey : keys.privateKey, forge.md.sha256.create());
   return {
     pem: forge.pki.certificateToPem(cert).trim(),
@@ -54,12 +59,14 @@ function make(cn: string, opts: { issuer?: Made; days?: number; startDays?: numb
 let root: Made;
 let inter: Made;
 let leaf: Made;
+let leaf2: Made;
 let other: Made;
 
 beforeAll(() => {
-  root = make("Test Root CA");
-  inter = make("Test Intermediate CA", { issuer: root });
+  root = make("Test Root CA", { ca: true });
+  inter = make("Test Intermediate CA", { issuer: root, ca: true });
   leaf = make("demo.example.com", { issuer: inter });
+  leaf2 = make("short.example.com", { issuer: inter, days: 30 });
   other = make("other.example.com");
 }, 60_000);
 
@@ -91,7 +98,8 @@ describe("PEM parsing", () => {
     const out = collectPem([`${leaf.pem}\n${leaf.keyPem}`, `${leaf.pem}\n${inter.pem}`, csr]);
     expect(out.certs).toHaveLength(2);
     expect(out.keys).toHaveLength(1);
-    expect(out.csr).toContain("CERTIFICATE REQUEST");
+    expect(out.csrs).toHaveLength(1);
+    expect(out.csrs[0]).toContain("CERTIFICATE REQUEST");
   });
 
   it("expands PEM PKCS#7 bundles into certificates", () => {
@@ -121,47 +129,164 @@ describe("uploads", () => {
     }
   });
 
+  it("reads a binary DER certificate", () => {
+    const der = certToDer(leaf.pem)!;
+    const out = decodeUpload("cert.cer", der);
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") {
+      expect(out.displayType).toBe("Certificate");
+      expect(collectPem([out.text]).certs).toHaveLength(1);
+    }
+  });
+
   it("treats other binary files as PFX archives", () => {
     const out = decodeUpload("cert.pfx", new Uint8Array([0x30, 0x82, 0x01, 0x00]));
     expect(out.kind).toBe("pfx");
   });
 });
 
-describe("organizeCertificates", () => {
+describe("buildCertSets", () => {
   it("finds the leaf and orders the chain regardless of upload order", () => {
-    const out = organizeCertificates([root.pem, leaf.pem, inter.pem]);
-    expect(out.leaf).toBe(leaf.pem);
-    expect(out.chain).toEqual([inter.pem, root.pem]);
-    expect(out.chainStatus).toBe("complete");
+    const { sets, strayCas } = buildCertSets([root.pem, leaf.pem, inter.pem]);
+    expect(sets).toEqual([{ leaf: leaf.pem, chain: [inter.pem, root.pem], chainStatus: "complete" }]);
+    expect(strayCas).toEqual([]);
   });
 
   it("does not take a CA uploaded first for the leaf", () => {
-    const out = organizeCertificates([inter.pem, leaf.pem]);
-    expect(out.leaf).toBe(leaf.pem);
+    const { sets } = buildCertSets([inter.pem, leaf.pem]);
+    expect(sets).toHaveLength(1);
+    expect(sets[0].leaf).toBe(leaf.pem);
+    expect(sets[0].chain).toEqual([inter.pem]);
   });
 
   it("reports an incomplete chain when the root is missing", () => {
-    const out = organizeCertificates([leaf.pem, inter.pem]);
-    expect(out.chain).toEqual([inter.pem]);
-    expect(out.chainStatus).toBe("incomplete");
+    expect(buildCertSets([leaf.pem, inter.pem]).sets[0].chainStatus).toBe("incomplete");
+    expect(buildCertSets([leaf.pem]).sets[0].chainStatus).toBe("incomplete");
   });
 
-  it("flags unrelated certificates as a broken chain", () => {
-    const out = organizeCertificates([leaf.pem, inter.pem, root.pem, other.pem]);
-    expect(out.leaf).toBe(leaf.pem);
-    expect(out.chain.at(-1)).toBe(other.pem);
-    expect(out.chainStatus).toBe("broken");
+  it("splits several domains into separate sets that share an intermediate", () => {
+    const shop = make("shop.example.com", { issuer: inter });
+    const { sets } = buildCertSets([shop.pem, root.pem, leaf.pem, inter.pem]);
+    expect(sets.map(s => s.leaf).sort()).toEqual([leaf.pem, shop.pem].sort());
+    sets.forEach(s => {
+      expect(s.chain).toEqual([inter.pem, root.pem]);
+      expect(s.chainStatus).toBe("complete");
+    });
+  });
+
+  it("keeps an unrelated self-signed certificate as its own set", () => {
+    const { sets } = buildCertSets([leaf.pem, inter.pem, root.pem, other.pem]);
+    expect(sets).toHaveLength(2);
+    expect(sets.find(s => s.leaf === other.pem)).toEqual({ leaf: other.pem, chain: [], chainStatus: "none" });
+  });
+
+  it("keeps two self-signed certificates with the same name", () => {
+    const a = make("same.local");
+    const b = make("same.local");
+    expect(buildCertSets([a.pem, b.pem]).sets).toHaveLength(2);
   });
 
   it("flags a bad signature as broken", () => {
-    const fakeInter = make("Test Intermediate CA", { issuer: other });
-    const out = organizeCertificates([leaf.pem, fakeInter.pem]);
-    expect(out.chainStatus).toBe("broken");
+    const fakeInter = make("Test Intermediate CA", { issuer: other, ca: true });
+    expect(buildCertSets([leaf.pem, fakeInter.pem]).sets[0].chainStatus).toBe("broken");
   });
 
-  it("handles a single self-signed certificate and empty input", () => {
-    expect(organizeCertificates([root.pem])).toEqual({ leaf: root.pem, chain: [], chainStatus: "none" });
-    expect(organizeCertificates([])).toEqual({ leaf: null, chain: [], chainStatus: "none" });
+  it("returns CA certificates that belong to no chain", () => {
+    expect(buildCertSets([root.pem])).toEqual({ sets: [], strayCas: [root.pem] });
+    expect(buildCertSets([root.pem, inter.pem]).strayCas).toHaveLength(2);
+    expect(buildCertSets([])).toEqual({ sets: [], strayCas: [] });
+  });
+});
+
+describe("buildInventory", () => {
+  const certs = () => [root.pem, inter.pem, leaf.pem, leaf2.pem, other.pem];
+
+  it("matches each key to its certificate and sorts by expiry", () => {
+    const inv = buildInventory({ certs: certs(), keys: [other.keyPem, leaf.keyPem, leaf2.keyPem], csrs: [] });
+    expect(inv.sets).toHaveLength(3);
+    expect(inv.sets[0].leaf).toBe(leaf2.pem);
+    expect(inv.sets.find(s => s.leaf === leaf.pem)!.key).toBe(leaf.keyPem);
+    expect(inv.sets.find(s => s.leaf === other.pem)!.key).toBe(other.keyPem);
+    expect(inv.strayKeys).toEqual([]);
+  });
+
+  it("leaves a certificate without a key and reports keys without a certificate", () => {
+    const orphan = make("nocert.example.com");
+    const inv = buildInventory({ certs: [leaf.pem, inter.pem, root.pem], keys: [orphan.keyPem], csrs: [] });
+    expect(inv.sets[0].key).toBeNull();
+    expect(inv.strayKeys).toEqual([{ pem: orphan.keyPem, state: "no-certificate" }]);
+  });
+
+  it("holds back encrypted keys until a password works", () => {
+    const enc = forge.pki.encryptRsaPrivateKey(leaf.keys.privateKey, "kp").trim();
+    const input = { certs: [leaf.pem, inter.pem, root.pem], keys: [enc], csrs: [] };
+    expect(buildInventory(input).strayKeys[0].state).toBe("encrypted");
+    expect(buildInventory(input, ["nope"]).strayKeys[0].state).toBe("wrong-password");
+    const ok = buildInventory(input, ["nope", "kp"]);
+    expect(ok.strayKeys).toEqual([]);
+    expect(ok.sets[0].key).toBe(enc);
+    expect(ok.sets[0].keyPassword).toBe("kp");
+  });
+
+  it("reports EC keys as unsupported", () => {
+    const ec = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "sec1", format: "pem" }) as string;
+    expect(buildInventory({ certs: [leaf.pem], keys: [ec], csrs: [] }).strayKeys[0].state).toBe("unsupported");
+  });
+
+  it("attaches a CSR to the certificate with the same key", () => {
+    const mine = makeCsr(leaf.keys, "demo.example.com");
+    const stranger = makeCsr(forge.pki.rsa.generateKeyPair(1024), "who.example.com");
+    const inv = buildInventory({ certs: [leaf.pem, inter.pem], keys: [], csrs: [stranger, mine] });
+    expect(inv.sets[0].csr).toBe(mine);
+    expect(inv.strayCsrs).toEqual([stranger]);
+  });
+});
+
+describe("buildSetPackage", () => {
+  const nameList = (p: { files: { name: string }[] }) => p.files.map(f => f.name);
+
+  it("contains every format, a readable key and a working PFX", () => {
+    const enc = forge.pki.encryptRsaPrivateKey(leaf.keys.privateKey, "kp").trim();
+    const inv = buildInventory({ certs: [leaf.pem, inter.pem, root.pem], keys: [enc], csrs: [makeCsr(leaf.keys, "demo.example.com")] }, ["kp"]);
+    const pkg = buildSetPackage(inv.sets[0], "Pw-12345");
+
+    expect(nameList(pkg).sort()).toEqual([
+      "CA-CHAIN_demo.example.com.pem",
+      "CERTIFICATE_demo.example.com.crt",
+      "CERTIFICATE_demo.example.com.der.cer",
+      "CSR_demo.example.com.csr",
+      "FULLCHAIN+KEY_demo.example.com.pem",
+      "FULLCHAIN_demo.example.com.pem",
+      "P7B_demo.example.com.p7b",
+      "PFX-PASSWORD.txt",
+      "PFX_demo.example.com.pfx",
+      "PRIVATE-KEY_demo.example.com.key",
+    ]);
+    const get = (n: string) => pkg.files.find(f => f.name === n)!.content;
+    expect(get("PFX-PASSWORD.txt")).toBe("Pw-12345\n");
+    expect(String(get("PRIVATE-KEY_demo.example.com.key"))).not.toContain("ENCRYPTED");
+    expect(String(get("FULLCHAIN_demo.example.com.pem")).match(/BEGIN CERTIFICATE/g)).toHaveLength(3);
+    expect(String(get("FULLCHAIN+KEY_demo.example.com.pem"))).toContain("PRIVATE KEY");
+    expect(unlockPkcs12(get("PFX_demo.example.com.pfx") as Uint8Array, "Pw-12345").certs).toHaveLength(3);
+    expect(pkg.hasPfx).toBe(true);
+    expect(pkg.readme).toContain("Chain: complete");
+    expect(pkg.readme).toContain("matches certificate: yes");
+    expect(pkg.readme).toContain("PFX-PASSWORD.txt");
+  });
+
+  it("omits key-dependent files when no key was found", () => {
+    const inv = buildInventory({ certs: [leaf.pem, inter.pem], keys: [], csrs: [] });
+    const pkg = buildSetPackage(inv.sets[0], "x");
+    expect(nameList(pkg).sort()).toEqual([
+      "CA-CHAIN_demo.example.com.pem",
+      "CERTIFICATE_demo.example.com.crt",
+      "CERTIFICATE_demo.example.com.der.cer",
+      "FULLCHAIN_demo.example.com.pem",
+      "P7B_demo.example.com.p7b",
+    ]);
+    expect(pkg.hasPfx).toBe(false);
+    expect(pkg.readme).toContain("NO KEY FOUND");
+    expect(pkg.readme).toContain("incomplete");
   });
 });
 
@@ -286,6 +411,14 @@ describe("generatePassword", () => {
     expect(generatePassword()).not.toBe(generatePassword());
   });
 });
+
+function makeCsr(keys: Pair, cn: string) {
+  const csr = forge.pki.createCertificationRequest();
+  csr.publicKey = keys.publicKey;
+  csr.setSubject([{ name: "commonName", value: cn }]);
+  csr.sign(keys.privateKey);
+  return forge.pki.certificationRequestToPem(csr).trim();
+}
 
 function parseOk(pem: string) {
   try {

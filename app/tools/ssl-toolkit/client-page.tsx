@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import JSZip from "jszip";
 import {
   ToolContainer,
@@ -20,36 +20,31 @@ import {
   CheckCircle2,
   Clock,
   Globe,
-  Activity,
   Package,
   FileText,
   X,
   HelpCircle,
   Link,
-  Search,
-  ShieldCheck,
+  ChevronDown,
   AlertTriangle
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
 import {
   type CertOverview,
-  type ChainStatus,
-  type KeyMatch,
-  buildP7b,
-  buildPfx,
-  certBaseName,
-  certFingerprint,
-  certSerial,
-  certToDer,
+  type CertSet,
+  type PackageFile,
+  type SetPackage,
+  type StrayKeyState,
+  buildInventory,
+  buildSetPackage,
   classifyText,
   collectPem,
   decodeUpload,
   generatePassword,
   getCertOverview,
-  keyMatchesCert,
-  organizeCertificates,
-  unencryptedKeyPem,
+  parseCert,
+  setBaseName,
   unlockPkcs12,
 } from "@/lib/ssl-toolkit";
 
@@ -63,71 +58,84 @@ interface OriginalFile {
 
 const newId = () => Math.random().toString(36).substring(2, 9);
 
+const STRAY_KEY_LABEL: Record<StrayKeyState, string> = {
+  "no-certificate": "No certificate matches this key",
+  encrypted: "Encrypted. Enter its password above",
+  "wrong-password": "None of the passwords worked",
+  unsupported: "EC and other non-RSA keys are not supported yet",
+  invalid: "Could not be read",
+};
+
 export default function SSLToolkitClient() {
   const [originalFiles, setOriginalFiles] = useState<OriginalFile[]>([]);
   const [status, setStatus] = useState("");
   const [isDragging, setIsDragging] = useState(false);
-  const [isPfxModalOpen, setIsPfxModalOpen] = useState(false);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
-  const [manualPfxPassword, setManualPfxPassword] = useState("");
-  const [confirmPfxPassword, setConfirmPfxPassword] = useState("");
-  const [archiveError, setArchiveError] = useState("");
-  const [keyPassword, setKeyPassword] = useState("");
+  const [keyPasswords, setKeyPasswords] = useState<string[]>([]);
+  const [archiveErrors, setArchiveErrors] = useState<Record<string, string>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
+
+  const pfxPasswords = useRef(new Map<string, string>());
+  const packageCache = useRef(new Map<string, SetPackage>());
 
   const showStatus = (msg: string) => {
     setStatus(msg);
     setTimeout(() => setStatus(""), 4000);
   };
 
-  /* ── Derived state: everything is recomputed from the loaded files ── */
+  /* ── Everything below is derived from the loaded files ── */
 
   const collected = useMemo(
     () => collectPem(originalFiles.filter(f => f.text).map(f => f.text as string)),
     [originalFiles]
   );
-  const organized = useMemo(() => organizeCertificates(collected.certs), [collected.certs]);
-  const leaf = organized.leaf;
-  const chain = organized.chain;
-  const chainStatus: ChainStatus = organized.chainStatus;
-  const csr = collected.csr;
-  const pfxFile = useMemo(() => [...originalFiles].reverse().find(f => f.bytes) ?? null, [originalFiles]);
+  const inventory = useMemo(() => buildInventory(collected, keyPasswords), [collected, keyPasswords]);
+  const pfxFiles = useMemo(() => originalFiles.filter(f => f.bytes), [originalFiles]);
+  const unreadableCerts = useMemo(() => collected.certs.filter(c => !parseCert(c)).length, [collected.certs]);
 
-  const privateKey = useMemo(() => {
-    if (collected.keys.length === 0) return null;
-    if (leaf) {
-      const match = collected.keys.find(k => keyMatchesCert(k, leaf, keyPassword) === "match");
-      if (match) return match;
+  const overviews = useMemo(() => {
+    const map = new Map<string, CertOverview | null>();
+    inventory.sets.forEach(s => map.set(s.leaf, getCertOverview(s.leaf)));
+    return map;
+  }, [inventory]);
+
+  const pfxPasswordFor = (leaf: string) => {
+    let pw = pfxPasswords.current.get(leaf);
+    if (!pw) {
+      pw = generatePassword();
+      pfxPasswords.current.set(leaf, pw);
     }
-    return collected.keys[0];
-  }, [collected.keys, leaf, keyPassword]);
+    return pw;
+  };
 
-  const keyState: KeyMatch | null = useMemo(() => {
-    if (!leaf || !privateKey) return null;
-    return keyMatchesCert(privateKey, leaf, keyPassword);
-  }, [leaf, privateKey, keyPassword]);
+  /** Building a package includes a PFX, so each one is built once and reused. */
+  const packageFor = (set: CertSet): SetPackage => {
+    const key = [set.leaf, set.key, set.keyPassword, set.csr, ...set.chain].join("|");
+    let pkg = packageCache.current.get(key);
+    if (!pkg) {
+      pkg = buildSetPackage(set, pfxPasswordFor(set.leaf));
+      packageCache.current.set(key, pkg);
+    }
+    return pkg;
+  };
 
-  const certOverview = useMemo(() => (leaf ? getCertOverview(leaf) : null), [leaf]);
-  const chainOverviews = useMemo(
-    () => chain.map(c => getCertOverview(c)).filter(Boolean) as CertOverview[],
-    [chain]
-  );
+  const summary = useMemo(() => {
+    let expiring = 0;
+    let expired = 0;
+    let noKey = 0;
+    inventory.sets.forEach(s => {
+      const d = overviews.get(s.leaf)?.daysLeft;
+      if (d !== undefined && d < 0) expired++;
+      else if (d !== undefined && d < 30) expiring++;
+      if (!s.key) noKey++;
+    });
+    return { expiring, expired, noKey };
+  }, [inventory, overviews]);
 
-  const sessionPfxPassword = useMemo(() => {
-    if (leaf && privateKey) return generatePassword();
-    return "";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaf, privateKey]);
-
-  const baseName = certBaseName(certOverview);
-  const certName = `CERTIFICATE_${baseName}.crt`;
-  const keyName = `PRIVATE-KEY_${baseName}.key`;
-  const chainName = `CA-CHAIN_${baseName}.pem`;
-  const pfxName = `PFX_${baseName}.pfx`;
-  const p7bName = `P7B_${baseName}.p7b`;
-  const csrName = `CSR_${baseName}.csr`;
-  const derName = `CERTIFICATE_${baseName}.der.cer`;
-  const fullchainName = `FULLCHAIN_${baseName}.pem`;
-  const bundleName = `FULLCHAIN+KEY_${baseName}.pem`;
+  const lockedKeys = inventory.strayKeys.filter(k => k.state === "encrypted" || k.state === "wrong-password");
+  const hasAnyData = originalFiles.length > 0;
+  const hasResults = inventory.sets.length > 0 || inventory.strayKeys.length > 0 || inventory.strayCas.length > 0 || inventory.strayCsrs.length > 0;
 
   /* ── Loading files ── */
 
@@ -156,32 +164,35 @@ export default function SSLToolkitClient() {
     return () => window.removeEventListener("paste", handlePaste);
   }, []);
 
-  const handleDeleteFile = (id: string) => {
-    setOriginalFiles(prev => prev.filter(f => f.id !== id));
-  };
+  const handleDeleteFile = (id: string) => setOriginalFiles(prev => prev.filter(f => f.id !== id));
 
   const clearAll = () => {
     setOriginalFiles([]);
-    setArchiveError("");
-    setKeyPassword("");
+    setKeyPasswords([]);
+    setArchiveErrors({});
+    setExpanded({});
   };
 
-  /** Replaces the PFX with its contents so they behave like any other loaded file. */
-  const unlockPfx = (password: string) => {
-    if (!pfxFile?.bytes) return;
+  /** Replaces a PFX with its contents so they are sorted like any other loaded file. */
+  const unlockPfx = (file: OriginalFile, password: string) => {
+    if (!file.bytes) return;
     try {
-      const { keys, certs } = unlockPkcs12(pfxFile.bytes, password);
+      const { keys, certs } = unlockPkcs12(file.bytes, password);
       const text = [...certs, ...keys].join("\n");
-      const name = `${pfxFile.name} (extracted).pem`;
+      const name = `${file.name} (extracted).pem`;
       setOriginalFiles(prev => [
-        ...prev.filter(f => f.id !== pfxFile.id),
+        ...prev.filter(f => f.id !== file.id),
         { id: newId(), name, displayType: classifyText(name, text), text },
       ]);
-      setArchiveError("");
-      showStatus("PFX unlocked and extracted");
+      setArchiveErrors(prev => ({ ...prev, [file.id]: "" }));
+      showStatus(`${file.name} unlocked`);
     } catch {
-      setArchiveError("Incorrect password or invalid file.");
+      setArchiveErrors(prev => ({ ...prev, [file.id]: "Incorrect password or invalid file." }));
     }
+  };
+
+  const addKeyPassword = (pw: string) => {
+    if (pw) setKeyPasswords(prev => (prev.includes(pw) ? prev : [...prev, pw]));
   };
 
   /* ── Exporting ── */
@@ -195,177 +206,99 @@ export default function SSLToolkitClient() {
     window.URL.revokeObjectURL(url);
   };
 
-  const downloadFile = (name: string, content: BlobPart, mimeType = "text/plain") => {
-    saveBlob(name, new Blob([content], { type: mimeType }));
-    showStatus(`${name} ready`);
+  const downloadOne = (file: PackageFile) => {
+    saveBlob(file.name, new Blob([file.content as BlobPart]));
+    showStatus(`${file.name} ready`);
   };
 
-  const downloadP7bSingle = () => {
-    if (!leaf) return;
-    const der = buildP7b(leaf, chain);
-    if (der) downloadFile(p7bName, der as BlobPart, "application/x-pkcs7-certificates");
-  };
-
-  const downloadPfx = () => {
-    if (!leaf || !privateKey) return;
-    const bytes = buildPfx(privateKey, leaf, chain, manualPfxPassword, keyPassword);
-    if (!bytes) {
-      showStatus("Could not build the PFX. Check the key and certificate.");
-      return;
-    }
-    saveBlob(pfxName, new Blob([bytes as BlobPart], { type: "application/x-pkcs12" }));
-    setIsPfxModalOpen(false);
-    setManualPfxPassword("");
-    setConfirmPfxPassword("");
-    showStatus("PFX ready");
-  };
-
-  const copyPassword = async () => {
+  const copyPassword = async (pw: string) => {
     try {
-      await navigator.clipboard.writeText(sessionPfxPassword);
+      await navigator.clipboard.writeText(pw);
       showStatus("Password copied");
     } catch {
       showStatus("Could not copy. Select the password and copy it manually.");
     }
   };
 
-  const handleDownloadAll = async () => {
-    if (!hasAnyData) return;
-    const zip = new JSZip();
-    const dir = zip.folder(baseName)!;
-    const timestamp = new Date().toISOString().replace("T", " ").substring(0, 19);
-    const fingerprint = leaf ? certFingerprint(leaf) ?? "N/A" : "N/A";
-    const serial = leaf ? certSerial(leaf) ?? "N/A" : "N/A";
-
-    const plainKey = privateKey ? unencryptedKeyPem(privateKey, keyPassword) : null;
-    const keyIsEncrypted = !!privateKey && !plainKey && (keyState === "encrypted" || keyState === "wrong-password");
-    const keyFileName = keyIsEncrypted ? keyName.replace(".key", ".encrypted.key") : keyName;
-    const pfx = leaf && privateKey && keyState === "match" ? buildPfx(privateKey, leaf, chain, sessionPfxPassword, keyPassword) : null;
-    const p7b = leaf ? buildP7b(leaf, chain) : null;
-    const der = leaf ? certToDer(leaf) : null;
-    const fullchain = leaf ? [leaf, ...chain].join("\n") + "\n" : null;
-    const bundle = fullchain && plainKey && keyState === "match" ? `${fullchain}${plainKey}\n` : null;
-
-    const descriptions: [string, string][] = [
-      [certName, "Certificate (PEM). Apache SSLCertificateFile."],
-      [derName, "Certificate (DER binary). Windows and some appliances."],
-      [keyFileName, plainKey ? "Private key (PEM, unencrypted)." : "Private key (PEM, still encrypted)."],
-      [chainName, "CA chain (PEM), leaf excluded. Apache SSLCertificateChainFile."],
-      [fullchainName, "Certificate + chain in one file. Nginx ssl_certificate."],
-      [bundleName, "Certificate + chain + key in one file. HAProxy and similar."],
-      [pfxName, "PKCS#12 archive for IIS, Windows and Azure. Password in PFX-PASSWORD.txt."],
-      [p7bName, "PKCS#7 bundle (DER) for Java and Windows imports."],
-      [csrName, "Certificate signing request."],
-    ];
-    const present = new Set<string>();
-    if (leaf) { dir.file(certName, leaf + "\n"); present.add(certName); }
-    if (der) { dir.file(derName, der); present.add(derName); }
-    if (privateKey) { dir.file(keyFileName, (plainKey ?? privateKey) + "\n"); present.add(keyFileName); }
-    if (chain.length > 0) { dir.file(chainName, chain.join("\n\n") + "\n"); present.add(chainName); }
-    if (fullchain && chain.length > 0) { dir.file(fullchainName, fullchain); present.add(fullchainName); }
-    if (bundle) { dir.file(bundleName, bundle); present.add(bundleName); }
-    if (pfx) {
-      dir.file(pfxName, pfx);
-      dir.file("PFX-PASSWORD.txt", `${sessionPfxPassword}\n`);
-      present.add(pfxName);
-    }
-    if (p7b) { dir.file(p7bName, p7b); present.add(p7bName); }
-    if (csr) { dir.file(csrName, csr + "\n"); present.add(csrName); }
-
-    const used = new Set<string>();
-    originalFiles.forEach(f => {
-      let name = f.name;
-      for (let n = 2; used.has(name); n++) name = `${n}-${f.name}`;
-      used.add(name);
-      dir.file(`originals/${name}`, f.bytes ?? f.text ?? "");
-    });
-
-    const chainLabel = {
-      none: "none provided",
-      complete: "complete",
-      incomplete: "incomplete (an issuer is missing)",
-      broken: "broken (bad signature or unrelated certificates)",
-    }[chainStatus];
-
-    const readme = [
-      "SSL PACKAGE",
-      `Generated by Mi (mi.maker-ai.tech) on ${timestamp} UTC`,
-      "",
-      "CERTIFICATE",
-      `Common Name (CN):     ${certOverview?.domain || "N/A"}`,
-      `Subject Alt Names:    ${certOverview?.sans.join(", ") || "None"}`,
-      `Issuer:               ${certOverview?.issuer || "N/A"}`,
-      `Serial Number:        ${serial}`,
-      `SHA-256 Fingerprint:  ${fingerprint}`,
-      `Key:                  ${certOverview ? `${certOverview.keyType} ${certOverview.keySize} bit` : "N/A"}`,
-      `Signature Algorithm:  ${certOverview?.sigAlg || "N/A"}`,
-      `Valid from:           ${certOverview?.validFrom || "N/A"}`,
-      `Expires:              ${certOverview?.validTo || "N/A"}`,
-      `Days remaining:       ${certOverview ? certOverview.daysLeft : "N/A"}`,
-      "",
-      "CHECKS",
-      `Key matches certificate: ${keyState === "match" ? "yes" : keyState === "mismatch" ? "NO - do not deploy this pair" : "not verified"}`,
-      `Chain: ${chainLabel}`,
-      "",
-      "FILES IN THIS FOLDER",
-      ...descriptions.filter(([n]) => present.has(n)).map(([n, d]) => `${n.padEnd(42)} ${d}`),
-      `${"originals/".padEnd(42)} The files you uploaded, unchanged.`,
-      "",
-      "DEPLOYMENT",
-      `Nginx:   ssl_certificate ${fullchainName}; ssl_certificate_key ${keyFileName};`,
-      `Apache:  SSLCertificateFile ${certName}, SSLCertificateKeyFile ${keyFileName}, SSLCertificateChainFile ${chainName}`,
-      `HAProxy: bind :443 ssl crt ${bundleName}`,
-      "IIS:     Server Certificates > Import, choose the .pfx and enter the password from PFX-PASSWORD.txt.",
-      "",
-      "This folder contains your private key. Keep it private.",
-      "Processed locally in your browser. No data was transmitted.",
-    ].join("\n");
-    dir.file("README.txt", readme);
-
-    saveBlob(`${baseName}-ssl-package.zip`, await zip.generateAsync({ type: "blob" }));
-    showStatus("Package ready");
+  const addSetFolder = (root: JSZip, set: CertSet, folderName: string) => {
+    const pkg = packageFor(set);
+    const dir = root.folder(folderName)!;
+    pkg.files.forEach(f => dir.file(f.name, f.content));
+    dir.file("README.txt", pkg.readme);
   };
 
-  const hasAnyData = originalFiles.length > 0;
+  const uniqueName = (name: string, used: Set<string>) => {
+    let out = name;
+    for (let n = 2; used.has(out); n++) out = `${name}_${n}`;
+    used.add(out);
+    return out;
+  };
 
-  const keyCheck = (() => {
-    switch (keyState) {
-      case "match": return { status: "success" as const, ok: "Match" };
-      case "mismatch": return { status: "error" as const, ok: "Mismatch" };
-      case "encrypted": return { status: "warning" as const, ok: "Password needed" };
-      case "wrong-password": return { status: "error" as const, ok: "Wrong password" };
-      case "unsupported": return { status: "pending" as const, ok: "EC / other keys are not supported yet" };
-      case "invalid": return { status: "error" as const, ok: "Unreadable key" };
-      default: return { status: "pending" as const, ok: "" };
+  const downloadFolder = async (set: CertSet) => {
+    const zip = new JSZip();
+    const name = setBaseName(set);
+    addSetFolder(zip, set, name);
+    saveBlob(`${name}-ssl-package.zip`, await zip.generateAsync({ type: "blob" }));
+    showStatus(`${name} package ready`);
+  };
+
+  const downloadEverything = async () => {
+    setBusy(true);
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      const zip = new JSZip();
+      const root = zip.folder("ssl-certificates")!;
+      const used = new Set<string>();
+      const index: string[] = [
+        "SSL CERTIFICATES",
+        `Generated by Mi (mi.maker-ai.tech) on ${new Date().toISOString().replace("T", " ").substring(0, 19)} UTC`,
+        "",
+        "One folder per certificate, soonest expiry first. Open the README.txt inside each folder for details.",
+        "",
+      ];
+
+      inventory.sets.forEach(set => {
+        const o = overviews.get(set.leaf);
+        const folder = uniqueName(setBaseName(set), used);
+        addSetFolder(root, set, folder);
+        const days = o ? (o.daysLeft < 0 ? `EXPIRED ${Math.abs(o.daysLeft)}d ago` : `${o.daysLeft} days left`) : "unknown";
+        index.push(`${folder.padEnd(36)} expires ${o?.validTo ?? "?"} (${days}) | key: ${set.key ? "yes" : "MISSING"} | chain: ${set.chainStatus}`);
+      });
+
+      const stray = [
+        ...inventory.strayKeys.map((k, i) => ({ name: `private-key-${i + 1}.key`, content: k.pem, note: STRAY_KEY_LABEL[k.state] })),
+        ...inventory.strayCas.map((c, i) => ({ name: `ca-certificate-${i + 1}.pem`, content: c, note: "CA certificate not used by any certificate above" })),
+        ...inventory.strayCsrs.map((c, i) => ({ name: `csr-${i + 1}.csr`, content: c, note: "CSR that matches no certificate" })),
+      ];
+      if (stray.length > 0) {
+        const dir = root.folder("_unmatched")!;
+        index.push("", "_unmatched/ (could not be assigned to a certificate)");
+        stray.forEach(f => {
+          dir.file(f.name, f.content + "\n");
+          index.push(`  ${f.name.padEnd(30)} ${f.note}`);
+        });
+      }
+
+      const originals = root.folder("_originals")!;
+      const usedOriginals = new Set<string>();
+      originalFiles.forEach(f => originals.file(uniqueName(f.name, usedOriginals), f.bytes ?? f.text ?? ""));
+      index.push("", "_originals/ holds the files you uploaded, unchanged.", "", "These folders contain private keys. Keep them private.");
+      root.file("INDEX.txt", index.join("\n"));
+
+      saveBlob("ssl-certificates.zip", await zip.generateAsync({ type: "blob" }));
+      showStatus(`${inventory.sets.length} certificate${inventory.sets.length === 1 ? "" : "s"} exported`);
+    } finally {
+      setBusy(false);
     }
-  })();
+  };
 
-  const expiryCheck = !certOverview
-    ? { status: "pending" as const, msg: "" }
-    : certOverview.status === "expired" ? { status: "error" as const, msg: "Expired" }
-    : certOverview.notYetValid ? { status: "warning" as const, msg: "Not yet valid" }
-    : certOverview.status === "warning" ? { status: "warning" as const, msg: "Expires soon" }
-    : { status: "success" as const, msg: "Valid" };
-
-  const chainCheck = {
-    none: { status: "pending" as const, msg: "No chain" },
-    complete: { status: "success" as const, msg: "Complete" },
-    incomplete: { status: "warning" as const, msg: "Issuer missing" },
-    broken: { status: "error" as const, msg: "Broken" },
-  }[chainStatus];
-
-  const allCerts: { label: string; overview: CertOverview }[] = [];
-  if (certOverview) allCerts.push({ label: "Leaf certificate", overview: certOverview });
-  chainOverviews.forEach((c, i) => allCerts.push({ label: `CA ${chainOverviews.length - i}`, overview: c }));
-
-  const certUnreadable = collected.certs.length > 0 && !leaf;
-  const keyNeedsPassword = keyState === "encrypted" || keyState === "wrong-password";
+  const isExpanded = (leaf: string) => expanded[leaf] ?? inventory.sets.length <= 3;
 
   return (
     <ToolContainer categoryId="network-security">
       <ToolHeader
         title="SSL Toolkit"
-        description="Sort, validate and repackage SSL certificate files. Drop in keys, certificates, chains and PFX archives, check that they match, and export a clean package."
+        description="Drop in every certificate, key, chain, CSR and PFX you have, in any order. It sorts them into one folder per certificate and gives you every format you are likely to need."
         categoryId="network-security"
       />
 
@@ -393,8 +326,8 @@ export default function SSLToolkitClient() {
               <div className="flex flex-col items-center gap-3 text-center pointer-events-none px-6">
                 <Plus className={`size-6 ${isDragging ? "text-accent" : "text-muted"}`} />
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-semibold text-foreground">Drop SSL files here, or click to browse</p>
-                  <p className="text-xs text-muted">.crt, .key, .pem, .pfx, .p12 and .p7b. You can also paste PEM text.</p>
+                  <p className="text-sm font-semibold text-foreground">Drop all your SSL files here, or click to browse</p>
+                  <p className="text-xs text-muted">.crt, .cer, .key, .pem, .csr, .pfx, .p12 and .p7b. You can also paste PEM text.</p>
                 </div>
               </div>
               <input
@@ -416,12 +349,12 @@ export default function SSLToolkitClient() {
           </GlassCard>
 
           <GlassCard className="xl:col-span-5 flex flex-col gap-5">
-            <SectionTitle icon={<FileText className="size-5 text-accent" />} title="Loaded files" />
+            <SectionTitle icon={<FileText className="size-5 text-accent" />} title={`Loaded files${originalFiles.length ? ` (${originalFiles.length})` : ""}`} />
 
             <div className="flex flex-col gap-2 max-h-[190px] overflow-y-auto custom-scrollbar">
               {originalFiles.length > 0 ? (
                 originalFiles.map(file => (
-                  <div key={file.id} className="group flex items-center justify-between p-3 rounded-xl bg-surface border border-border">
+                  <div key={file.id} className="flex items-center justify-between p-3 rounded-xl bg-surface border border-border">
                     <div className="flex items-center gap-3 overflow-hidden">
                       <FileTypeIcon type={file.displayType} />
                       <div className="flex flex-col min-w-0">
@@ -445,196 +378,102 @@ export default function SSLToolkitClient() {
           </GlassCard>
         </div>
 
-        {/* Identity and validation */}
-        {hasAnyData && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            <GlassCard className="lg:col-span-8 flex flex-col gap-6">
-              <SectionTitle icon={<ShieldCheck className="size-5 text-accent" />} title="Certificate details" divider />
-
-              {certOverview ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="flex flex-col gap-5">
-                    <Field label="Common name">
-                      <p className="text-sm font-bold text-foreground break-all">{certOverview.domain}</p>
-                    </Field>
-                    <Field label="Issuer">
-                      <p className="text-sm text-muted break-all">{certOverview.issuer}</p>
-                    </Field>
-                    {certOverview.sans.length > 0 && (
-                      <Field label="Subject alternative names">
-                        <div className="flex flex-wrap gap-1.5">
-                          {certOverview.sans.slice(0, 8).map((san, i) => (
-                            <span key={i} className="px-2 py-0.5 rounded-md bg-surface border border-border text-xs text-muted font-mono">{san}</span>
-                          ))}
-                          {certOverview.sans.length > 8 && <span className="text-xs text-muted">+{certOverview.sans.length - 8} more</span>}
-                        </div>
-                      </Field>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-5">
-                    <div className="grid grid-cols-2 gap-4">
-                      <Field label="Valid from">
-                        <p className="text-sm font-semibold text-foreground">{certOverview.validFrom}</p>
-                      </Field>
-                      <Field label="Expires">
-                        <p className={`text-sm font-semibold ${certOverview.status === "expired" ? "text-red-400" : "text-foreground"}`}>{certOverview.validTo}</p>
-                      </Field>
-                    </div>
-                    <div className="flex flex-col gap-2 p-4 rounded-2xl bg-surface border border-border">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted">Time remaining</span>
-                        {certOverview.status === "valid" ? <CheckCircle2 className="size-4 text-emerald-400" /> : <Clock className="size-4 text-amber-400" />}
-                      </div>
-                      <div className="flex items-baseline gap-2">
-                        <span className={`text-2xl font-bold ${expiryColor(certOverview.daysLeft)}`}>{Math.abs(certOverview.daysLeft)}</span>
-                        <span className="text-xs text-muted">{certOverview.daysLeft < 0 ? "days overdue" : "days left"}</span>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <Field label="Key">
-                        <p className="text-sm text-muted">{certOverview.keyType} {certOverview.keySize} bit</p>
-                      </Field>
-                      <Field label="Signature algorithm">
-                        <p className="text-sm text-muted break-all">{certOverview.sigAlg}</p>
-                      </Field>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <EmptyState
-                  icon={<Search className="size-8 text-muted" />}
-                  title={certUnreadable ? "Certificate could not be read" : "No certificate found"}
-                  hint={certUnreadable ? "Only RSA certificates are supported for now." : "Add a .crt or .pem file to see its details."}
-                />
-              )}
-            </GlassCard>
-
-            <GlassCard className="lg:col-span-4 flex flex-col gap-6">
-              <SectionTitle icon={<Activity className="size-5 text-accent" />} title="Checks" divider />
-
-              <div className="flex flex-col gap-3">
-                <ValidationStatus label="Key matches certificate" status={keyCheck.status} message={keyCheck.ok} />
-                <ValidationStatus label="Validity" status={expiryCheck.status} message={expiryCheck.msg} />
-                <ValidationStatus label="CA chain" status={chainCheck.status} message={chainCheck.msg} />
-              </div>
-
-              {keyNeedsPassword && (
+        {/* Needs a password */}
+        {(pfxFiles.length > 0 || lockedKeys.length > 0) && (
+          <GlassCard className="flex flex-col gap-4">
+            <SectionTitle icon={<Lock className="size-5 text-accent" />} title="Needs a password" divider />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pfxFiles.map(f => (
                 <PasswordBox
-                  title="Private key is encrypted"
-                  placeholder="Key password"
-                  onSubmit={setKeyPassword}
-                  error={keyState === "wrong-password" ? "Incorrect password." : ""}
-                />
-              )}
-
-              {pfxFile && (
-                <PasswordBox
-                  title={`Unlock ${pfxFile.name}`}
+                  key={f.id}
+                  title={`Unlock ${f.name}`}
                   placeholder="PFX password"
-                  onSubmit={unlockPfx}
-                  error={archiveError}
+                  error={archiveErrors[f.id] ?? ""}
+                  onSubmit={(pw) => unlockPfx(f, pw)}
+                />
+              ))}
+              {lockedKeys.length > 0 && (
+                <PasswordBox
+                  title={`${lockedKeys.length} encrypted private key${lockedKeys.length === 1 ? "" : "s"}`}
+                  placeholder="Key password"
+                  error={lockedKeys.some(k => k.state === "wrong-password") ? "None of the entered passwords worked for some keys. Try another." : ""}
+                  onSubmit={addKeyPassword}
                 />
               )}
-            </GlassCard>
+            </div>
+            {keyPasswords.length > 0 && (
+              <p className="text-xs text-muted">Every password you enter is tried on all encrypted keys.</p>
+            )}
+          </GlassCard>
+        )}
+
+        {/* Summary */}
+        {hasAnyData && hasResults && (
+          <GlassCard className="flex flex-col md:flex-row md:items-center justify-between gap-4" hoverEffect={false}>
+            <div className="flex flex-col gap-2">
+              <h2 className="text-base font-bold text-foreground">
+                {inventory.sets.length} certificate{inventory.sets.length === 1 ? "" : "s"} found
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {summary.expired > 0 && <Pill tone="error" text={`${summary.expired} expired`} />}
+                {summary.expiring > 0 && <Pill tone="warning" text={`${summary.expiring} expiring within 30 days`} />}
+                {summary.noKey > 0 && <Pill tone="warning" text={`${summary.noKey} without a private key`} />}
+                {inventory.strayKeys.length > 0 && <Pill tone="warning" text={`${inventory.strayKeys.length} unmatched key${inventory.strayKeys.length === 1 ? "" : "s"}`} />}
+                {summary.expired + summary.expiring + summary.noKey + inventory.strayKeys.length === 0 && <Pill tone="success" text="Everything matches" />}
+              </div>
+            </div>
+            <button
+              onClick={downloadEverything}
+              disabled={busy}
+              className="py-3 px-6 rounded-xl bg-accent text-[#04181a] font-bold text-sm hover:bg-accent-hover disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+            >
+              <Download className="size-4" />
+              {busy ? "Building..." : "Download everything (ZIP)"}
+            </button>
+          </GlassCard>
+        )}
+
+        {unreadableCerts > 0 && (
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400">
+            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+            <span>{unreadableCerts} certificate{unreadableCerts === 1 ? "" : "s"} could not be read. Only RSA certificates are supported for now.</span>
           </div>
         )}
 
-        {/* Chain and expiry */}
-        {hasAnyData && (chain.length > 0 || leaf) && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            <GlassCard className="lg:col-span-7 flex flex-col gap-6">
-              <SectionTitle icon={<Link className="size-5 text-accent" />} title="Certificate chain" divider />
+        {/* Certificates */}
+        {inventory.sets.map(set => (
+          <SetCard
+            key={set.leaf}
+            set={set}
+            overview={overviews.get(set.leaf) ?? null}
+            chainOverviews={set.chain.map(c => getCertOverview(c)).filter(Boolean) as CertOverview[]}
+            open={isExpanded(set.leaf)}
+            onToggle={() => setExpanded(prev => ({ ...prev, [set.leaf]: !isExpanded(set.leaf) }))}
+            pkg={isExpanded(set.leaf) ? packageFor(set) : null}
+            pfxPassword={pfxPasswordFor(set.leaf)}
+            onCopyPassword={copyPassword}
+            onDownloadFile={downloadOne}
+            onDownloadFolder={() => downloadFolder(set)}
+          />
+        ))}
 
-              <div className="flex flex-col gap-1 pl-6 border-l-2 border-accent ml-4">
-                {chainOverviews.length > 0 && (
-                  <ChainNode label={chainStatus === "complete" ? "Root CA" : "Top of chain"} cert={chainOverviews[chainOverviews.length - 1]} />
-                )}
-                {chainOverviews.slice(0, -1).reverse().map((cert, i) => (
-                  <ChainNode key={i} label={`Intermediate CA ${chainOverviews.length - 1 - i}`} cert={cert} />
-                ))}
-                {certOverview && <ChainNode label="Leaf certificate" cert={certOverview} />}
-              </div>
-            </GlassCard>
-
-            <GlassCard className="lg:col-span-5 flex flex-col gap-6">
-              <SectionTitle icon={<Clock className="size-5 text-accent" />} title="Expiry overview" divider />
-
-              <div className="flex flex-col gap-3">
-                {allCerts.map(({ label, overview }, i) => {
-                  const d = overview.daysLeft;
-                  const color = expiryColor(d);
-                  const tone = d < 0 ? "bg-red-500/10 border-red-500/20" : d < 30 ? "bg-amber-500/10 border-amber-500/20" : "bg-emerald-500/10 border-emerald-500/20";
-                  return (
-                    <div key={i} className={`p-4 rounded-2xl border ${tone}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-muted">{label}</span>
-                        <span className={`text-xs font-bold ${color}`}>{d < 0 ? "Expired" : d < 30 ? "Expiring soon" : "Valid"}</span>
-                      </div>
-                      <p className="text-sm font-bold text-foreground break-all mb-2">{overview.domain}</p>
-                      <div className="flex items-baseline gap-2">
-                        <span className={`text-2xl font-bold ${color}`}>{Math.abs(d)}</span>
-                        <span className="text-xs text-muted">{d < 0 ? "days overdue" : "days remaining"}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted">Expires {overview.validTo}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </GlassCard>
-          </div>
-        )}
-
-        {/* Export */}
-        {hasAnyData && (
-          <GlassCard className="flex flex-col gap-6">
-            <div className="flex items-center justify-between border-b border-border pb-4">
-              <SectionTitle icon={<Package className="size-5 text-accent" />} title="Export" />
-              <button onClick={() => setIsDocModalOpen(true)} className="flex items-center gap-2 text-xs font-semibold text-muted hover:text-accent transition-colors">
-                <HelpCircle className="size-4" />
-                Help
-              </button>
+        {/* Unmatched */}
+        {(inventory.strayKeys.length > 0 || inventory.strayCas.length > 0 || inventory.strayCsrs.length > 0) && (
+          <GlassCard className="flex flex-col gap-4" hoverEffect={false}>
+            <SectionTitle icon={<HelpCircle className="size-5 text-accent" />} title="Not matched to a certificate" divider />
+            <div className="flex flex-col gap-2">
+              {inventory.strayKeys.map((k, i) => (
+                <StrayRow key={`k${i}`} icon={<Key className="size-4 text-accent" />} title={`Private key ${i + 1}`} note={STRAY_KEY_LABEL[k.state]} />
+              ))}
+              {inventory.strayCas.map((c, i) => {
+                const o = getCertOverview(c);
+                return <StrayRow key={`c${i}`} icon={<FileCheck className="size-4 text-accent" />} title={o?.domain ?? `CA certificate ${i + 1}`} note="CA certificate not used by any certificate above" />;
+              })}
+              {inventory.strayCsrs.map((_, i) => (
+                <StrayRow key={`r${i}`} icon={<FileText className="size-4 text-accent" />} title={`CSR ${i + 1}`} note="No certificate has been issued for this request yet" />
+              ))}
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              <div className="lg:col-span-7 flex flex-col gap-3">
-                <span className="text-xs font-semibold text-muted">Individual files</span>
-                <div className="flex flex-col gap-2">
-                  {leaf && <DownloadItem icon={<FileCheck className="size-4 text-accent" />} type="Certificate" name={certName} onClick={() => downloadFile(certName, leaf)} />}
-                  {privateKey && <DownloadItem icon={<Key className="size-4 text-accent" />} type="Private key" name={keyName} onClick={() => downloadFile(keyName, privateKey)} />}
-                  {chain.length > 0 && <DownloadItem icon={<Link className="size-4 text-accent" />} type="CA chain" name={chainName} onClick={() => downloadFile(chainName, chain.join("\n\n"))} />}
-                  {leaf && chain.length > 0 && <DownloadItem icon={<Link className="size-4 text-accent" />} type="Full chain (Nginx)" name={fullchainName} onClick={() => downloadFile(fullchainName, [leaf, ...chain].join("\n") + "\n")} />}
-                  {leaf && privateKey && keyState === "match" && <DownloadItem icon={<Package className="size-4 text-accent" />} type="PFX (IIS / Windows)" name={pfxName} onClick={() => setIsPfxModalOpen(true)} action="Set password" />}
-                  {leaf && chain.length > 0 && <DownloadItem icon={<FileText className="size-4 text-accent" />} type="P7B (Java / import)" name={p7bName} onClick={downloadP7bSingle} />}
-                  {csr && <DownloadItem icon={<FileText className="size-4 text-accent" />} type="CSR" name={csrName} onClick={() => downloadFile(csrName, csr)} />}
-                </div>
-              </div>
-
-              <div className="lg:col-span-5">
-                <div className="p-6 rounded-2xl bg-surface border border-accent flex flex-col gap-4">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-base font-bold text-foreground">Full package</h3>
-                    <p className="text-sm text-muted">One folder with every format you are likely to need: PEM, DER, fullchain, key bundle, PFX, P7B, CSR, a README and your original files.</p>
-                  </div>
-                  {sessionPfxPassword && keyState === "match" && (
-                    <div className="flex flex-col gap-1">
-                      <span className="text-xs text-muted">PFX password for this package</span>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 min-w-0 truncate px-3 py-2 rounded-lg bg-background border border-border text-sm font-mono text-foreground select-all">{sessionPfxPassword}</code>
-                        <button onClick={copyPassword} aria-label="Copy password" className="p-2 rounded-lg border border-border text-muted hover:text-accent hover:border-accent transition-colors">
-                          <Copy className="size-4" />
-                        </button>
-                      </div>
-                      <span className="text-xs text-muted">Also saved in the ZIP as PFX-PASSWORD.txt.</span>
-                    </div>
-                  )}
-                  <button onClick={handleDownloadAll} className="w-full py-3 rounded-xl bg-accent text-[#04181a] font-bold text-sm hover:bg-accent-hover transition-colors flex items-center justify-center gap-2">
-                    <Download className="size-4" />
-                    Download ZIP
-                  </button>
-                </div>
-              </div>
-            </div>
+            <p className="text-xs text-muted">These go into the _unmatched folder of the full ZIP, so nothing is lost.</p>
           </GlassCard>
         )}
 
@@ -645,35 +484,25 @@ export default function SSLToolkitClient() {
       </div>
 
       <AnimatePresence>
-        {isPfxModalOpen && (
-          <Modal title="Create PFX archive" onClose={() => { setIsPfxModalOpen(false); setManualPfxPassword(""); setConfirmPfxPassword(""); }}>
-            <div className="flex flex-col gap-5">
-              <p className="text-sm text-muted leading-relaxed">Choose a password to protect the private key in the PFX. You will need it when importing the file into IIS or Windows.</p>
-              <div className="flex flex-col gap-3">
-                <input type="password" aria-label="PFX password" placeholder="Password" value={manualPfxPassword} onChange={(e) => setManualPfxPassword(e.target.value)} className="toolsy-input h-11 px-4 text-sm" />
-                <input type="password" aria-label="Confirm PFX password" placeholder="Confirm password" value={confirmPfxPassword} onChange={(e) => setConfirmPfxPassword(e.target.value)} className="toolsy-input h-11 px-4 text-sm" />
-                {manualPfxPassword && confirmPfxPassword && manualPfxPassword !== confirmPfxPassword && <p className="text-xs font-semibold text-red-400">Passwords do not match</p>}
-              </div>
-              <button onClick={downloadPfx} disabled={!manualPfxPassword || manualPfxPassword !== confirmPfxPassword} className="w-full py-3 rounded-xl bg-accent text-[#04181a] font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors">Download PFX</button>
-            </div>
-          </Modal>
-        )}
-
         {isDocModalOpen && (
           <Modal title="How it works" onClose={() => setIsDocModalOpen(false)}>
             <div className="flex flex-col gap-6 text-sm text-muted leading-relaxed max-h-[60svh] overflow-y-auto custom-scrollbar pr-2">
               <div className="flex flex-col gap-2">
                 <h4 className="text-sm font-bold text-foreground">What it does</h4>
-                <p>Fixes the &quot;folder of nameless files&quot; problem. It identifies your keys, certificates and chains, renames them clearly and bundles them for deployment.</p>
+                <p>Fixes the &quot;folder of nameless files&quot; problem. Upload everything at once, even for many domains. Each certificate is paired with its private key, CSR and CA chain, and exported in one folder with a clear name.</p>
               </div>
               <div className="flex flex-col gap-2">
-                <h4 className="text-sm font-bold text-foreground">Features</h4>
+                <h4 className="text-sm font-bold text-foreground">What you get per certificate</h4>
                 <ul className="flex flex-col gap-1.5 list-disc list-inside">
-                  <li><strong>Detection:</strong> recognises CRT, KEY, PEM, PFX and P7B files, in any upload order.</li>
-                  <li><strong>Key check:</strong> verifies that an RSA private key matches a certificate. Encrypted keys ask for their password.</li>
-                  <li><strong>Chain check:</strong> orders the chain by issuer and verifies each signature.</li>
-                  <li><strong>Packaging:</strong> exports a ZIP with consistent file names.</li>
+                  <li>Certificate as PEM and DER, the CA chain, and a full chain for Nginx.</li>
+                  <li>The unencrypted private key, and a certificate + chain + key file for HAProxy.</li>
+                  <li>A PFX for IIS and Windows with its password in PFX-PASSWORD.txt, and a P7B for Java.</li>
+                  <li>The CSR if you uploaded it, and a README with the details and deployment lines.</li>
                 </ul>
+              </div>
+              <div className="flex flex-col gap-2">
+                <h4 className="text-sm font-bold text-foreground">Passwords</h4>
+                <p>Locked PFX files and encrypted keys ask for a password. Anything you enter is tried on every encrypted key.</p>
               </div>
               <div className="flex flex-col gap-2">
                 <h4 className="text-sm font-bold text-foreground">Limits</h4>
@@ -683,21 +512,133 @@ export default function SSLToolkitClient() {
                 <h4 className="text-sm font-bold text-foreground">Privacy</h4>
                 <p>All processing happens in your browser using Node-Forge. Private keys are never sent to a server.</p>
               </div>
-              <div className="flex flex-col gap-2">
-                <h4 className="text-sm font-bold text-foreground">Export formats</h4>
-                <ul className="flex flex-col gap-1.5">
-                  <li><strong className="text-foreground">CRT / PEM:</strong> Nginx, Apache and Cloudflare.</li>
-                  <li><strong className="text-foreground">PFX:</strong> IIS, Windows and Azure.</li>
-                  <li><strong className="text-foreground">P7B:</strong> Java (Tomcat) and Windows imports.</li>
-                </ul>
-              </div>
             </div>
           </Modal>
         )}
       </AnimatePresence>
     </ToolContainer>
   );
+}
 
+/* ─────────────────────────────────────────────
+   CERTIFICATE CARD
+  ───────────────────────────────────────────── */
+
+function SetCard({ set, overview, chainOverviews, open, onToggle, pkg, pfxPassword, onCopyPassword, onDownloadFile, onDownloadFolder }: {
+  set: CertSet;
+  overview: CertOverview | null;
+  chainOverviews: CertOverview[];
+  open: boolean;
+  onToggle: () => void;
+  pkg: SetPackage | null;
+  pfxPassword: string;
+  onCopyPassword: (pw: string) => void;
+  onDownloadFile: (f: PackageFile) => void;
+  onDownloadFolder: () => void;
+}) {
+  const days = overview?.daysLeft;
+  const expiry =
+    !overview ? null
+    : overview.daysLeft < 0 ? { tone: "error" as const, text: `Expired ${Math.abs(overview.daysLeft)}d ago` }
+    : overview.notYetValid ? { tone: "warning" as const, text: "Not yet valid" }
+    : overview.daysLeft < 30 ? { tone: "warning" as const, text: `${overview.daysLeft} days left` }
+    : { tone: "success" as const, text: `${overview.daysLeft} days left` };
+  const chain = {
+    none: { tone: "neutral" as const, text: "No chain" },
+    complete: { tone: "success" as const, text: "Chain complete" },
+    incomplete: { tone: "warning" as const, text: "Issuer missing" },
+    broken: { tone: "error" as const, text: "Chain broken" },
+  }[set.chainStatus];
+
+  return (
+    <GlassCard className="flex flex-col gap-6" hoverEffect={false}>
+      <button onClick={onToggle} aria-expanded={open} className="w-full flex items-center justify-between gap-4 text-left">
+        <div className="flex flex-col gap-2 min-w-0">
+          <h2 className="text-base font-bold text-foreground break-all">{overview?.domain ?? "Unreadable certificate"}</h2>
+          <div className="flex flex-wrap gap-2">
+            {expiry && <Pill tone={expiry.tone} text={expiry.text} />}
+            <Pill tone={set.key ? "success" : "warning"} text={set.key ? "Key matches" : "No private key"} />
+            <Pill tone={chain.tone} text={chain.text} />
+          </div>
+        </div>
+        <ChevronDown className={`size-5 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && overview && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-border pt-6">
+            <div className="flex flex-col gap-5">
+              <Field label="Issuer"><p className="text-sm text-muted break-all">{overview.issuer}</p></Field>
+              {overview.sans.length > 0 && (
+                <Field label="Subject alternative names">
+                  <div className="flex flex-wrap gap-1.5">
+                    {overview.sans.slice(0, 8).map((san, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded-md bg-surface border border-border text-xs text-muted font-mono">{san}</span>
+                    ))}
+                    {overview.sans.length > 8 && <span className="text-xs text-muted">+{overview.sans.length - 8} more</span>}
+                  </div>
+                </Field>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-4 content-start">
+              <Field label="Valid from"><p className="text-sm font-semibold text-foreground">{overview.validFrom}</p></Field>
+              <Field label="Expires">
+                <p className={`text-sm font-semibold ${days !== undefined && days < 0 ? "text-red-400" : "text-foreground"}`}>{overview.validTo}</p>
+              </Field>
+              <Field label="Key"><p className="text-sm text-muted">{overview.keyType} {overview.keySize} bit</p></Field>
+              <Field label="Signature"><p className="text-sm text-muted break-all">{overview.sigAlg}</p></Field>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-muted">Chain</span>
+            <div className="flex flex-col gap-1 pl-6 border-l-2 border-accent ml-4">
+              {chainOverviews.length > 0 && (
+                <ChainNode label={set.chainStatus === "complete" ? "Root CA" : "Top of chain"} cert={chainOverviews[chainOverviews.length - 1]} />
+              )}
+              {chainOverviews.slice(0, -1).reverse().map((cert, i) => (
+                <ChainNode key={i} label={`Intermediate CA ${chainOverviews.length - 1 - i}`} cert={cert} />
+              ))}
+              <ChainNode label="Leaf certificate" cert={overview} />
+            </div>
+          </div>
+
+          {pkg && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 border-t border-border pt-6">
+              <div className="lg:col-span-7 flex flex-col gap-3">
+                <span className="text-xs font-semibold text-muted">Files in this folder</span>
+                <div className="flex flex-col gap-2">
+                  {pkg.files.map(f => (
+                    <DownloadItem key={f.name} name={f.name} description={f.description} onClick={() => onDownloadFile(f)} />
+                  ))}
+                </div>
+              </div>
+              <div className="lg:col-span-5 flex flex-col gap-4">
+                {pkg.hasPfx && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">PFX password</span>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 min-w-0 truncate px-3 py-2 rounded-lg bg-background border border-border text-sm font-mono text-foreground select-all">{pfxPassword}</code>
+                      <button onClick={() => onCopyPassword(pfxPassword)} aria-label="Copy password" className="p-2 rounded-lg border border-border text-muted hover:text-accent hover:border-accent transition-colors">
+                        <Copy className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {!set.key && (
+                  <p className="text-xs text-amber-400">No private key matched this certificate, so the key, PFX and combined files are not included.</p>
+                )}
+                <button onClick={onDownloadFolder} className="w-full py-3 rounded-xl bg-accent text-[#04181a] font-bold text-sm hover:bg-accent-hover transition-colors flex items-center justify-center gap-2">
+                  <Package className="size-4" />
+                  Download this folder (ZIP)
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </GlassCard>
+  );
 }
 
 /* ─────────────────────────────────────────────
@@ -745,6 +686,34 @@ function FileTypeIcon({ type }: { type: string }) {
   return <FileCheck className={cls} />;
 }
 
+function Pill({ tone, text }: { tone: "success" | "warning" | "error" | "neutral"; text: string }) {
+  const styles = {
+    success: { icon: CheckCircle2, cls: "text-emerald-400 bg-emerald-500/10" },
+    warning: { icon: AlertTriangle, cls: "text-amber-400 bg-amber-500/10" },
+    error: { icon: AlertCircle, cls: "text-red-400 bg-red-500/10" },
+    neutral: { icon: Clock, cls: "text-muted bg-surface" },
+  }[tone];
+  const Icon = styles.icon;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${styles.cls}`}>
+      <Icon className="size-3.5 shrink-0" />
+      {text}
+    </span>
+  );
+}
+
+function StrayRow({ icon, title, note }: { icon: React.ReactNode; title: string; note: string }) {
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-xl bg-surface border border-border">
+      <div className="p-2 rounded-lg bg-background shrink-0">{icon}</div>
+      <div className="flex flex-col min-w-0">
+        <span className="text-sm font-semibold text-foreground truncate">{title}</span>
+        <span className="text-xs text-muted">{note}</span>
+      </div>
+    </div>
+  );
+}
+
 function PasswordBox({ title, placeholder, error, onSubmit }: {
   title: string;
   placeholder: string;
@@ -752,7 +721,10 @@ function PasswordBox({ title, placeholder, error, onSubmit }: {
   onSubmit: (value: string) => void;
 }) {
   const [value, setValue] = useState("");
-  const submit = () => onSubmit(value);
+  const submit = () => {
+    onSubmit(value);
+    setValue("");
+  };
   return (
     <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col gap-3">
       <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 min-w-0">
@@ -776,42 +748,19 @@ function PasswordBox({ title, placeholder, error, onSubmit }: {
   );
 }
 
-function ValidationStatus({ label, status, message }: { label: string; status: "success" | "error" | "warning" | "pending"; message: string }) {
-  const configs = {
-    success: { icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
-    error: { icon: AlertCircle, color: "text-red-400", bg: "bg-red-500/10" },
-    warning: { icon: AlertTriangle, color: "text-amber-400", bg: "bg-amber-500/10" },
-    pending: { icon: Activity, color: "text-muted", bg: "bg-surface" },
-  };
-  const config = configs[status];
-  const Icon = config.icon;
-  return (
-    <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-surface border border-border">
-      <span className="text-xs text-muted">{label}</span>
-      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-right ${config.bg} ${config.color}`}>
-        <Icon className="size-3.5 shrink-0" />
-        <span className="text-xs font-semibold">{message || "Not checked"}</span>
-      </div>
-    </div>
-  );
-}
-
-function DownloadItem({ icon, type, name, onClick, action = "Download" }: { icon: React.ReactNode; type: string; name: string; onClick: () => void; action?: string }) {
+function DownloadItem({ name, description, onClick }: { name: string; description: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={`${action} ${name}`}
+      aria-label={`Download ${name}`}
       className="group w-full text-left flex items-center justify-between gap-3 p-3 rounded-2xl bg-surface border border-border hover:border-accent transition-colors"
     >
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="p-2 rounded-lg bg-background">{icon}</div>
-        <div className="flex flex-col min-w-0">
-          <span className="text-xs text-muted">{type}</span>
-          <span className="text-sm font-semibold text-foreground truncate">{name}</span>
-        </div>
+      <div className="flex flex-col min-w-0">
+        <span className="text-sm font-semibold text-foreground truncate">{name}</span>
+        <span className="text-xs text-muted">{description}</span>
       </div>
-      <span className="text-xs font-semibold text-accent shrink-0">{action}</span>
+      <Download className="size-4 text-accent shrink-0" />
     </button>
   );
 }
