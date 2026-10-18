@@ -1,27 +1,27 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import forge from "node-forge";
 import JSZip from "jszip";
 import {
   ToolContainer,
   ToolHeader,
 } from "@/components/tools";
-import { 
-  Shield, 
-  FileCheck, 
-  Lock, 
-  Key, 
+import {
+  Shield,
+  FileCheck,
+  Lock,
+  Key,
   Download,
   Upload,
-  Trash2, 
-  Plus, 
-  AlertCircle, 
-  CheckCircle2, 
-  Clock, 
-  Globe, 
-  Activity, 
-  Package, 
+  Copy,
+  Trash2,
+  Plus,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Globe,
+  Activity,
+  Package,
   FileText,
   X,
   HelpCircle,
@@ -32,97 +32,36 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import GlassCard from "@/components/ui/GlassCard";
-
-interface DetectedItems {
-  key: string | null;
-  cert: string | null;
-  chain: string[];
-  csr: string | null;
-  pfx: { binary: string; passwordValue: string; error: string; filename: string } | null;
-}
-
-interface CertOverview {
-  domain: string;
-  issuer: string;
-  subject: string;
-  validFrom: string;
-  validTo: string;
-  daysLeft: number;
-  status: "valid" | "warning" | "expired";
-  sans: string[];
-  sigAlg: string;
-  keyType: string;
-  keySize: number | string;
-}
+import {
+  type CertOverview,
+  type ChainStatus,
+  type KeyMatch,
+  buildP7b,
+  buildPfx,
+  certBaseName,
+  certFingerprint,
+  certSerial,
+  classifyText,
+  collectPem,
+  decodeUpload,
+  generatePassword,
+  getCertOverview,
+  keyMatchesCert,
+  organizeCertificates,
+  unlockPkcs12,
+} from "@/lib/ssl-toolkit";
 
 interface OriginalFile {
   id: string;
   name: string;
-  content: string | Uint8Array;
-  type: "text" | "binary";
   displayType: string;
+  text?: string;
+  bytes?: Uint8Array;
 }
 
-const generateRandomPassword = (length = 16) => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-};
-
-const classifyFile = (name: string, content: string | Uint8Array, isBinary: boolean) => {
-  if (isBinary) {
-    if (name.endsWith(".p7b") || name.endsWith(".p7c")) return { type: "P7B Archive" };
-    return { type: "PFX Archive" };
-  }
-
-  const text = content as string;
-  const hasKey = text.includes("PRIVATE KEY");
-  const hasCert = text.includes("CERTIFICATE");
-  const hasCsr = text.includes("CERTIFICATE REQUEST");
-
-  if (hasKey && hasCert) return { type: "Key & Certificate" };
-  if (hasKey) return { type: "Private Key" };
-  if (hasCsr) return { type: "CSR" };
-  if (hasCert) {
-    const certCount = (text.match(/-----BEGIN CERTIFICATE-----/g) || []).length;
-    if (certCount > 1 || name.includes("chain") || name.includes("bundle")) return { type: "CA Chain" };
-    return { type: "Certificate" };
-  }
-
-  return { type: "Unknown" };
-};
-
-const parseText = (text: string, current: DetectedItems): DetectedItems => {
-  const pemRegex = /-----BEGIN [A-Z\s]+-----[^-]+-----END [A-Z\s]+-----/g;
-  const matches = text.match(pemRegex) || [];
-  
-  let newKey = current.key;
-  let newCert = current.cert;
-  const newChain = [...current.chain];
-  let newCsr = current.csr;
-
-  matches.forEach(pem => {
-    if (pem.includes("PRIVATE KEY")) {
-      newKey = pem;
-    } else if (pem.includes("CERTIFICATE REQUEST")) {
-      newCsr = pem;
-    } else if (pem.includes("CERTIFICATE")) {
-      if (!newCert) {
-        newCert = pem;
-      } else if (newCert !== pem && !newChain.includes(pem)) {
-        newChain.push(pem);
-      }
-    }
-  });
-
-  return { ...current, key: newKey, cert: newCert, chain: newChain, csr: newCsr };
-};
+const newId = () => Math.random().toString(36).substring(2, 9);
 
 export default function SSLToolkitClient() {
-  const [detected, setDetected] = useState<DetectedItems>({ key: null, cert: null, chain: [], csr: null, pfx: null });
   const [originalFiles, setOriginalFiles] = useState<OriginalFile[]>([]);
   const [status, setStatus] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -130,66 +69,73 @@ export default function SSLToolkitClient() {
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [manualPfxPassword, setManualPfxPassword] = useState("");
   const [confirmPfxPassword, setConfirmPfxPassword] = useState("");
-
-  const sessionPfxPassword = useMemo(() => {
-    if (detected.cert && detected.key) return generateRandomPassword();
-    return "";
-  }, [detected.cert, detected.key]);
+  const [archiveError, setArchiveError] = useState("");
+  const [keyPassword, setKeyPassword] = useState("");
 
   const showStatus = (msg: string) => {
     setStatus(msg);
     setTimeout(() => setStatus(""), 4000);
   };
 
-  const rebuildDetected = (files: OriginalFile[]) => {
-    let current: DetectedItems = { key: null, cert: null, chain: [], csr: null, pfx: null };
-    files.forEach(f => {
-      if (f.type === "binary") {
-        let binaryString = "";
-        const uint8Array = f.content as Uint8Array;
-        for (let i = 0; i < uint8Array.length; i++) {
-          binaryString += String.fromCharCode(uint8Array[i]);
-        }
-        current.pfx = { binary: binaryString, passwordValue: "", error: "", filename: f.name };
-      } else {
-        current = parseText(f.content as string, current);
-      }
-    });
-    setDetected(current);
-  };
+  /* ── Derived state: everything is recomputed from the loaded files ── */
+
+  const collected = useMemo(
+    () => collectPem(originalFiles.filter(f => f.text).map(f => f.text as string)),
+    [originalFiles]
+  );
+  const organized = useMemo(() => organizeCertificates(collected.certs), [collected.certs]);
+  const leaf = organized.leaf;
+  const chain = organized.chain;
+  const chainStatus: ChainStatus = organized.chainStatus;
+  const csr = collected.csr;
+  const pfxFile = useMemo(() => [...originalFiles].reverse().find(f => f.bytes) ?? null, [originalFiles]);
+
+  const privateKey = useMemo(() => {
+    if (collected.keys.length === 0) return null;
+    if (leaf) {
+      const match = collected.keys.find(k => keyMatchesCert(k, leaf, keyPassword) === "match");
+      if (match) return match;
+    }
+    return collected.keys[0];
+  }, [collected.keys, leaf, keyPassword]);
+
+  const keyState: KeyMatch | null = useMemo(() => {
+    if (!leaf || !privateKey) return null;
+    return keyMatchesCert(privateKey, leaf, keyPassword);
+  }, [leaf, privateKey, keyPassword]);
+
+  const certOverview = useMemo(() => (leaf ? getCertOverview(leaf) : null), [leaf]);
+  const chainOverviews = useMemo(
+    () => chain.map(c => getCertOverview(c)).filter(Boolean) as CertOverview[],
+    [chain]
+  );
+
+  const sessionPfxPassword = useMemo(() => {
+    if (leaf && privateKey) return generatePassword();
+    return "";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaf, privateKey]);
+
+  const baseName = certBaseName(certOverview);
+  const certName = `CERTIFICATE_${baseName}.crt`;
+  const keyName = `PRIVATE-KEY_${baseName}.key`;
+  const chainName = `CA-CHAIN_${baseName}.pem`;
+  const pfxName = `PFX_${baseName}.pfx`;
+  const p7bName = `P7B_${baseName}.p7b`;
+  const csrName = `CSR_${baseName}.csr`;
+
+  /* ── Loading files ── */
 
   const handleFiles = (files: File[]) => {
-    const promises = files.map(file => {
-      return new Promise<OriginalFile>((resolve) => {
-        const isBinary = file.name.endsWith(".pfx") || file.name.endsWith(".p12") || file.type === "application/x-pkcs12" || file.name.endsWith(".p7b");
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          if (!evt.target?.result) return;
-          if (isBinary) {
-            const arrayBuffer = evt.target.result as ArrayBuffer;
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const { type } = classifyFile(file.name, uint8Array, true);
-            resolve({ id: Math.random().toString(36).substring(2, 9), name: file.name, content: uint8Array, type: "binary", displayType: type });
-          } else {
-            const text = evt.target.result as string;
-            const { type } = classifyFile(file.name, text, false);
-            resolve({ id: Math.random().toString(36).substring(2, 9), name: file.name, content: text, type: "text", displayType: type });
-          }
-        };
-        if (isBinary) reader.readAsArrayBuffer(file);
-        else reader.readAsText(file);
-      });
-    });
-
-    Promise.all(promises).then(newOriginals => {
-      setOriginalFiles(prev => [...prev, ...newOriginals]);
-    });
+    Promise.all(files.map(async (file): Promise<OriginalFile> => {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const decoded = decodeUpload(file.name, bytes);
+      if (decoded.kind === "pfx") {
+        return { id: newId(), name: file.name, displayType: decoded.displayType, bytes: decoded.bytes };
+      }
+      return { id: newId(), name: file.name, displayType: decoded.displayType, text: decoded.text };
+    })).then(added => setOriginalFiles(prev => [...prev, ...added]));
   };
-
-  // Rebuild detected items whenever original files change
-  useEffect(() => {
-    rebuildDetected(originalFiles);
-  }, [originalFiles]);
 
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
@@ -197,9 +143,7 @@ export default function SSLToolkitClient() {
       const pastedText = e.clipboardData?.getData("text");
       if (pastedText && pastedText.trim()) {
         const name = `pasted-ssl-${Date.now()}.txt`;
-        const { type } = classifyFile(name, pastedText, false);
-        const newFile: OriginalFile = { id: Math.random().toString(36).substring(2, 9), name, content: pastedText, type: "text", displayType: type };
-        setOriginalFiles(prev => [...prev, newFile]);
+        setOriginalFiles(prev => [...prev, { id: newId(), name, displayType: classifyText(name, pastedText), text: pastedText }]);
         showStatus("Pasted text loaded");
       }
     };
@@ -211,273 +155,170 @@ export default function SSLToolkitClient() {
     setOriginalFiles(prev => prev.filter(f => f.id !== id));
   };
 
-  const unlockPfx = () => {
-    if (!detected.pfx) return;
+  const clearAll = () => {
+    setOriginalFiles([]);
+    setArchiveError("");
+    setKeyPassword("");
+  };
+
+  /** Replaces the PFX with its contents so they behave like any other loaded file. */
+  const unlockPfx = (password: string) => {
+    if (!pfxFile?.bytes) return;
     try {
-      const p12Asn1 = forge.asn1.fromDer(detected.pfx.binary, false);
-      const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, detected.pfx.passwordValue);
-      const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || [];
-      const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || [];
-      const unencryptedKeyBags = p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag] || [];
-
-      let keyPem = "";
-      if (keyBags.length > 0 && keyBags[0].key) keyPem = forge.pki.privateKeyToPem(keyBags[0].key);
-      else if (unencryptedKeyBags.length > 0 && unencryptedKeyBags[0].key) keyPem = forge.pki.privateKeyToPem(unencryptedKeyBags[0].key);
-
-      let certPem = "";
-      const caPems: string[] = [];
-      if (certBags.length > 0 && certBags[0].cert) {
-        certPem = forge.pki.certificateToPem(certBags[0].cert);
-        for (let i = 1; i < certBags.length; i++) {
-          if (certBags[i].cert) caPems.push(forge.pki.certificateToPem(certBags[i].cert!).trim());
-        }
-      }
-
-      setDetected(prev => ({ ...prev, key: keyPem || prev.key, cert: certPem || prev.cert, chain: [...prev.chain, ...caPems], pfx: null }));
-      showStatus("PFX unlocked and extracted!");
+      const { keys, certs } = unlockPkcs12(pfxFile.bytes, password);
+      const text = [...certs, ...keys].join("\n");
+      const name = `${pfxFile.name} (extracted).pem`;
+      setOriginalFiles(prev => [
+        ...prev.filter(f => f.id !== pfxFile.id),
+        { id: newId(), name, displayType: classifyText(name, text), text },
+      ]);
+      setArchiveError("");
+      showStatus("PFX unlocked and extracted");
     } catch {
-      setDetected(prev => prev.pfx ? { ...prev, pfx: { ...prev.pfx, error: "Incorrect password or invalid file." } } : prev);
+      setArchiveError("Incorrect password or invalid file.");
     }
   };
 
-  const getCertOverview = (pem: string): CertOverview | null => {
-    try {
-      const cert = forge.pki.certificateFromPem(pem);
-      const domain = (cert.subject.attributes.find(a => a.shortName === "CN" || a.name === "commonName")?.value as string) || "Unknown Subject";
-      const issuer = (cert.issuer.attributes.find(a => a.shortName === "CN" || a.name === "commonName")?.value as string) || "Unknown Issuer";
-      const subjectStr = cert.subject.attributes.map(a => `${a.shortName || a.name}=${a.value}`).join(', ');
-      
-      const now = new Date();
-      const validToObj = cert.validity.notAfter;
-      const daysLeft = Math.ceil((validToObj.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      
-      let expStatus: "valid" | "warning" | "expired" = "valid";
-      if (daysLeft < 0) expStatus = "expired";
-      else if (daysLeft < 30) expStatus = "warning";
+  /* ── Exporting ── */
 
-      const ext = cert.getExtension("subjectAltName");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sans: string[] = ext ? (ext as any).altNames.map((a: any) => a.value as string) : [];
-      const sigAlg = forge.pki.oids[cert.signatureOid] || cert.signatureOid;
-
-      let keyType = "Unknown";
-      let keySize: number | string = "Unknown";
-      if (cert.publicKey) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pk = cert.publicKey as any;
-        if (pk.n) { keyType = "RSA"; keySize = pk.n.bitLength(); }
-        else keyType = "ECDSA / Other";
-      }
-
-      return { domain, issuer, subject: subjectStr, validFrom: cert.validity.notBefore.toLocaleDateString(), validTo: validToObj.toLocaleDateString(), daysLeft, status: expStatus, sans, sigAlg, keyType, keySize };
-    } catch { return null; }
-  };
-
-  const baseName = (() => {
-    if (detected.cert) {
-      const overview = getCertOverview(detected.cert);
-      if (overview?.domain && overview.domain !== "Unknown Subject") return overview.domain.replace('*.', '');
-    }
-    return "ssl-output";
-  })();
-
-  const certName = `CERTIFICATE_${baseName}.crt`;
-  const keyName = `PRIVATE-KEY_${baseName}.key`;
-  const chainName = `CA-CHAIN_${baseName}.pem`;
-  const pfxName = `PFX_${baseName}.pfx`;
-  const p7bName = `P7B_${baseName}.p7b`;
-
-  const downloadFile = (name: string, content: string, mimeType = "text/plain") => {
-    const blob = new Blob([content], { type: mimeType });
+  const saveBlob = (name: string, blob: Blob) => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
     a.click();
     window.URL.revokeObjectURL(url);
+  };
+
+  const downloadFile = (name: string, content: BlobPart, mimeType = "text/plain") => {
+    saveBlob(name, new Blob([content], { type: mimeType }));
     showStatus(`${name} ready`);
   };
 
-  const getP7bBytes = () => {
-    if (!detected.cert || detected.chain.length === 0) return null;
-    try {
-      const p7 = forge.pkcs7.createSignedData();
-      p7.addCertificate(forge.pki.certificateFromPem(detected.cert));
-      detected.chain.forEach(c => p7.addCertificate(forge.pki.certificateFromPem(c)));
-      return forge.pkcs7.messageToPem(p7);
-    } catch { return null; }
-  };
-
-  const getPfxBytes = (password: string) => {
-    if (!detected.cert || !detected.key) return null;
-    try {
-      const cert = forge.pki.certificateFromPem(detected.cert);
-      const key = forge.pki.privateKeyFromPem(detected.key);
-      const certChain = [cert];
-      detected.chain.forEach(c => certChain.push(forge.pki.certificateFromPem(c)));
-      const p12Asn1 = forge.pkcs12.toPkcs12Asn1(key, certChain, password, { generateLocalKeyId: true, algorithm: "3des" });
-      const der = forge.asn1.toDer(p12Asn1).getBytes();
-      const array = new Uint8Array(der.length);
-      for (let i = 0; i < der.length; i++) array[i] = der.charCodeAt(i);
-      return array;
-    } catch { return null; }
-  };
-
   const downloadP7bSingle = () => {
-    const bytes = getP7bBytes();
-    if (bytes) downloadFile(p7bName, bytes);
-  };
-
-  const handleDownloadAll = async () => {
-    if (originalFiles.length === 0) return;
-    const zip = new JSZip();
-    const overview = detected.cert ? getCertOverview(detected.cert) : null;
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    
-    let certFingerprint = "N/A";
-    let serialNumber = "N/A";
-    if (detected.cert) {
-      try {
-        const c = forge.pki.certificateFromPem(detected.cert);
-        certFingerprint = forge.md.sha256.create().update(forge.asn1.toDer(forge.pki.certificateToAsn1(c)).getBytes()).digest().toHex().toUpperCase().match(/.{1,2}/g)?.join(':') || "N/A";
-        serialNumber = c.serialNumber;
-      } catch (e) { console.error(e); }
-    }
-
-    const readme = [
-      "===============================================================================",
-      "SSL PACKAGE SUMMARY",
-      `Generated by Mi (mi.maker-ai.tech) on ${timestamp} UTC`,
-      "===============================================================================",
-      "",
-      "IDENTITY PROFILE",
-      "-------------------------------------------------------------------------------",
-      `Common Name (CN):    ${overview?.domain || "N/A"}`,
-      `Subject Alt Names:   ${overview?.sans.join(", ") || "None"}`,
-      `Certificate Issuer:  ${overview?.issuer || "N/A"}`,
-      `Serial Number:       ${serialNumber}`,
-      `SHA-256 Fingerprint: ${certFingerprint}`,
-      `Encryption Algorithm: ${overview?.keyType || "N/A"} ${overview?.keySize || ""} bits`,
-      `Signature Algorithm: ${overview?.sigAlg || "N/A"}`,
-      "",
-      "VALIDITY PERIOD",
-      "-------------------------------------------------------------------------------",
-      `Issued On:           ${overview?.validFrom || "N/A"}`,
-      `Expires On:          ${overview?.validTo || "N/A"}`,
-      `Time Remaining:      ${overview?.daysLeft || 0} days`,
-      `Status:              ${overview?.status?.toUpperCase() || "UNKNOWN"}`,
-      "",
-      "INCLUDED ASSETS",
-      "-------------------------------------------------------------------------------",
-      detected.cert ? `[X] ${certName.padEnd(30)} | Public Certificate (Base64 PEM)` : "[ ] N/A",
-      detected.key  ? `[X] ${keyName.padEnd(30)} | Private Key (RSA/ECC)` : "[ ] N/A",
-      detected.chain.length > 0 ? `[X] ${chainName.padEnd(30)} | CA Bundle / Intermediate Chain` : "[ ] N/A",
-      detected.cert && detected.key ? `[X] ${pfxName.padEnd(30)} | PKCS#12 Archive (IIS/Azure)` : "[ ] N/A",
-      `[X] README.txt                     | Deployment Instructions & Summary`,
-      "",
-      "-------------------------------------------------------------------------------",
-      "SECURITY CREDENTIALS",
-      "-------------------------------------------------------------------------------",
-      `PFX ARCHIVE PASSWORD: ${sessionPfxPassword || "N/A"}`,
-      "NOTE: Keep this password secure. It is required for IIS/Windows imports.",
-      "",
-      "-------------------------------------------------------------------------------",
-      "ENVIRONMENT DEPLOYMENT GUIDE",
-      "-------------------------------------------------------------------------------",
-      "",
-      "1. NGINX (Linux/Unix)",
-      "   Combine Certificate and Chain into a single .pem file if not already bundled.",
-      "   ssl_certificate     /etc/nginx/ssl/fullchain.pem;",
-      "   ssl_certificate_key /etc/nginx/ssl/privkey.key;",
-      "",
-      "2. APACHE (Linux/Unix)",
-      "   SSLCertificateFile    /path/to/cert.crt",
-      "   SSLCertificateKeyFile /path/to/key.key",
-      "   SSLCertificateChainFile /path/to/chain.pem",
-      "",
-      "3. IIS / WINDOWS SERVER",
-      "   1. Open 'Internet Information Services (IIS) Manager'.",
-      "   2. Select the server in the Connections pane.",
-      "   3. Double-click 'Server Certificates'.",
-      "   4. Click 'Import...' in the Actions pane.",
-      "   5. Select the .pfx file and enter the password provided above.",
-      "",
-      "-------------------------------------------------------------------------------",
-      "VALIDATION SUMMARY",
-      "-------------------------------------------------------------------------------",
-      `Private Key Match:   ${keyMatches === true ? "VALID" : "PENDING/MISMATCH"}`,
-      `Chain Integrity:     ${detected.chain.length > 0 ? "ESTABLISHED" : "MISSING"}`,
-      "-------------------------------------------------------------------------------",
-      "",
-      "Processed locally in your browser. No data was transmitted.",
-      "Mi - a Maker AI platform (maker-ai.tech)"
-    ].join("\n");
-
-    if (detected.cert) zip.file(certName, detected.cert);
-    if (detected.key) zip.file(keyName, detected.key);
-    if (detected.chain.length > 0) zip.file(chainName, detected.chain.join("\n\n"));
-    const p7b = getP7bBytes(); if (p7b) zip.file(p7bName, p7b);
-    const pfx = getPfxBytes(sessionPfxPassword); if (pfx) zip.file(pfxName, pfx.buffer);
-    zip.file("README.txt", readme);
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-    const url = window.URL.createObjectURL(zipBlob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${baseName}-ssl-package.zip`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-    showStatus("Package ready");
-  };
-
-  const keyMatches = useMemo(() => {
-    if (!detected.cert || !detected.key) return null;
-    try {
-      const cert = forge.pki.certificateFromPem(detected.cert);
-      const key = forge.pki.privateKeyFromPem(detected.key);
-      const md = forge.md.sha256.create();
-      md.update('test', 'utf8');
-      const signature = key.sign(md);
-      const verifyMd = forge.md.sha256.create();
-      verifyMd.update('test', 'utf8');
-      const publicKey = cert.publicKey as forge.pki.rsa.PublicKey;
-      return publicKey.verify(verifyMd.digest().getBytes(), signature);
-    } catch { return false; }
-  }, [detected.cert, detected.key]);
-
-  const certOverview = useMemo(() => detected.cert ? getCertOverview(detected.cert) : null, [detected.cert]);
-
-  const chainOverviews = useMemo(() => {
-    return detected.chain.map(c => getCertOverview(c)).filter(Boolean) as CertOverview[];
-  }, [detected.chain]);
-
-  const hasAnyData = originalFiles.length > 0;
-  const clearAll = () => {
-    setOriginalFiles([]);
-    setDetected({ key: null, cert: null, chain: [], csr: null, pfx: null });
+    if (!leaf) return;
+    const der = buildP7b(leaf, chain);
+    if (der) downloadFile(p7bName, der as BlobPart, "application/x-pkcs7-certificates");
   };
 
   const downloadPfx = () => {
-    const bytes = getPfxBytes(manualPfxPassword);
+    if (!leaf || !privateKey) return;
+    const bytes = buildPfx(privateKey, leaf, chain, manualPfxPassword, keyPassword);
     if (!bytes) {
       showStatus("Could not build the PFX. Check the key and certificate.");
       return;
     }
-    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-pkcs12" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = pfxName;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    saveBlob(pfxName, new Blob([bytes as BlobPart], { type: "application/x-pkcs12" }));
     setIsPfxModalOpen(false);
     setManualPfxPassword("");
     setConfirmPfxPassword("");
     showStatus("PFX ready");
   };
 
+  const copyPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(sessionPfxPassword);
+      showStatus("Password copied");
+    } catch {
+      showStatus("Could not copy. Select the password and copy it manually.");
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    if (!hasAnyData) return;
+    const zip = new JSZip();
+    const timestamp = new Date().toISOString().replace("T", " ").substring(0, 19);
+    const fingerprint = leaf ? certFingerprint(leaf) ?? "N/A" : "N/A";
+    const serial = leaf ? certSerial(leaf) ?? "N/A" : "N/A";
+    const pfx = leaf && privateKey && keyState === "match" ? buildPfx(privateKey, leaf, chain, sessionPfxPassword, keyPassword) : null;
+    const p7b = leaf ? buildP7b(leaf, chain) : null;
+
+    const readme = [
+      "SSL PACKAGE SUMMARY",
+      `Generated by Mi (mi.maker-ai.tech) on ${timestamp} UTC`,
+      "",
+      "CERTIFICATE",
+      `Common Name (CN):     ${certOverview?.domain || "N/A"}`,
+      `Subject Alt Names:    ${certOverview?.sans.join(", ") || "None"}`,
+      `Issuer:               ${certOverview?.issuer || "N/A"}`,
+      `Serial Number:        ${serial}`,
+      `SHA-256 Fingerprint:  ${fingerprint}`,
+      `Key:                  ${certOverview ? `${certOverview.keyType} ${certOverview.keySize} bit` : "N/A"}`,
+      `Signature Algorithm:  ${certOverview?.sigAlg || "N/A"}`,
+      `Valid from:           ${certOverview?.validFrom || "N/A"}`,
+      `Expires:              ${certOverview?.validTo || "N/A"}`,
+      `Days remaining:       ${certOverview ? certOverview.daysLeft : "N/A"}`,
+      "",
+      "FILES",
+      leaf ? `${certName.padEnd(36)} Certificate (PEM)` : "",
+      privateKey ? `${keyName.padEnd(36)} Private key (PEM)` : "",
+      chain.length > 0 ? `${chainName.padEnd(36)} CA chain (PEM)` : "",
+      p7b ? `${p7bName.padEnd(36)} Certificate bundle (PKCS#7, DER)` : "",
+      pfx ? `${pfxName.padEnd(36)} PKCS#12 archive (IIS / Windows / Azure)` : "",
+      csr ? `${csrName.padEnd(36)} Certificate signing request` : "",
+      "",
+      "PFX PASSWORD",
+      pfx
+        ? "The PFX password was shown in the Mi tool when you exported this package. It is not stored in this ZIP."
+        : "No PFX was generated.",
+      "",
+      "CHECKS",
+      `Key matches certificate: ${keyState === "match" ? "yes" : keyState === "mismatch" ? "NO" : "not verified"}`,
+      `Chain: ${chainStatus === "complete" ? "complete" : chainStatus === "none" ? "none provided" : chainStatus}`,
+      "",
+      "DEPLOYMENT",
+      "Nginx:   ssl_certificate fullchain.pem; ssl_certificate_key privkey.key;",
+      "Apache:  SSLCertificateFile cert.crt, SSLCertificateKeyFile key.key, SSLCertificateChainFile chain.pem",
+      "IIS:     Server Certificates > Import, choose the .pfx and enter its password.",
+      "",
+      "Processed locally in your browser. No data was transmitted.",
+    ].filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
+
+    if (leaf) zip.file(certName, leaf);
+    if (privateKey) zip.file(keyName, privateKey);
+    if (chain.length > 0) zip.file(chainName, chain.join("\n\n"));
+    if (p7b) zip.file(p7bName, p7b);
+    if (pfx) zip.file(pfxName, pfx);
+    if (csr) zip.file(csrName, csr);
+    zip.file("README.txt", readme);
+    saveBlob(`${baseName}-ssl-package.zip`, await zip.generateAsync({ type: "blob" }));
+    showStatus(pfx ? "Package ready. Copy the PFX password shown below." : "Package ready");
+  };
+
+  const hasAnyData = originalFiles.length > 0;
+
+  const keyCheck = (() => {
+    switch (keyState) {
+      case "match": return { status: "success" as const, ok: "Match" };
+      case "mismatch": return { status: "error" as const, ok: "Mismatch" };
+      case "encrypted": return { status: "warning" as const, ok: "Password needed" };
+      case "wrong-password": return { status: "error" as const, ok: "Wrong password" };
+      case "unsupported": return { status: "pending" as const, ok: "EC / other keys are not supported yet" };
+      case "invalid": return { status: "error" as const, ok: "Unreadable key" };
+      default: return { status: "pending" as const, ok: "" };
+    }
+  })();
+
+  const expiryCheck = !certOverview
+    ? { status: "pending" as const, msg: "" }
+    : certOverview.status === "expired" ? { status: "error" as const, msg: "Expired" }
+    : certOverview.notYetValid ? { status: "warning" as const, msg: "Not yet valid" }
+    : certOverview.status === "warning" ? { status: "warning" as const, msg: "Expires soon" }
+    : { status: "success" as const, msg: "Valid" };
+
+  const chainCheck = {
+    none: { status: "pending" as const, msg: "No chain" },
+    complete: { status: "success" as const, msg: "Complete" },
+    incomplete: { status: "warning" as const, msg: "Issuer missing" },
+    broken: { status: "error" as const, msg: "Broken" },
+  }[chainStatus];
+
   const allCerts: { label: string; overview: CertOverview }[] = [];
   if (certOverview) allCerts.push({ label: "Leaf certificate", overview: certOverview });
   chainOverviews.forEach((c, i) => allCerts.push({ label: `CA ${chainOverviews.length - i}`, overview: c }));
+
+  const certUnreadable = collected.certs.length > 0 && !leaf;
+  const keyNeedsPassword = keyState === "encrypted" || keyState === "wrong-password";
 
   return (
     <ToolContainer categoryId="network-security">
@@ -620,7 +461,11 @@ export default function SSLToolkitClient() {
                   </div>
                 </div>
               ) : (
-                <EmptyState icon={<Search className="size-8 text-muted" />} title="No certificate found" hint="Add a .crt or .pem file to see its details." />
+                <EmptyState
+                  icon={<Search className="size-8 text-muted" />}
+                  title={certUnreadable ? "Certificate could not be read" : "No certificate found"}
+                  hint={certUnreadable ? "Only RSA certificates are supported for now." : "Add a .crt or .pem file to see its details."}
+                />
               )}
             </GlassCard>
 
@@ -628,53 +473,46 @@ export default function SSLToolkitClient() {
               <SectionTitle icon={<Activity className="size-5 text-accent" />} title="Checks" divider />
 
               <div className="flex flex-col gap-3">
-                <ValidationStatus label="Key matches certificate" status={keyMatches === true ? "success" : keyMatches === false ? "error" : "pending"} successMsg="Match" errorMsg="Mismatch" />
-                <ValidationStatus label="Expiry" status={certOverview?.status === "valid" ? "success" : certOverview?.status === "expired" ? "error" : certOverview?.status === "warning" ? "warning" : "pending"} successMsg="Valid" errorMsg="Expired" warningMsg="Expires soon" />
-                <ValidationStatus label="CA chain" status={detected.chain.length > 0 ? "success" : "pending"} successMsg="Found" errorMsg="Missing" />
+                <ValidationStatus label="Key matches certificate" status={keyCheck.status} message={keyCheck.ok} />
+                <ValidationStatus label="Validity" status={expiryCheck.status} message={expiryCheck.msg} />
+                <ValidationStatus label="CA chain" status={chainCheck.status} message={chainCheck.msg} />
               </div>
 
-              {detected.pfx && (
-                <div className="mt-auto p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
-                    <Lock className="size-4" />
-                    Unlock {detected.pfx.filename}
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      aria-label="PFX password"
-                      placeholder="PFX password"
-                      value={detected.pfx.passwordValue}
-                      onChange={(e) => setDetected(prev => prev.pfx ? { ...prev, pfx: { ...prev.pfx, passwordValue: e.target.value } } : prev)}
-                      onKeyDown={(e) => { if (e.key === "Enter") unlockPfx(); }}
-                      className="toolsy-input h-9 text-sm"
-                    />
-                    <button onClick={unlockPfx} className="h-9 px-4 rounded-lg bg-amber-500 text-[#1a1000] text-xs font-bold hover:bg-amber-400 transition-colors">Unlock</button>
-                  </div>
-                  {detected.pfx.error && <p className="text-xs font-semibold text-red-400">{detected.pfx.error}</p>}
-                </div>
+              {keyNeedsPassword && (
+                <PasswordBox
+                  title="Private key is encrypted"
+                  placeholder="Key password"
+                  onSubmit={setKeyPassword}
+                  error={keyState === "wrong-password" ? "Incorrect password." : ""}
+                />
+              )}
+
+              {pfxFile && (
+                <PasswordBox
+                  title={`Unlock ${pfxFile.name}`}
+                  placeholder="PFX password"
+                  onSubmit={unlockPfx}
+                  error={archiveError}
+                />
               )}
             </GlassCard>
           </div>
         )}
 
         {/* Chain and expiry */}
-        {hasAnyData && (detected.chain.length > 0 || detected.cert) && (
+        {hasAnyData && (chain.length > 0 || leaf) && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             <GlassCard className="lg:col-span-7 flex flex-col gap-6">
               <SectionTitle icon={<Link className="size-5 text-accent" />} title="Certificate chain" divider />
 
               <div className="flex flex-col gap-1 pl-6 border-l-2 border-accent ml-4">
                 {chainOverviews.length > 0 && (
-                  <ChainNode label="Root CA" cert={chainOverviews[chainOverviews.length - 1]} />
+                  <ChainNode label={chainStatus === "complete" ? "Root CA" : "Top of chain"} cert={chainOverviews[chainOverviews.length - 1]} />
                 )}
                 {chainOverviews.slice(0, -1).reverse().map((cert, i) => (
                   <ChainNode key={i} label={`Intermediate CA ${chainOverviews.length - 1 - i}`} cert={cert} />
                 ))}
                 {certOverview && <ChainNode label="Leaf certificate" cert={certOverview} />}
-                {detected.chain.length === 0 && !detected.cert && (
-                  <EmptyState icon={<Link className="size-8 text-muted" />} title="No chain data" hint="Add a certificate or CA bundle." />
-                )}
               </div>
             </GlassCard>
 
@@ -721,11 +559,12 @@ export default function SSLToolkitClient() {
               <div className="lg:col-span-7 flex flex-col gap-3">
                 <span className="text-xs font-semibold text-muted">Individual files</span>
                 <div className="flex flex-col gap-2">
-                  {detected.cert && <DownloadItem icon={<FileCheck className="size-4 text-accent" />} type="Certificate" name={certName} onClick={() => downloadFile(certName, detected.cert!)} />}
-                  {detected.key && <DownloadItem icon={<Key className="size-4 text-accent" />} type="Private key" name={keyName} onClick={() => downloadFile(keyName, detected.key!)} />}
-                  {detected.chain.length > 0 && <DownloadItem icon={<Link className="size-4 text-accent" />} type="CA chain" name={chainName} onClick={() => downloadFile(chainName, detected.chain.join("\n\n"))} />}
-                  {detected.cert && detected.key && keyMatches !== false && <DownloadItem icon={<Package className="size-4 text-accent" />} type="PFX (IIS / Windows)" name={pfxName} onClick={() => setIsPfxModalOpen(true)} action="Set password" />}
-                  {detected.cert && detected.chain.length > 0 && <DownloadItem icon={<FileText className="size-4 text-accent" />} type="P7B (Java / import)" name={p7bName} onClick={downloadP7bSingle} />}
+                  {leaf && <DownloadItem icon={<FileCheck className="size-4 text-accent" />} type="Certificate" name={certName} onClick={() => downloadFile(certName, leaf)} />}
+                  {privateKey && <DownloadItem icon={<Key className="size-4 text-accent" />} type="Private key" name={keyName} onClick={() => downloadFile(keyName, privateKey)} />}
+                  {chain.length > 0 && <DownloadItem icon={<Link className="size-4 text-accent" />} type="CA chain" name={chainName} onClick={() => downloadFile(chainName, chain.join("\n\n"))} />}
+                  {leaf && privateKey && keyState === "match" && <DownloadItem icon={<Package className="size-4 text-accent" />} type="PFX (IIS / Windows)" name={pfxName} onClick={() => setIsPfxModalOpen(true)} action="Set password" />}
+                  {leaf && chain.length > 0 && <DownloadItem icon={<FileText className="size-4 text-accent" />} type="P7B (Java / import)" name={p7bName} onClick={downloadP7bSingle} />}
+                  {csr && <DownloadItem icon={<FileText className="size-4 text-accent" />} type="CSR" name={csrName} onClick={() => downloadFile(csrName, csr)} />}
                 </div>
               </div>
 
@@ -735,13 +574,22 @@ export default function SSLToolkitClient() {
                     <h3 className="text-base font-bold text-foreground">Full package</h3>
                     <p className="text-sm text-muted">Renamed, matched and bundled as a single ZIP.</p>
                   </div>
+                  {sessionPfxPassword && keyState === "match" && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs text-muted">PFX password for this package</span>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 min-w-0 truncate px-3 py-2 rounded-lg bg-background border border-border text-sm font-mono text-foreground select-all">{sessionPfxPassword}</code>
+                        <button onClick={copyPassword} aria-label="Copy password" className="p-2 rounded-lg border border-border text-muted hover:text-accent hover:border-accent transition-colors">
+                          <Copy className="size-4" />
+                        </button>
+                      </div>
+                      <span className="text-xs text-muted">It is not saved in the ZIP.</span>
+                    </div>
+                  )}
                   <button onClick={handleDownloadAll} className="w-full py-3 rounded-xl bg-accent text-[#04181a] font-bold text-sm hover:bg-accent-hover transition-colors flex items-center justify-center gap-2">
                     <Download className="size-4" />
                     Download ZIP
                   </button>
-                  <p className="text-xs text-muted leading-relaxed">
-                    Includes a README with install steps and the generated PFX password.
-                  </p>
                 </div>
               </div>
             </div>
@@ -779,11 +627,15 @@ export default function SSLToolkitClient() {
               <div className="flex flex-col gap-2">
                 <h4 className="text-sm font-bold text-foreground">Features</h4>
                 <ul className="flex flex-col gap-1.5 list-disc list-inside">
-                  <li><strong>Detection:</strong> recognises CRT, KEY, PEM, PFX and P7B files.</li>
-                  <li><strong>Key check:</strong> verifies that a private key matches a certificate.</li>
-                  <li><strong>Chain view:</strong> lists the CA certificates and their expiry dates.</li>
+                  <li><strong>Detection:</strong> recognises CRT, KEY, PEM, PFX and P7B files, in any upload order.</li>
+                  <li><strong>Key check:</strong> verifies that an RSA private key matches a certificate. Encrypted keys ask for their password.</li>
+                  <li><strong>Chain check:</strong> orders the chain by issuer and verifies each signature.</li>
                   <li><strong>Packaging:</strong> exports a ZIP with consistent file names.</li>
                 </ul>
+              </div>
+              <div className="flex flex-col gap-2">
+                <h4 className="text-sm font-bold text-foreground">Limits</h4>
+                <p>Only RSA keys and certificates are supported. EC and Ed25519 files are detected but not parsed.</p>
               </div>
               <div className="flex flex-col gap-2">
                 <h4 className="text-sm font-bold text-foreground">Privacy</h4>
@@ -803,6 +655,7 @@ export default function SSLToolkitClient() {
       </AnimatePresence>
     </ToolContainer>
   );
+
 }
 
 /* ─────────────────────────────────────────────
@@ -845,26 +698,57 @@ function FileTypeIcon({ type }: { type: string }) {
   const cls = "size-5 shrink-0 text-accent";
   if (type.includes("Key")) return <Key className={cls} />;
   if (type.includes("Archive")) return <Package className={cls} />;
-  if (type === "CA Chain") return <Link className={cls} />;
+  if (type === "CA Chain" || type === "P7B Bundle") return <Link className={cls} />;
   if (type === "Unknown") return <HelpCircle className={cls} />;
   return <FileCheck className={cls} />;
 }
 
-function ValidationStatus({ label, status, successMsg, errorMsg, warningMsg }: { label: string; status: "success" | "error" | "warning" | "pending"; successMsg: string; errorMsg: string; warningMsg?: string }) {
+function PasswordBox({ title, placeholder, error, onSubmit }: {
+  title: string;
+  placeholder: string;
+  error: string;
+  onSubmit: (value: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const submit = () => onSubmit(value);
+  return (
+    <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 min-w-0">
+        <Lock className="size-4 shrink-0" />
+        <span className="truncate">{title}</span>
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          aria-label={placeholder}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          className="toolsy-input h-9 text-sm"
+        />
+        <button onClick={submit} className="h-9 px-4 rounded-lg bg-amber-500 text-[#1a1000] text-xs font-bold hover:bg-amber-400 transition-colors">Unlock</button>
+      </div>
+      {error && <p className="text-xs font-semibold text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+function ValidationStatus({ label, status, message }: { label: string; status: "success" | "error" | "warning" | "pending"; message: string }) {
   const configs = {
-    success: { icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10", msg: successMsg },
-    error: { icon: AlertCircle, color: "text-red-400", bg: "bg-red-500/10", msg: errorMsg },
-    warning: { icon: AlertTriangle, color: "text-amber-400", bg: "bg-amber-500/10", msg: warningMsg },
-    pending: { icon: Activity, color: "text-muted", bg: "bg-surface", msg: "Not checked" },
+    success: { icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
+    error: { icon: AlertCircle, color: "text-red-400", bg: "bg-red-500/10" },
+    warning: { icon: AlertTriangle, color: "text-amber-400", bg: "bg-amber-500/10" },
+    pending: { icon: Activity, color: "text-muted", bg: "bg-surface" },
   };
   const config = configs[status];
   const Icon = config.icon;
   return (
     <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-surface border border-border">
       <span className="text-xs text-muted">{label}</span>
-      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full ${config.bg} ${config.color}`}>
-        <Icon className="size-3.5" />
-        <span className="text-xs font-semibold">{config.msg}</span>
+      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-right ${config.bg} ${config.color}`}>
+        <Icon className="size-3.5 shrink-0" />
+        <span className="text-xs font-semibold">{message || "Not checked"}</span>
       </div>
     </div>
   );

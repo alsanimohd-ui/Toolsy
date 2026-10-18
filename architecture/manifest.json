@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-18T20:50:01.626Z",
+  "generatedAt": "2026-10-18T20:55:19.712Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -173,6 +173,7 @@
       "regex-analyzer.ts",
       "regex-engine.ts",
       "regex-worker.ts",
+      "ssl-toolkit.ts",
       "ssrf-utils.ts",
       "threat-analysis.ts",
       "tools.ts"
