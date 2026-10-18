@@ -39,6 +39,7 @@ import {
   buildInventory,
   buildSetPackage,
   classifyText,
+  describeMissing,
   collectPem,
   decodeUpload,
   generatePassword,
@@ -262,7 +263,8 @@ export default function SSLToolkitClient() {
         const folder = uniqueName(setBaseName(set), used);
         addSetFolder(root, set, folder);
         const days = o ? (o.daysLeft < 0 ? `EXPIRED ${Math.abs(o.daysLeft)}d ago` : `${o.daysLeft} days left`) : "unknown";
-        index.push(`${folder.padEnd(36)} expires ${o?.validTo ?? "?"} (${days}) | key: ${set.key ? "yes" : "MISSING"} | chain: ${set.chainStatus}`);
+        const missing = describeMissing(set).filter(m => m.required).map(m => m.short);
+        index.push(`${folder.padEnd(36)} expires ${o?.validTo ?? "?"} (${days}) | key: ${set.key ? "yes" : "MISSING"} | chain: ${set.chainStatus}${missing.length ? ` | missing: ${missing.join(", ")}` : ""}`);
       });
 
       const stray = [
@@ -546,7 +548,7 @@ function SetCard({ set, overview, chainOverviews, open, onToggle, pkg, pfxPasswo
   const chain = {
     none: { tone: "neutral" as const, text: "No chain" },
     complete: { tone: "success" as const, text: "Chain complete" },
-    incomplete: { tone: "warning" as const, text: "Issuer missing" },
+    incomplete: set.chain.length > 0 ? { tone: "neutral" as const, text: "Root not included" } : { tone: "warning" as const, text: "Issuer missing" },
     broken: { tone: "error" as const, text: "Chain broken" },
   }[set.chainStatus];
 
@@ -566,6 +568,8 @@ function SetCard({ set, overview, chainOverviews, open, onToggle, pkg, pfxPasswo
 
       {open && overview && (
         <>
+          <MissingBox items={describeMissing(set)} />
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-border pt-6">
             <div className="flex flex-col gap-5">
               <Field label="Issuer"><p className="text-sm text-muted break-all">{overview.issuer}</p></Field>
@@ -625,9 +629,6 @@ function SetCard({ set, overview, chainOverviews, open, onToggle, pkg, pfxPasswo
                     </div>
                   </div>
                 )}
-                {!set.key && (
-                  <p className="text-xs text-amber-400">No private key matched this certificate, so the key, PFX and combined files are not included.</p>
-                )}
                 <button onClick={onDownloadFolder} className="w-full py-3 rounded-xl bg-accent text-[#04181a] font-bold text-sm hover:bg-accent-hover transition-colors flex items-center justify-center gap-2">
                   <Package className="size-4" />
                   Download this folder (ZIP)
@@ -684,6 +685,30 @@ function FileTypeIcon({ type }: { type: string }) {
   if (type === "CA Chain" || type === "P7B Bundle") return <Link className={cls} />;
   if (type === "Unknown") return <HelpCircle className={cls} />;
   return <FileCheck className={cls} />;
+}
+
+function MissingBox({ items }: { items: ReturnType<typeof describeMissing> }) {
+  if (items.length === 0) return null;
+  const required = items.filter(i => i.required);
+  const optional = items.filter(i => !i.required);
+  return (
+    <div className="flex flex-col gap-2 p-4 rounded-2xl bg-surface border border-border">
+      <span className="text-xs font-semibold text-foreground">What is missing</span>
+      {required.map(i => (
+        <p key={i.short} className="flex items-start gap-2 text-sm text-amber-400">
+          <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+          <span>{i.detail}</span>
+        </p>
+      ))}
+      {optional.map(i => (
+        <p key={i.short} className="flex items-start gap-2 text-sm text-muted">
+          <HelpCircle className="size-4 mt-0.5 shrink-0" />
+          <span>{i.detail}</span>
+        </p>
+      ))}
+      <p className="text-xs text-muted">Everything else this certificate can produce is available below.</p>
+    </div>
+  );
 }
 
 function Pill({ tone, text }: { tone: "success" | "warning" | "error" | "neutral"; text: string }) {

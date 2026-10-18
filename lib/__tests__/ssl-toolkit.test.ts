@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import forge from "node-forge";
 import {
   extractPemBlocks,
@@ -9,6 +11,7 @@ import {
   buildCertSets,
   buildInventory,
   buildSetPackage,
+  describeMissing,
   keyMatchesCert,
   parsePrivateKey,
   getCertOverview,
@@ -377,6 +380,92 @@ describe("archives", () => {
     expect(der[0]).toBe(0x30);
     const out = decodeUpload("x.p7b", der);
     expect(out.kind === "text" && collectPem([out.text]).certs).toHaveLength(3);
+  });
+});
+
+describe("real OpenSSL 3 PFX files", () => {
+  const fixture = (n: string) => new Uint8Array(readFileSync(join(__dirname, "fixtures", n)));
+
+  it("unlocks a PFX made with the OpenSSL 3 defaults (AES, SHA-256 MAC)", () => {
+    const out = unlockPkcs12(fixture("openssl3-modern.pfx"), "modernpw");
+    expect(out.certs).toHaveLength(1);
+    expect(out.keys).toHaveLength(1);
+    expect(keyMatchesCert(out.keys[0], out.certs[0])).toBe("match");
+    expect(getCertOverview(out.certs[0])!.domain).toBe("pfx.test.local");
+  });
+
+  it("unlocks a legacy PFX (3DES / RC2, SHA-1 MAC)", () => {
+    const out = unlockPkcs12(fixture("openssl3-legacy.pfx"), "legacypw");
+    expect(out.certs).toHaveLength(1);
+    expect(keyMatchesCert(out.keys[0], out.certs[0])).toBe("match");
+  });
+
+  it("rejects a wrong password", () => {
+    expect(() => unlockPkcs12(fixture("openssl3-modern.pfx"), "wrong")).toThrow();
+  });
+
+  it("sorts a PFX together with its intermediate", () => {
+    const out = unlockPkcs12(fixture("openssl3-modern.pfx"), "modernpw");
+    const inv = buildInventory({ certs: out.certs, keys: out.keys, csrs: [] });
+    expect(inv.sets).toHaveLength(1);
+    expect(inv.sets[0].key).not.toBeNull();
+  });
+});
+
+describe("CA certificates we hold the key for", () => {
+  it("returns a self-signed CA certificate with its key as its own entry", () => {
+    const inv = buildInventory({ certs: [root.pem], keys: [root.keyPem], csrs: [] });
+    expect(inv.sets).toHaveLength(1);
+    expect(inv.sets[0].key).toBe(root.keyPem);
+    expect(inv.strayCas).toEqual([]);
+  });
+
+  it("still lists it inside the chains of the certificates it issued", () => {
+    const inv = buildInventory({ certs: [root.pem, inter.pem, leaf.pem], keys: [root.keyPem], csrs: [] });
+    expect(inv.sets).toHaveLength(2);
+    expect(inv.sets.find(s => s.leaf === leaf.pem)!.chain).toEqual([inter.pem, root.pem]);
+  });
+
+  it("keeps a CA without a key as a stray", () => {
+    expect(buildInventory({ certs: [root.pem], keys: [], csrs: [] }).strayCas).toEqual([root.pem]);
+  });
+});
+
+describe("describeMissing", () => {
+  it("is empty when key and chain are complete", () => {
+    const inv = buildInventory({ certs: [leaf.pem, inter.pem, root.pem], keys: [leaf.keyPem], csrs: [] });
+    expect(describeMissing(inv.sets[0])).toEqual([]);
+  });
+
+  it("names the missing intermediate and the missing key", () => {
+    const inv = buildInventory({ certs: [leaf.pem], keys: [], csrs: [] });
+    const items = describeMissing(inv.sets[0]);
+    expect(items.map(i => i.short)).toEqual(["private key", "intermediate CA"]);
+    expect(items[1].detail).toContain("Test Intermediate CA");
+    expect(items.every(i => i.required)).toBe(true);
+  });
+
+  it("treats a missing root as optional", () => {
+    const inv = buildInventory({ certs: [leaf.pem, inter.pem], keys: [leaf.keyPem], csrs: [] });
+    const items = describeMissing(inv.sets[0]);
+    expect(items).toHaveLength(1);
+    expect(items[0].required).toBe(false);
+    expect(items[0].detail).toContain("Test Root CA");
+  });
+
+  it("flags a broken chain", () => {
+    const fakeInter = make("Test Intermediate CA", { issuer: other, ca: true });
+    const inv = buildInventory({ certs: [leaf.pem, fakeInter.pem], keys: [leaf.keyPem], csrs: [] });
+    expect(describeMissing(inv.sets[0]).map(i => i.short)).toContain("valid chain");
+  });
+
+  it("is written into the package README", () => {
+    const inv = buildInventory({ certs: [leaf.pem], keys: [], csrs: [] });
+    const readme = buildSetPackage(inv.sets[0], "x").readme;
+    expect(readme).toContain("WHAT IS MISSING");
+    expect(readme).toContain("Private key: not found");
+    const full = buildInventory({ certs: [leaf.pem, inter.pem, root.pem], keys: [leaf.keyPem], csrs: [] });
+    expect(buildSetPackage(full.sets[0], "x").readme).toContain("Nothing. Every file");
   });
 });
 

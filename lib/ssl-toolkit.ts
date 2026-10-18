@@ -279,9 +279,10 @@ export interface RawCertSet {
 
 /**
  * Splits a pool of certificates into one set per end-entity certificate, ordering each
- * chain by issuer links (not upload order). CA certificates that belong to no chain are returned apart.
+ * chain by issuer links (not upload order). CA certificates that belong to no chain are returned apart,
+ * unless listed in `forceLeaf` (whitespace-stripped PEM), which makes them a set of their own.
  */
-export const buildCertSets = (pems: string[]): { sets: RawCertSet[]; strayCas: string[] } => {
+export const buildCertSets = (pems: string[], forceLeaf: Set<string> = new Set()): { sets: RawCertSet[]; strayCas: string[] } => {
   const parsed: ParsedCert[] = [];
   const seen = new Set<string>();
   for (const pem of pems) {
@@ -295,7 +296,8 @@ export const buildCertSets = (pems: string[]): { sets: RawCertSet[]; strayCas: s
   const issuesOthers = (c: ParsedCert) =>
     parsed.some(o => o !== c && !isSelfSigned(o.cert) && o.cert.issuer.hash === c.cert.subject.hash);
 
-  const leaves = parsed.filter(p => !issuesOthers(p) && !isCaCert(p.cert));
+  const forced = (p: ParsedCert) => forceLeaf.has(p.pem.replace(/\s+/g, ""));
+  const leaves = parsed.filter(p => forced(p) || (!issuesOthers(p) && !isCaCert(p.cert)));
   const inChain = new Set<ParsedCert>();
   const sets = leaves.map(l => {
     const walked = walkChain(l, parsed);
@@ -501,8 +503,19 @@ const samePublicKey = (a: forge.pki.rsa.PublicKey, b: forge.pki.rsa.PublicKey) =
  * `passwords` are tried on every encrypted key.
  */
 export const buildInventory = (input: { certs: string[]; keys: string[]; csrs: string[] }, passwords: string[] = []): Inventory => {
-  const { sets: raw, strayCas } = buildCertSets(input.certs);
   const resolved = input.keys.map(k => resolveKey(k, passwords));
+
+  // A CA certificate we hold the key for (for example an openssl self-signed certificate, which is marked CA)
+  // is something the user wants back as its own entry, not an orphan.
+  const forceLeaf = new Set<string>();
+  input.certs.forEach(pem => {
+    const cert = parseCert(pem);
+    const pub = rsaPublic(pem);
+    if (cert && pub && isCaCert(cert) && resolved.some(r => r.status === "ok" && samePublicKey(r.key as unknown as forge.pki.rsa.PublicKey, pub))) {
+      forceLeaf.add(pem.replace(/\s+/g, ""));
+    }
+  });
+  const { sets: raw, strayCas } = buildCertSets(input.certs, forceLeaf);
   const keyUsed = new Set<number>();
   const csrUsed = new Set<number>();
 
@@ -557,6 +570,51 @@ export interface SetPackage {
   hasPfx: boolean;
 }
 
+export interface MissingItem {
+  /** Short label for lists and the index. */
+  short: string;
+  detail: string;
+  required: boolean;
+}
+
+/** What could not be produced for this certificate, and why. */
+export const describeMissing = (set: CertSet): MissingItem[] => {
+  const items: MissingItem[] = [];
+  if (!set.key) {
+    items.push({
+      short: "private key",
+      detail: "Private key: not found. It is needed for the key files, the PFX and the combined file.",
+      required: true,
+    });
+  }
+
+  const top = parseCert(set.chain.length > 0 ? set.chain[set.chain.length - 1] : set.leaf);
+  if (set.chainStatus === "incomplete" && top) {
+    const issuer = attr(top.issuer.attributes, "CN") ?? "its issuer";
+    if (set.chain.length === 0) {
+      items.push({
+        short: "intermediate CA",
+        detail: `Intermediate CA certificate: "${issuer}" is missing. Most servers must send it together with the certificate.`,
+        required: true,
+      });
+    } else {
+      items.push({
+        short: "root CA (optional)",
+        detail: `Root CA certificate "${issuer}" is not included. Most servers do not need it.`,
+        required: false,
+      });
+    }
+  }
+  if (set.chainStatus === "broken") {
+    items.push({
+      short: "valid chain",
+      detail: "The chain does not verify: a certificate was not signed by the next one. Check that you have the right intermediates.",
+      required: true,
+    });
+  }
+  return items;
+};
+
 export const setBaseName = (set: CertSet) => certBaseName(getCertOverview(set.leaf));
 
 /** Everything a user is likely to need for one certificate, named consistently. */
@@ -603,6 +661,7 @@ export const buildSetPackage = (set: CertSet, pfxPassword: string, generatedAt: 
   add(names.p7b, p7b, "PKCS#7 bundle (DER) for Java and Windows imports.");
   if (set.csr) add(names.csr, set.csr + "\n", "Certificate signing request.");
 
+  const missing = describeMissing(set);
   const chainLabel = {
     none: "none provided",
     complete: "complete",
@@ -629,6 +688,11 @@ export const buildSetPackage = (set: CertSet, pfxPassword: string, generatedAt: 
     "CHECKS",
     `Private key found and matches certificate: ${keyMatches ? "yes" : "NO KEY FOUND for this certificate"}`,
     `Chain: ${chainLabel}`,
+    "",
+    "WHAT IS MISSING",
+    ...(missing.length === 0
+      ? ["Nothing. Every file this tool can produce is in this folder."]
+      : missing.map(m => `- ${m.required ? "" : "(optional) "}${m.detail}`)),
     "",
     "FILES IN THIS FOLDER",
     ...files.filter(f => f.name !== "PFX-PASSWORD.txt").map(f => `${f.name.padEnd(42)} ${f.description}`),
