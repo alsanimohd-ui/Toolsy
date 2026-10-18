@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-18T21:12:46.924Z",
+  "generatedAt": "2026-10-18T21:32:49.240Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -169,6 +169,9 @@
     ],
     "libModules": [
       "local-port-scanner.ts",
+      "log-store.ts",
+      "log-worker-protocol.ts",
+      "log-worker.ts",
       "port-intelligence.ts",
       "regex-analyzer.ts",
       "regex-engine.ts",

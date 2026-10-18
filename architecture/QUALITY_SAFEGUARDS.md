@@ -16,7 +16,7 @@
 | PCAP Analyzer | No | Zero | Full offline packet triage |
 | TopoMap | No | Zero | Regex-only multi-vendor config parser |
 | QR Generator | No | Zero | Client-side QR rendering |
-| Log Analyzer | No | Zero | Regex-only log parsing |
+| Log Analyzer | No | Zero | Client-side parsing in a Web Worker (`lib/log-store.ts`); files never leave the browser |
 | Regex Studio | No | Zero | Client-side engine only |
 | Core Encoder | No | Zero | Pure function pipeline |
 | API Request Lab | Yes (by design) | User-initiated API calls | REST/GraphQL proxy |
