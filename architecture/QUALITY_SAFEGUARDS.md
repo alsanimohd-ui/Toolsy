@@ -59,8 +59,9 @@ from the token set above — do not introduce ad-hoc spacing.
 
 ## 3. Unified Background System
 
-- **Light mode:** `--background: #ffffff`, `--surface: #f8fafc`
-- **Dark mode:** `--background: #020205`, `--surface: #020202`
+- **Light mode:** `--background: #f3f8f9`, `--surface: #e8f1f2`
+- **Dark mode (default):** `--background: #061316`, `--surface: #0a1b1f`
+- **Accent:** teal `#0eb3ba` (from the Maker AI logo) is the only accent color
 - **Glass default:** `var(--glass-bg)` with `backdrop-filter: blur(var(--glass-blur)) saturate(180%)`
 - **Every background is a CSS variable** — no hardcoded `bg-black`, `bg-white`, etc.,
   unless inside a dark-only/light-only context (e.g., `bg-black/40` overlay).

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-16T07:26:57.180Z",
+  "generatedAt": "2026-10-18T18:58:47.508Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -17,19 +17,19 @@
       {
         "id": "network-security",
         "label": "Network & Security",
-        "color": "#ef4444",
+        "color": "#0eb3ba",
         "route": "/tools/network-security"
       },
       {
         "id": "data-analytics",
         "label": "Data & Analytics",
-        "color": "#3b82f6",
+        "color": "#0eb3ba",
         "route": "/tools/data-analytics"
       },
       {
         "id": "dev-automation",
         "label": "Dev & Automation",
-        "color": "#a855f7",
+        "color": "#0eb3ba",
         "route": "/tools/dev-automation"
       }
     ],
@@ -138,13 +138,18 @@
       ],
       "components/ui": [
         "GlassCard.tsx",
-        "MiLogo.tsx"
+        "MiLogo.tsx",
+        "ToolIcon.tsx"
       ],
       "components/layout": [
         "AppLayout.tsx",
-        "BackgroundLayer.tsx"
+        "SiteFooter.tsx",
+        "SiteHeader.tsx"
       ],
       "components/workspace": [
+        "CommandPalette.tsx",
+        "Dock.tsx",
+        "QuickSwitcher.tsx",
         "WorkspaceContext.tsx",
         "WorkspaceLayout.tsx",
         "WorkspacePanel.tsx",
@@ -154,18 +159,17 @@
         "SkipToContent.tsx"
       ],
       "components/home": [
-        "Centerpiece.tsx",
-        "RadialMenu.tsx",
-        "SectionBlock.tsx",
-        "SmartInput.tsx",
-        "ThemeToggle.tsx"
+        "ThemeToggle.tsx",
+        "ToolsExplorer.tsx"
       ]
     },
     "hooks": [
       "useFocusTrap.ts"
     ],
     "libModules": [
+      "local-port-scanner.ts",
       "port-intelligence.ts",
+      "regex-analyzer.ts",
       "regex-engine.ts",
       "regex-worker.ts",
       "ssrf-utils.ts",
@@ -176,7 +180,7 @@
     "clientPages": []
   },
   "designSystem": {
-    "cssVariableTokens": 51,
+    "cssVariableTokens": 52,
     "clampExpressions": [
       "1rem, 3vw, 2.5rem",
       "1.25rem, 4svh, 5rem",
@@ -211,6 +215,7 @@
       ".toolsy-empty-state",
       ".toolsy-empty-title",
       ".toolsy-glass",
+      ".toolsy-gradient-text",
       ".toolsy-home-shell",
       ".toolsy-home-stage",
       ".toolsy-input",
@@ -221,13 +226,16 @@
       ".toolsy-loading-spinner",
       ".toolsy-loading-title",
       ".toolsy-meta",
+      ".toolsy-neon-border",
       ".toolsy-page-shell",
       ".toolsy-page-title",
       ".toolsy-panel",
       ".toolsy-portal-footer",
       ".toolsy-radial-scale",
+      ".toolsy-reflection",
       ".toolsy-section-title",
       ".toolsy-skeleton",
+      ".toolsy-spotlight",
       ".toolsy-tab",
       ".toolsy-tab-active",
       ".toolsy-tab-group",
@@ -235,10 +243,24 @@
       ".toolsy-table-cell",
       ".toolsy-table-head",
       ".toolsy-table-row",
-      ".toolsy-textarea"
+      ".toolsy-textarea",
+      ".toolsy-tilt"
     ],
     "keyframes": [
       "toolsy",
+      "grid",
+      "hud",
+      "gradient",
+      "pulse",
+      "orbit",
+      "orbit",
+      "text",
+      "scan",
+      "hex",
+      "aurora",
+      "connection",
+      "blink",
+      "bar",
       "orbital",
       "core",
       "core",

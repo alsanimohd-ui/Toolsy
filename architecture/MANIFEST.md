@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-06-16T07:26:57.187Z_
+_Generated: 2026-10-18T18:58:47.513Z_
 
 ---
 
@@ -23,9 +23,9 @@ _Generated: 2026-06-16T07:26:57.187Z_
 
 | ID | Label | Color | Route |
 |---|---|---|---|
-| network-security | Network & Security | #ef4444 | `/tools/network-security` |
-| data-analytics | Data & Analytics | #3b82f6 | `/tools/data-analytics` |
-| dev-automation | Dev & Automation | #a855f7 | `/tools/dev-automation` |
+| network-security | Network & Security | #0eb3ba | `/tools/network-security` |
+| data-analytics | Data & Analytics | #0eb3ba | `/tools/data-analytics` |
+| dev-automation | Dev & Automation | #0eb3ba | `/tools/dev-automation` |
 
 **Total Tools: 12**
 
@@ -60,13 +60,13 @@ _Generated: 2026-06-16T07:26:57.187Z_
 
 ## Design System
 
-CSS Variable Tokens: **51**  
+CSS Variable Tokens: **52**  
 
 clamp() Expressions: **13**  
 
-Utility Classes: 43  
+Utility Classes: 48  
 
-Keyframes: toolsy, orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core, ambient
+Keyframes: toolsy, grid, hud, gradient, pulse, orbit, orbit, text, scan, hex, aurora, connection, blink, bar, orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core, ambient
 
 
 ### Spacing Scale (clamp)
@@ -84,13 +84,13 @@ Keyframes: toolsy, orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core
 
 | Token | Value (Dark) |
 |---|---|
-| `--card-bg` | `rgba(0, 0, 0, 0.45)` |
-| `--card-shadow` | `0 24px 70px rgba(0, 0, 0, 0.4)` |
-| `--card-hover-bg` | `rgba(0, 0, 0, 0.46)` |
-| `--card-hover-shadow` | `0 28px 80px rgba(124, 106, 255, 0.14)` |
-| `--input-bg` | `rgba(0, 0, 0, 0.24)` |
+| `--card-bg` | `#0b1e22` |
+| `--card-shadow` | `0 8px 30px rgba(0, 0, 0, 0.3)` |
+| `--card-hover-bg` | `#0e262b` |
+| `--card-hover-shadow` | `0 12px 40px rgba(14, 179, 186, 0.14)` |
+| `--input-bg` | `rgba(0, 0, 0, 0.25)` |
 | `--input-focus-bg` | `rgba(0, 0, 0, 0.34)` |
-| `--glass-bg` | `rgba(10, 10, 15, 0.75)` |
+| `--glass-bg` | `rgba(10, 27, 31, 0.8)` |
 | `--glass-border` | `rgba(255, 255, 255, 0.08)` |
 | `--glass-blur` | `24px` |
 
@@ -111,12 +111,17 @@ Keyframes: toolsy, orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core
 ### `components/ui/`
 - `GlassCard.tsx`
 - `MiLogo.tsx`
+- `ToolIcon.tsx`
 
 ### `components/layout/`
 - `AppLayout.tsx`
-- `BackgroundLayer.tsx`
+- `SiteFooter.tsx`
+- `SiteHeader.tsx`
 
 ### `components/workspace/`
+- `CommandPalette.tsx`
+- `Dock.tsx`
+- `QuickSwitcher.tsx`
 - `WorkspaceContext.tsx`
 - `WorkspaceLayout.tsx`
 - `WorkspacePanel.tsx`
@@ -126,11 +131,8 @@ Keyframes: toolsy, orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core
 - `SkipToContent.tsx`
 
 ### `components/home/`
-- `Centerpiece.tsx`
-- `RadialMenu.tsx`
-- `SectionBlock.tsx`
-- `SmartInput.tsx`
 - `ThemeToggle.tsx`
+- `ToolsExplorer.tsx`
 
 ---
 
@@ -142,7 +144,9 @@ Keyframes: toolsy, orbital, core, core, shimmer, fadeIn, slideUp, skeleton, core
 
 ## Library Modules
 
+- `lib/local-port-scanner.ts`
 - `lib/port-intelligence.ts`
+- `lib/regex-analyzer.ts`
 - `lib/regex-engine.ts`
 - `lib/regex-worker.ts`
 - `lib/ssrf-utils.ts`
