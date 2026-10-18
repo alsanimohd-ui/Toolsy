@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ipToNum, isPrivateIP, isPrivateHostname, isIPv4Literal, isPrivateIPv6, normalizeHost } from "@/lib/ssrf-utils";
+import { ipToNum, isPrivateIP, isPrivateHostname, isIPv4Literal, isPrivateIPv6, normalizeHost, validateTarget } from "@/lib/ssrf-utils";
 
 describe("ssrf-utils", () => {
   describe("ipToNum", () => {
@@ -213,6 +213,76 @@ describe("ssrf-utils", () => {
     it("rejects hostnames", () => {
       expect(isIPv4Literal("google.com")).toBe(false);
       expect(isIPv4Literal("localhost")).toBe(false);
+    });
+  });
+
+  describe("validateTarget", () => {
+    it("allows valid public hostnames", async () => {
+      const res = await validateTarget("google.com");
+      expect(res.allowed).toBe(true);
+    });
+
+    it("allows valid public URLs", async () => {
+      const res = await validateTarget("https://google.com");
+      expect(res.allowed).toBe(true);
+    });
+
+    it("allows public IPv4 literals", async () => {
+      const res = await validateTarget("8.8.8.8");
+      expect(res.allowed).toBe(true);
+    });
+
+    it("blocks local/loopback hostnames", async () => {
+      const res = await validateTarget("localhost");
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toBe("Scanning local/loopback addresses is not allowed");
+    });
+
+    it("blocks local/loopback URLs", async () => {
+      const res = await validateTarget("http://localhost/api");
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toBe("Requests to local/loopback addresses are not allowed");
+    });
+
+    it("blocks private IPv4 literals", async () => {
+      const res = await validateTarget("192.168.1.1");
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toBe("Scanning private/reserved IP ranges is not allowed");
+    });
+
+    it("blocks private IPv4 URLs", async () => {
+      const res = await validateTarget("http://192.168.1.1/api");
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toBe("Requests to private IP ranges are not allowed");
+    });
+
+    it("blocks private IPv6 literals", async () => {
+      const res = await validateTarget("[fe80::1]");
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toBe("Scanning private/reserved IPv6 ranges is not allowed");
+    });
+
+    it("blocks private IPv6 URLs", async () => {
+      const res = await validateTarget("http://[fe80::1]/api");
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toBe("Requests to private/reserved IPv6 ranges are not allowed");
+    });
+
+    it("blocks targets resolving to private IPs", async () => {
+      const res = await validateTarget("localhost");
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toBe("Scanning local/loopback addresses is not allowed");
+    });
+
+    it("blocks disallowed protocols when allowedProtocols is set", async () => {
+      const res = await validateTarget("ftp://google.com", { allowedProtocols: ["http:", "https:"] });
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toContain("Protocol");
+    });
+
+    it("allows allowed protocols when allowedProtocols is set", async () => {
+      const res = await validateTarget("https://google.com", { allowedProtocols: ["http:", "https:"] });
+      expect(res.allowed).toBe(true);
     });
   });
 });

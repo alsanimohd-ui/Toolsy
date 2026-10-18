@@ -5,7 +5,7 @@ import { Menu, X } from "lucide-react";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceContext";
 import WorkspaceSidebar from "@/components/workspace/WorkspaceSidebar";
 import WorkspacePanel from "@/components/workspace/WorkspacePanel";
-import CommandPalette from "@/components/workspace/CommandPalette";
+import QuickSwitcher from "@/components/workspace/QuickSwitcher";
 
 function WorkspaceShell({ children }: { children: ReactNode }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -35,8 +35,7 @@ function WorkspaceShell({ children }: { children: ReactNode }) {
       {/* Right: Dynamic tool panel */}
       <WorkspacePanel>{children}</WorkspacePanel>
 
-      {/* Command Palette (Cmd+K) */}
-      <CommandPalette />
+      <QuickSwitcher />
     </div>
   );
 }

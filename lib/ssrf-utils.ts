@@ -1,3 +1,5 @@
+import { promises as dns } from "dns";
+
 /* ────────────────────────────────────────────────────────────
    SSRF Protection — Private / Reserved IP Ranges
    Shared between the API route and unit tests.
@@ -77,6 +79,113 @@ export function isIPv4Literal(host: string): boolean {
 
 export function normalizeHost(host: string): string {
   return host.toLowerCase().trim().replace(/^\[|\]$/g, "");
+}
+
+export interface SSRFValidationResult {
+  allowed: boolean;
+  reason?: string;
+  resolvedIps?: string[];
+}
+
+export interface SSRFOptions {
+  allowedProtocols?: string[];
+}
+
+/**
+ * Validates a target host, IP literal, or URL for SSRF risks.
+ * Hides URL/protocol checking, private/loopback range matching,
+ * and dual-stack (IPv4 & IPv6) DNS resolution.
+ */
+export async function validateTarget(
+  target: string,
+  options?: SSRFOptions
+): Promise<SSRFValidationResult> {
+  let isUrl = false;
+  let host = target;
+
+  if (target.includes("://") || /^[a-zA-Z0-9.+-]+:/.test(target)) {
+    isUrl = true;
+    let parsed: URL;
+    try {
+      parsed = new URL(target);
+    } catch {
+      return { allowed: false, reason: "Invalid URL format" };
+    }
+
+    const { protocol, hostname } = parsed;
+
+    if (options?.allowedProtocols) {
+      if (!options.allowedProtocols.includes(protocol)) {
+        return {
+          allowed: false,
+          reason: `Protocol "${protocol}" is not allowed. Only ${options.allowedProtocols
+            .map((p) => p.toUpperCase().replace(":", ""))
+            .join("/")} are permitted.`,
+        };
+      }
+    }
+
+    host = hostname;
+  }
+
+  const normalized = normalizeHost(host);
+
+  const isLocalMessage = isUrl
+    ? "Requests to local/loopback addresses are not allowed"
+    : "Scanning local/loopback addresses is not allowed";
+
+  const isPrivateV4Message = isUrl
+    ? "Requests to private IP ranges are not allowed"
+    : "Scanning private/reserved IP ranges is not allowed";
+
+  const isPrivateV6Message = isUrl
+    ? "Requests to private/reserved IPv6 ranges are not allowed"
+    : "Scanning private/reserved IPv6 ranges is not allowed";
+
+  const isResolvesPrivateMessage = (ip: string) =>
+    isUrl
+      ? `Target resolves to a private IP (${ip})`
+      : "Target host resolves to a private/reserved address";
+
+  if (isPrivateHostname(normalized)) {
+    return { allowed: false, reason: isLocalMessage };
+  }
+
+  if (isIPv4Literal(normalized) && isPrivateIP(normalized)) {
+    return { allowed: false, reason: isPrivateV4Message };
+  }
+
+  if (normalized.includes(":") && isPrivateIPv6(normalized)) {
+    return { allowed: false, reason: isPrivateV6Message };
+  }
+
+  const resolvedIps: string[] = [];
+
+  try {
+    const v4Addresses = await dns.resolve4(normalized);
+    for (const addr of v4Addresses) {
+      resolvedIps.push(addr);
+      if (isPrivateIP(addr)) {
+        return { allowed: false, reason: isResolvesPrivateMessage(addr), resolvedIps };
+      }
+    }
+  } catch {
+    // DNS resolution failed
+  }
+
+  try {
+    const v6Addresses = await dns.resolve6(normalized);
+    for (const addr of v6Addresses) {
+      resolvedIps.push(addr);
+      if (isPrivateIPv6(addr)) {
+        return { allowed: false, reason: isResolvesPrivateMessage(addr), resolvedIps };
+      }
+    }
+  } catch {
+    // DNS resolution failed
+  }
+
+  return { allowed: true, resolvedIps };
 }
 
 export { PRIVATE_RANGES, PRIVATE_HOSTNAMES };
