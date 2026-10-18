@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-18T20:34:45.648Z",
+  "generatedAt": "2026-10-18T20:41:08.413Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -150,6 +150,7 @@
         "CommandPalette.tsx",
         "Dock.tsx",
         "QuickSwitcher.tsx",
+        "toolModules.tsx",
         "WorkspaceContext.tsx",
         "WorkspaceLayout.tsx",
         "WorkspacePanel.tsx",

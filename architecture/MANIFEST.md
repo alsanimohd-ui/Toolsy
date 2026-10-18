@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-10-18T20:34:45.654Z_
+_Generated: 2026-10-18T20:41:08.418Z_
 
 ---
 
@@ -122,6 +122,7 @@ Keyframes: toolsy, grid, hud, gradient, pulse, orbit, orbit, text, scan, hex, au
 - `CommandPalette.tsx`
 - `Dock.tsx`
 - `QuickSwitcher.tsx`
+- `toolModules.tsx`
 - `WorkspaceContext.tsx`
 - `WorkspaceLayout.tsx`
 - `WorkspacePanel.tsx`

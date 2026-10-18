@@ -5,6 +5,7 @@ import { ArrowUpRight, Search } from "lucide-react";
 import { categoryList, tools, type Tool } from "@/lib/tools";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import ToolIcon from "@/components/ui/ToolIcon";
+import { preloadTool } from "@/components/workspace/toolModules";
 import SiteFooter from "@/components/layout/SiteFooter";
 
 function ToolCard({ tool }: { tool: Tool }) {
@@ -44,6 +45,8 @@ function ToolCard({ tool }: { tool: Tool }) {
     <button
       type="button"
       onClick={() => openTool({ slug: tool.slug, categoryId: tool.categoryId, route: tool.route })}
+      onMouseEnter={() => preloadTool(tool.slug)}
+      onFocus={() => preloadTool(tool.slug)}
       className={className}
     >
       {body}

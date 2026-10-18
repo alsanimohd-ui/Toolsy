@@ -16,6 +16,7 @@ import { categoryList, tools, type CategoryId, type Tool } from "@/lib/tools";
 import { useWorkspace } from "./WorkspaceContext";
 import { MiIcon } from "@/components/ui/MiLogo";
 import ToolIcon from "@/components/ui/ToolIcon";
+import { preloadTool } from "./toolModules";
 import ThemeToggle from "@/components/home/ThemeToggle";
 import Link from "next/link";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -61,6 +62,8 @@ function ToolItem({
   return (
       <motion.button
         onClick={handleClick}
+        onMouseEnter={() => preloadTool(tool.slug)}
+        onFocus={() => preloadTool(tool.slug)}
 className={`
             group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
             text-left transition-all duration-200 text-xs
