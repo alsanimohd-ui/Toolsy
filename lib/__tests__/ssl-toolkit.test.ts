@@ -16,6 +16,8 @@ import {
   generatePassword,
   certBaseName,
   certFingerprint,
+  certToDer,
+  unencryptedKeyPem,
 } from "../ssl-toolkit";
 
 type Pair = forge.pki.rsa.KeyPair;
@@ -250,6 +252,26 @@ describe("archives", () => {
     expect(der[0]).toBe(0x30);
     const out = decodeUpload("x.p7b", der);
     expect(out.kind === "text" && collectPem([out.text]).certs).toHaveLength(3);
+  });
+});
+
+describe("package helpers", () => {
+  it("decrypts a key to plain PEM that still matches", () => {
+    const enc = forge.pki.encryptRsaPrivateKey(leaf.keys.privateKey, "kp");
+    expect(unencryptedKeyPem(enc)).toBeNull();
+    expect(unencryptedKeyPem(enc, "bad")).toBeNull();
+    const plain = unencryptedKeyPem(enc, "kp")!;
+    expect(plain).not.toContain("ENCRYPTED");
+    expect(plain).not.toContain("\r");
+    expect(keyMatchesCert(plain, leaf.pem)).toBe("match");
+  });
+
+  it("converts a certificate to DER that parses back", () => {
+    const der = certToDer(leaf.pem)!;
+    expect(der[0]).toBe(0x30);
+    const back = forge.pki.certificateFromAsn1(forge.asn1.fromDer(forge.util.binary.raw.encode(der)));
+    expect(back.subject.getField("CN").value).toBe("demo.example.com");
+    expect(certToDer("nope")).toBeNull();
   });
 });
 

@@ -334,6 +334,17 @@ export const keyMatchesCert = (keyPem: string, certPem: string, password?: strin
   return key.n.compareTo(pub.n) === 0 && key.e.compareTo(pub.e) === 0 ? "match" : "mismatch";
 };
 
+/** The key as unencrypted PEM, or null when it cannot be read with the given password. */
+export const unencryptedKeyPem = (pem: string, password?: string): string | null => {
+  const parsed = parsePrivateKey(pem, password);
+  return parsed.status === "ok" ? forge.pki.privateKeyToPem(parsed.key).replace(/\r\n?/g, "\n").trim() : null;
+};
+
+export const certToDer = (pem: string): Uint8Array | null => {
+  const cert = parseCert(pem);
+  return cert ? binaryToBytes(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes()) : null;
+};
+
 /* ─────────────────────────────────────────────
    Archives (PFX, P7B)
   ───────────────────────────────────────────── */
