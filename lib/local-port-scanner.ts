@@ -44,6 +44,12 @@ export function isLocalTarget(host: string): boolean {
   );
 }
 
+/** Loopback only. Browsers let secure (https) pages fetch these over http; other hosts are blocked. */
+export function isLoopbackTarget(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return h === "localhost" || h.endsWith(".localhost") || h === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
 // Ports browsers refuse to fetch (Chromium/Firefox "restricted ports" list).
 const BROWSER_BLOCKED_PORTS = new Set([
   1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102,

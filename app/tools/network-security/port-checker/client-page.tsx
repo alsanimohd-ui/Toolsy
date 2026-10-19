@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ToolContainer, ToolHeader, ToolSection, ToolInput, ToolButton } from "@/components/tools";
 import {
   AlertTriangle,
@@ -18,6 +18,7 @@ import { PORT_ENCYCLOPEDIA } from "@/lib/port-intelligence";
 import {
   calibrateRefusedLatency,
   isLocalTarget,
+  isLoopbackTarget,
   parseClientPorts,
   scanPortLocally,
   terminalCommand,
@@ -105,6 +106,9 @@ export default function PortCheckerClient() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isHttps, setIsHttps] = useState(false);
+
+  useEffect(() => setIsHttps(window.location.protocol === "https:"), []);
 
   const autoMode: Mode = isLocalTarget(host) ? "browser" : "server";
   const mode = modeOverride ?? autoMode;
@@ -112,6 +116,12 @@ export default function PortCheckerClient() {
   const selected = useMemo(() => new Set(portInput.split(",").map((p) => p.trim())), [portInput]);
 
   const canScan = !isScanning && host.trim() !== "" && ports.length > 0;
+  // An https page cannot reach http://<private-ip> (mixed content), so every port would look closed.
+  const browserBlocked =
+    mode === "browser" &&
+    protocol === "tcp" &&
+    isHttps &&
+    !isLoopbackTarget(host);
 
   const handleScan = async () => {
     if (!canScan) return;
@@ -125,6 +135,12 @@ export default function PortCheckerClient() {
     }
 
     const target = host.trim();
+    if (browserBlocked) {
+      setError(
+        `This page is served over HTTPS, so your browser blocks checks to ${target}. Run this in a terminal on your PC instead: ${terminalCommand(target, ports[0]).split("\n")[0].split("   #")[0]}`
+      );
+      return;
+    }
     setIsScanning(true);
     setProgress({ done: 0, total: ports.length });
     setScanned({ host: target, protocol, mode });
@@ -286,6 +302,15 @@ export default function PortCheckerClient() {
             {isScanning ? "Checking…" : "Check ports"}
           </ToolButton>
         </div>
+
+        {browserBlocked && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Browsers block secure (HTTPS) pages from reaching other machines on your network, so this check would wrongly report every port as closed. Only localhost works here. For a company IP, use the terminal command: <span className="font-mono">Test-NetConnection {host.trim()} -Port {ports[0] ?? "&lt;port&gt;"}</span>
+            </span>
+          </div>
+        )}
 
         <p className="text-xs leading-relaxed text-muted">
           {mode === "browser"
