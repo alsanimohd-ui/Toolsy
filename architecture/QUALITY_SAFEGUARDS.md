@@ -14,7 +14,7 @@
 | Threat Inspector | No (IOC extraction) | Only VT hash/report lookups on user button click | Raw file content never uploaded |
 | Port Checker | No | Only port probes from local API route | Config/scan data never leaves |
 | PCAP Analyzer | No | Zero | Full offline packet triage |
-| TopoMap | No | Zero | Regex-only multi-vendor config parser |
+| TopoMap | No | Zero | Client-side parsers for Cisco, FortiOS, Junos and PAN-OS (lib/netconfig) |
 | QR Generator | No | Zero | Client-side QR rendering |
 | Log Analyzer | No | Zero | Client-side parsing in a Web Worker (`lib/log-store.ts`); files never leave the browser |
 | Regex Studio | No | Zero | Client-side engine only |

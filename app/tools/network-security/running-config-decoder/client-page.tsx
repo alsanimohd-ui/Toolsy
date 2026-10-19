@@ -1,2301 +1,450 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef, memo, useCallback } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Download, FileUp, Trash2 } from "lucide-react";
+import { ToolButton, ToolContainer, ToolHeader, ToolSection, ToolTextarea } from "@/components/tools";
 import {
-  ToolContainer,
-  ToolHeader,
-  ToolButton,
-  ToolTextarea,
-} from "@/components/tools";
-import {
-  Terminal,
-  Upload,
-  Sparkles,
-  Trash2,
-  FileText,
-  FileCode,
-  XCircle,
-  Activity,
-  Server,
-  Globe,
-  Fingerprint,
-  AlertTriangle,
-  LayoutGrid,
-  Share2,
-  Monitor,
-  Radio,
-  Zap,
-  Layers,
-  Map,
-  CheckCircle2,
-  Shield,
-  Cpu,
-} from "lucide-react";
-import GlassCard from "@/components/ui/GlassCard";
+  VENDOR_LABEL,
+  buildMap,
+  groupPorts,
+  parseConfig,
+  type Iface,
+  type ParsedDevice,
+  type Vendor,
+} from "@/lib/netconfig";
+import { SAMPLES } from "@/lib/netconfig/samples";
+import { fmtIp } from "@/lib/netconfig/util";
+import TopoMap from "./TopoMap";
 
-/* ─────────────────────────────────────────────
-   Types & Interfaces
-   ───────────────────────────────────────────── */
+type TabId = "map" | "interfaces" | "vlans" | "zones" | "routes" | "policies" | "routing";
 
-interface ParsedConfig {
-  hostname: string;
-  managementIp: string;
-  brand: string;
-  model: string;
-  deviceType: "Firewall" | "Switch/Router";
-  osVersion: string;
-  routingProtocols: string[];
-  vlans: { id: number; name: string }[];
-  interfaces: InterfaceInfo[];
+const MAX_FILE = 10 * 1024 * 1024;
+const ROW_CAP = 400;
+
+const ROLE_LABEL: Record<ParsedDevice["role"], string> = {
+  firewall: "Firewall",
+  switch: "Switch",
+  router: "Router",
+  unknown: "Unknown",
+};
+
+function vlanText(f: { mode: Iface["mode"]; vlan?: number; trunkVlans?: number[] | "all"; nativeVlan?: number }): string {
+  if (f.mode === "trunk") {
+    const list = f.trunkVlans === "all" || !f.trunkVlans ? "all" : f.trunkVlans.join(", ");
+    return f.nativeVlan ? `${list} (native ${f.nativeVlan})` : list;
+  }
+  return f.vlan ? String(f.vlan) : "";
 }
 
-interface InterfaceInfo {
-  name: string;
-  description: string;
-  speed: string;
-  duplex: string;
-  status: "up" | "down" | "adminDown" | "unknown";
-  ip: string;
-  vlanAccess: number | null;
-  vlanTrunkAllowed: number[];
-  trunkAll: boolean;
-  mode: "access" | "trunk" | "routed" | "unknown";
-  mac: string;
-  mtu: number;
-  type: string;
-}
+const th = "text-left text-[11px] font-semibold uppercase tracking-wider text-muted py-2 pr-4 whitespace-nowrap";
+const td = "py-2 pr-4 align-top text-sm";
 
-interface VlanTopologyNode {
-  id: string;
-  label: string;
-  type: "switch" | "vlan" | "router" | "port" | "vpn" | "sdwan";
-  group: string;
-  connections: string[];
-  ip?: string;
-  subnetMask?: string;
-  portIndex?: string;
-}
-
-/* ─────────────────────────────────────────────
-   Constants
-   ───────────────────────────────────────────── */
-
-type ActiveTab = "SYSTEM" | "PORT_MAP" | "SCHEMA";
-
-interface TabDef {
-  id: ActiveTab;
-  label: string;
-  icon: React.ElementType;
-}
-
-const TABS: TabDef[] = [
-  { id: "SYSTEM", label: "System Overview", icon: Server },
-  { id: "PORT_MAP", label: "Port Mapping", icon: LayoutGrid },
-  { id: "SCHEMA", label: "Visual Schema", icon: Map },
-];
-
-
-const SAMPLE_CONFIG = `! Device: Cisco Catalyst 9300
-! Software: IOS-XE 17.3.1
-hostname Core-Switch-01
-!
-interface Vlan1
- ip address 192.168.1.1 255.255.255.0
- no shutdown
-!
-interface GigabitEthernet0/1
- description Uplink to Core-Router-01
- speed 1000
- duplex full
- no shutdown
- switchport mode trunk
- switchport trunk allowed vlan 1,10,20,30,100
-!
-interface GigabitEthernet0/2
- description Access Port - Floor 1 Conference
- speed 100
- duplex auto
- no shutdown
- switchport mode access
- switchport access vlan 10
-!
-interface GigabitEthernet0/3
- description Access Port - Floor 2 Engineering
- speed 1000
- duplex full
- shutdown
- switchport mode access
- switchport access vlan 20
-!
-interface GigabitEthernet0/4
- description Server Farm - DMZ Link
- speed 1000
- duplex full
- no shutdown
- switchport mode trunk
- switchport trunk allowed vlan 100,200,300
-!
-interface FastEthernet0/1
- description Legacy Printer VLAN
- speed 100
- duplex full
- no shutdown
- switchport mode access
- switchport access vlan 30
-!
-interface TenGigabitEthernet1/1
- description Core Stack Uplink
- speed 10000
- duplex full
- no shutdown
- switchport mode trunk
- switchport trunk allowed vlan all
-!
-interface Vlan10
- description Engineering Network
- ip address 10.10.10.1 255.255.255.0
- no shutdown
-!
-interface Vlan20
- description Data Analytics Network
- ip address 10.10.20.1 255.255.255.0
- no shutdown
-!
-interface Vlan100
- description DMZ Public Services
- ip address 10.10.100.1 255.255.255.0
- no shutdown
-!
-router ospf 1
- network 10.0.0.0 0.255.255.255 area 0
-!
-ip route 0.0.0.0 0.0.0.0 192.168.1.254
-!
-snmp-server community public RO
-!
-ntp server pool.ntp.org
-!
-end`;
-
-
-async function parseUniversalConfigAsync(
-  raw: string,
-  onProgress: (percent: number) => void
-): Promise<ParsedConfig> {
-  const cfg: ParsedConfig = {
-    hostname: "",
-    managementIp: "",
-    brand: "",
-    model: "",
-    deviceType: "Switch/Router",
-    osVersion: "",
-    routingProtocols: [],
-    vlans: [],
-    interfaces: [],
-  };
-
-  // Device Type determination - purely dynamic / brand-agnostic
-  const lowerRawText = raw.toLowerCase();
-  const isFirewall = lowerRawText.includes("vpn") || 
-                     lowerRawText.includes("policy") || 
-                     lowerRawText.includes("firewall") ||
-                     lowerRawText.includes("security") ||
-                     lowerRawText.includes("rules");
-  cfg.deviceType = isFirewall ? "Firewall" : "Switch/Router";
-
-  // Dynamic Brand & Model determination - brand-agnostic and generic
-  let brand = "";
-  let model = "";
-
-  const totalRawLines = raw.split("\n");
-  const first1000Lines = totalRawLines.slice(0, 1000);
-
-  for (let i = 0; i < Math.min(first1000Lines.length, 100); i++) {
-    const line = first1000Lines[i].trim();
-    if (!line) continue;
-    const brandMatch = line.match(/(?:brand|vendor|make|manufacturer|device\s+vendor)\s*[:=]\s*["']?([a-zA-Z0-9\-_ ]+)/i);
-    if (brandMatch) {
-      brand = brandMatch[1].trim();
-    }
-    const modelMatch = line.match(/(?:model|platform|hardware|device\s+model|chassis)\s*[:=]\s*["']?([a-zA-Z0-9\-_ ]+)/i);
-    if (modelMatch) {
-      model = modelMatch[1].trim();
-    }
-  }
-
-  if (!brand) {
-    if (lowerRawText.includes("cisco")) brand = "Cisco";
-    else if (lowerRawText.includes("fortigate") || lowerRawText.includes("fortios")) brand = "FortiGate";
-    else if (lowerRawText.includes("juniper") || lowerRawText.includes("junos")) brand = "Juniper";
-    else if (lowerRawText.includes("palo alto") || lowerRawText.includes("paloalto") || lowerRawText.includes("pan-os")) brand = "Palo Alto";
-    else brand = "Generic Device";
-  }
-
-  if (!model) {
-    const modelMatch = raw.match(/\b(catalyst\s+\d+|nexus\s+\d+|srx\d+|pa-\d+|fortigate\s+\d+|ex\d+|mx\d+)\b/i);
-    if (modelMatch) {
-      model = modelMatch[1].trim();
-    } else {
-      model = "";
-    }
-  }
-
-  cfg.brand = brand || "Generic Device";
-  cfg.model = model || "";
-
-  // Dynamic Hostname & Version extraction from standard assignment patterns
-  let hostname = "";
-  let osVersion = "";
-
-  for (let i = 0; i < first1000Lines.length; i++) {
-    const line = first1000Lines[i].trim();
-    if (!line) continue;
-
-    // Hostname dynamic extraction from any standard assignment patterns
-    if (!hostname) {
-      const hnMatch = line.match(/(?:^|\b)(?:hostname|sysname|host-name|device-name|set\s+hostname|set\s+host-name|set\s+sysname)\s+["']?([a-zA-Z0-9\-_]+)["']?/i);
-      if (hnMatch) {
-        hostname = hnMatch[1].replace(/[;"]/g, "").trim();
-      }
-    }
-
-    // Version dynamic extraction next to any top-level header token containing version or v[0-9]
-    if (!osVersion) {
-      const verMatch = line.match(/(?:^|\b)(?:version|sw-version|software-version|fw-version|firmware-version|os-version|config-version|release|os)\s*[:=]?\s*["']?([a-zA-Z0-9\-_.]+)/i) ||
-                       line.match(/\b(v[0-9]+\.[0-9]+(?:\.[0-9]+)*[a-zA-Z0-9\-_.]*)\b/i);
-      if (verMatch) {
-        osVersion = verMatch[1].replace(/[;"]/g, "").trim();
-      }
-    }
-
-    // Routing protocols detection
-    if (line.match(/router\s+ospf/i) || line.match(/protocols\s+ospf/i) || line.match(/protocol\s+ospf/i)) {
-      if (!cfg.routingProtocols.includes("OSPF")) cfg.routingProtocols.push("OSPF");
-    }
-    if (line.match(/router\s+bgp/i) || line.match(/protocols\s+bgp/i) || line.match(/protocol\s+bgp/i)) {
-      if (!cfg.routingProtocols.includes("BGP")) cfg.routingProtocols.push("BGP");
-    }
-    if (line.match(/router\s+eigrp/i)) {
-      if (!cfg.routingProtocols.includes("EIGRP")) cfg.routingProtocols.push("EIGRP");
-    }
-    if (line.match(/router\s+rip/i) || line.match(/protocols\s+rip/i)) {
-      if (!cfg.routingProtocols.includes("RIP")) cfg.routingProtocols.push("RIP");
-    }
-    if (line.match(/ip\s+route\s+/i) || line.match(/static\s+route/i) || line.match(/routing-options\s+static/i) || line.match(/router\s+static/i)) {
-      if (!cfg.routingProtocols.includes("STATIC")) cfg.routingProtocols.push("STATIC");
-    }
-  }
-
-  cfg.hostname = hostname || "";
-  cfg.osVersion = osVersion || "";
-
-  // Selective Block-Splitting (Massive File Performance Optimization - brand-agnostic)
-  const chunks: string[] = [];
-  const filteredLines: string[] = [];
-  let skipBlock = false;
-
-  for (let i = 0; i < totalRawLines.length; i++) {
-    const line = totalRawLines[i];
-    const trimmed = line.trim();
-    const lower = trimmed.toLowerCase();
-
-    // Check for massive security policies/rules/address blocks that cause bottlenecks
-    if (lower.startsWith("config firewall policy") || 
-        lower.startsWith("config firewall address") || 
-        lower.startsWith("set security policies") || 
-        lower.startsWith("set rulebase security rules")) {
-      skipBlock = true;
-      continue;
-    }
-
-    if (skipBlock && (trimmed === "end" || trimmed === "!" || trimmed === "}")) {
-      skipBlock = false;
-      continue;
-    }
-
-    if (!skipBlock) {
-      if (lower.includes("interface") || 
-          lower.includes("zone") || 
-          lower.includes("vlan") || 
-          lower.includes("route") || 
-          lower.includes("routing") || 
-          lower.includes("protocol") || 
-          lower.includes("vpn") || 
-          lower.includes("tunnel") || 
-          lower.includes("st0") || 
-          lower.includes("hostname") ||
-          lower.includes("sysname") ||
-          lower.includes("host-name")) {
-        filteredLines.push(line);
-      }
-    }
-  }
-  chunks.push(filteredLines.join("\n"));
-
-  const combinedRaw = chunks.join("\n");
-  const lines = combinedRaw.split("\n");
-
-  // Flatten nested/bracketed structures if detected on combinedRaw
-  const isBracketed = combinedRaw.includes("{") && combinedRaw.includes("}");
-  const linesToParse: string[] = [];
-  if (isBracketed) {
-    const pathStack: string[] = [];
-    for (const rawLine of lines) {
-      let line = rawLine.replace(/#.*/g, "").trim();
-      line = line.replace(/\/\*.*?\*\//g, "").trim();
-      if (!line) continue;
-
-      if (line.startsWith("}")) {
-        pathStack.pop();
-        const rest = line.substring(1).trim();
-        if (rest && rest !== ";") {
-          line = rest;
-        } else {
-          continue;
-        }
-      }
-
-      if (line.includes("{")) {
-        const parts = line.split("{");
-        const pathPart = parts[0].trim();
-        if (pathPart) {
-          pathStack.push(pathPart);
-        }
-        const inner = parts.slice(1).join("{").trim();
-        if (inner && inner !== "}") {
-          line = inner;
-        } else {
-          continue;
-        }
-      }
-
-      if (line.endsWith(";")) {
-        const leaf = line.substring(0, line.length - 1).trim();
-        if (leaf) {
-          linesToParse.push([...pathStack, leaf].join(" "));
-        }
-      } else {
-        linesToParse.push([...pathStack, line].join(" "));
-      }
-    }
-  } else {
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (line) {
-        linesToParse.push(line);
-      }
-    }
-  }
-
-  const interfaceMap = new globalThis.Map<string, Partial<InterfaceInfo>>();
-  const getInterface = (name: string): Partial<InterfaceInfo> => {
-    if (!interfaceMap.has(name)) {
-      const isVlan = name.toLowerCase().startsWith("vlan") || name.toLowerCase().startsWith("irb") || name.toLowerCase().includes("vlan");
-      interfaceMap.set(name, {
-        name: name,
-        description: "",
-        speed: "auto",
-        duplex: "auto",
-        status: "unknown",
-        ip: "",
-        vlanAccess: null,
-        vlanTrunkAllowed: [],
-        trunkAll: false,
-        mode: isVlan ? "routed" : "unknown",
-        mac: "",
-        mtu: 1500,
-        type: isVlan ? "SVI" : (name.match(/^(ge|xe|et|ae|fe|port|ethernet|fast|gigabit|tengigabit)/i)?.[1] || "Other"),
-      });
-    }
-    return interfaceMap.get(name)!;
-  };
-
-  let activeIface: Partial<InterfaceInfo> | null = null;
-  let inSystemInterface = false;
-
-  const totalLines = linesToParse.length;
-  const CHUNK_SIZE = 400;
-
-  for (let i = 0; i < totalLines; i += CHUNK_SIZE) {
-    const end = Math.min(i + CHUNK_SIZE, totalLines);
-    for (let j = i; j < end; j++) {
-      const line = linesToParse[j];
-
-      // VLAN detection inside parser block
-      // Match Cisco style: vlan 10
-      const ciscoVlanMatch = line.match(/^vlan\s+(\d+)/i);
-      if (ciscoVlanMatch) {
-        const id = parseInt(ciscoVlanMatch[1]);
-        let name = `VLAN ${id}`;
-        const nextLine = linesToParse[j + 1]?.trim() || "";
-        const nameMatch = nextLine.match(/^name\s+(.+)/i);
-        if (nameMatch) {
-          name = nameMatch[1].trim();
-        }
-        if (!cfg.vlans.some(v => v.id === id)) {
-          cfg.vlans.push({ id, name });
-        }
-      }
-
-      // Match Juniper/General style: set vlans <name> vlan-id <id>
-      const vlanIdMatch = line.match(/(?:set\s+)?vlans?\s+(\S+)\s+vlan-id\s+(\d+)/i) ||
-                          line.match(/(?:set\s+)?vlans?\s+vlan-id\s+(\d+)\s+name\s+(\S+)/i);
-      if (vlanIdMatch) {
-        const vlanName = vlanIdMatch[1];
-        const id = parseInt(vlanIdMatch[2]);
-        const existing = cfg.vlans.find(v => v.id === id);
-        if (existing) {
-          existing.name = vlanName;
-        } else {
-          cfg.vlans.push({ id, name: vlanName });
-        }
-      }
-
-      // FortiGate context tracking
-      if (line.startsWith("config system interface")) {
-        inSystemInterface = true;
-        activeIface = null;
-        continue;
-      }
-      if (line.startsWith("config system global") || line.startsWith("config router") || line.startsWith("config firewall")) {
-        inSystemInterface = false;
-        activeIface = null;
-        continue;
-      }
-
-      // Block boundary detection for Cisco/FortiGate
-      if (line === "!" || line === "exit" || line === "next" || line === "end") {
-        activeIface = null;
-        continue;
-      }
-
-      // Interface declaration/context matching
-      let matchedIfName: string | null = null;
-      
-      if (inSystemInterface && line.startsWith("edit ")) {
-        const match = line.match(/^edit\s+["']?([a-zA-Z0-9\/\-\._]+)["']?/i);
-        if (match) {
-          matchedIfName = match[1];
-        }
-      } else if (line.match(/^interface\s+/i)) {
-        const match = line.match(/^interface\s+["']?([a-zA-Z0-9\/\-\.\s]+)["']?/i);
-        if (match) {
-          matchedIfName = match[1].trim();
-        }
-      } else if (line.match(/^(?:set\s+)?interfaces?\s+/i)) {
-        const match = line.match(/^(?:set\s+)?interfaces?\s+([a-zA-Z0-9\/\-\.]+)(?:\s+unit\s+(\d+))?/i);
-        if (match) {
-          let name = match[1];
-          if (match[2]) {
-            name = `${name}.${match[2]}`;
-          }
-          matchedIfName = name;
-        }
-      } else if (line.match(/^(?:set\s+)?network\s+interface\s+/i)) {
-        const match = line.match(/^(?:set\s+)?network\s+interface\s+(\S+)\s+(\S+)/i);
-        if (match) {
-          const type = match[1];
-          let name = match[2];
-          if (type === "vlan" && line.includes("unit ")) {
-            const unitMatch = line.match(/unit\s+(\S+)/i);
-            if (unitMatch) {
-              name = `vlan.${unitMatch[1]}`;
-            }
-          }
-          matchedIfName = name;
-        }
-      }
-
-      if (matchedIfName) {
-        const EXCLUDED_KEYWORDS = new Set([
-          "global", "system", "router", "route", "ospf", "bgp", "vlan", "vlans", 
-          "zone", "security", "address", "service", "policy", "group", "member", 
-          "vdom", "firewall", "nat", "dhcp", "dns", "ntp", "snmp", "static", "user", 
-          "admin", "map", "key", "mode", "option", "type", "description"
-        ]);
-        if (!EXCLUDED_KEYWORDS.has(matchedIfName.toLowerCase())) {
-          activeIface = getInterface(matchedIfName);
-        }
-      }
-
-      // Apply interface properties
-      if (activeIface) {
-        // IP & Subnet Address
-        const ipMatch = line.match(/(?:ip\s+)?address\s+([\d.]+)\s+([\d.]+)/i) ||
-                        line.match(/(?:ip\s+)?address\s+([\d.]+)\/(\d+)/i) ||
-                        line.match(/ip\s+([\d.]+)\/(\d+)/i) ||
-                        line.match(/ip\s+([\d.]+)\s+(?:netmask\s+)?([\d.]+)/i) ||
-                        line.match(/set\s+ip\s+([\d.]+)\s+([\d.]+)/i) ||
-                        line.match(/set\s+ip\s+([\d.]+)\/(\d+)/i);
-        if (ipMatch) {
-          if (ipMatch[2].includes(".")) {
-            activeIface.ip = `${ipMatch[1]}/${cidrFromMask(ipMatch[2])}`;
-          } else {
-            activeIface.ip = `${ipMatch[1]}/${ipMatch[2]}`;
-          }
-          activeIface.mode = "routed";
-          if (!cfg.managementIp) {
-            const ifaceNameLower = (activeIface.name || "").toLowerCase();
-            if (ifaceNameLower.includes("mgmt") || ifaceNameLower.includes("management") || ifaceNameLower.includes("mgt")) {
-              cfg.managementIp = ipMatch[1];
-            }
-          }
-        }
-
-        // Description / Alias / Comment
-        const descMatch = line.match(/(?:description|desc|alias|comment)\s+["']?(.+?)["']?$/i) ||
-                          line.match(/set\s+(?:description|alias)\s+["']?(.+?)["']?$/i);
-        if (descMatch) {
-          activeIface.description = descMatch[1].trim();
-        }
-
-        // Speed / Duplex
-        const speedMatch = line.match(/speed\s+(\S+)/i) || line.match(/set\s+speed\s+(\S+)/i);
-        if (speedMatch) {
-          activeIface.speed = speedMatch[1].replace(/[mGg]/g, "");
-        }
-        const duplexMatch = line.match(/duplex\s+(full|half|auto)/i) || line.match(/set\s+duplex\s+(full|half|auto)/i);
-        if (duplexMatch) {
-          activeIface.duplex = duplexMatch[1].toLowerCase();
-        }
-
-        // Status
-        if (line.match(/\bshutdown\b/i) || line.match(/\bdisable\b/i) || line.match(/status\s+down/i) || line.match(/link-state\s+down/i)) {
-          activeIface.status = "adminDown";
-        } else if (line.match(/\bno\s+shutdown\b/i) || line.match(/\bno\s+disable\b/i) || line.match(/status\s+up/i) || line.match(/link-state\s+up/i)) {
-          activeIface.status = "up";
-        }
-
-        // MTU
-        const mtuMatch = line.match(/mtu\s+(\d+)/i) || line.match(/set\s+mtu\s+(\d+)/i);
-        if (mtuMatch) {
-          activeIface.mtu = parseInt(mtuMatch[1]);
-        }
-
-        // MAC Address
-        const macMatch = line.match(/(?:mac-address|mac)\s+([\da-fA-F\.:]+)/i) || line.match(/set\s+mac\s+([\da-fA-F\.:]+)/i);
-        if (macMatch) {
-          activeIface.mac = macMatch[1];
-        }
-
-        // VLAN configurations (Access / Trunk)
-        if (line.match(/switchport\s+mode\s+access/i) || line.match(/layer2/i) || line.match(/(?:interface-mode|port-mode)\s+access/i)) {
-          activeIface.mode = "access";
-        }
-        if (line.match(/switchport\s+mode\s+trunk/i) || line.match(/(?:interface-mode|port-mode)\s+trunk/i)) {
-          activeIface.mode = "trunk";
-        }
-
-        const accessVlanMatch = line.match(/switchport\s+access\s+vlan\s+(\d+)/i) ||
-                                line.match(/vlanid\s+(\d+)/i) ||
-                                line.match(/vlan\s+access\s+(\d+)/i);
-        if (accessVlanMatch) {
-          activeIface.vlanAccess = parseInt(accessVlanMatch[1]);
-          activeIface.mode = "access";
-        }
-
-        const trunkVlanMatch = line.match(/switchport\s+trunk\s+allowed\s+vlan\s+(.+)/i) ||
-                               line.match(/vlan\s+members\s+\[?\s*([^\]]+?)\s*\]?$/i);
-        if (trunkVlanMatch) {
-          const val = trunkVlanMatch[1].trim();
-          if (val.toLowerCase() === "all") {
-            activeIface.vlanTrunkAllowed = [];
-            activeIface.trunkAll = true;
-          } else {
-            const ids = val.split(/[,\s]+/).map(v => parseInt(v.trim())).filter(n => !isNaN(n));
-            ids.forEach(id => {
-              if (activeIface && activeIface.vlanTrunkAllowed && !activeIface.vlanTrunkAllowed.includes(id)) {
-                activeIface.vlanTrunkAllowed.push(id);
-              }
-            });
-          }
-          activeIface.mode = "trunk";
-        }
-      }
-    }
-    onProgress(Math.round((end / totalLines) * 100));
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-
-  // 1. Dynamic virtual/tunnel interface discovery engine (fully brand-agnostic)
-  const rawLines = raw.split("\n");
-  for (let i = 0; i < rawLines.length; i++) {
-    const line = rawLines[i].trim();
-    if (!line) continue;
-
-    const lower = line.toLowerCase();
-
-    // Dynamically identify virtual interfaces from generic assignment and initialization structures
-    const isVirtual = lower.includes("tunnel") || 
-                      lower.includes("st0") || 
-                      lower.includes("vpn") || 
-                      lower.includes("phase1-interface") ||
-                      lower.includes("config members") ||
-                      lower.includes("members ") ||
-                      lower.includes("member ");
-
-    if (isVirtual) {
-      // Find or assign virtual interface name dynamically
-      const nameMatch = line.match(/(?:tunnel\.\d+|st0\.\d+|tunnel\d+|st0|ipsec\d+|vpn\d+|ssl\.root)/i) ||
-                        line.match(/(?:edit|set\s+interface|set\s+member|interface)\s+["']?([a-zA-Z0-9\-_./]+)["']?/i);
-      
-      let vName = "";
-      if (nameMatch) {
-        vName = nameMatch[1] || nameMatch[0];
-      }
-
-      if (!vName && lower.includes("st0")) vName = "st0";
-      if (!vName && lower.includes("tunnel")) vName = "tunnel0";
-
-      if (vName) {
-        const EXCLUDED_KEYWORDS = new Set([
-          "global", "system", "router", "route", "ospf", "bgp", "vlan", "vlans", 
-          "zone", "security", "address", "service", "policy", "group", "member", 
-          "vdom", "firewall", "nat", "dhcp", "dns", "ntp", "snmp", "static", "user", 
-          "admin", "map", "key", "mode", "option", "type", "description", "config"
-        ]);
-        if (!EXCLUDED_KEYWORDS.has(vName.toLowerCase()) && !/^\d+$/.test(vName)) {
-          const iface = getInterface(vName);
-          iface.type = lower.includes("sdwan") || lower.includes("sd-wan") || lower.includes("members") || lower.includes("member") ? "SD-WAN Member" : "VPN Tunnel";
-          iface.status = "up";
-          iface.description = iface.description || `Universal Virtual Interface (${vName})`;
-          iface.mode = "routed";
-        }
-      }
-    }
-  }
-
-  // Finalize all interfaces from interfaceMap and tag types
-  interfaceMap.forEach(iface => {
-    const name = (iface.name || "").toLowerCase();
-    
-    // Tag types properly
-    if (iface.type === "Other" || !iface.type) {
-      if (name.includes("tunnel") || name.includes("vpn") || name === "ssl.root") {
-        iface.type = "VPN Tunnel";
-      } else if (name.includes("sdwan") || name.includes("sd-wan")) {
-        iface.type = "SD-WAN Member";
-      } else if (name.startsWith("vlan") || name.startsWith("irb") || name.includes("vlan")) {
-        iface.type = "SVI";
-      } else {
-        iface.type = "Physical Port";
-      }
-    }
-
-    cfg.interfaces.push(finalizeInterface(iface));
-    // Also parse vlan IDs from interface names like irb.100 or vlan.200
-    if (iface.name?.includes(".")) {
-      const parts = iface.name.split(".");
-      const isVlanOrIrb = parts[0].toLowerCase().startsWith("vlan") || parts[0].toLowerCase().startsWith("irb");
-      if (isVlanOrIrb) {
-        const vlanId = parseInt(parts[1]);
-        if (!isNaN(vlanId) && !cfg.vlans.some(v => v.id === vlanId)) {
-          cfg.vlans.push({ id: vlanId, name: `VLAN ${vlanId}` });
-        }
-      }
-    } else if (iface.name?.toLowerCase().startsWith("vlan")) {
-      const idPart = iface.name.substring(4).trim();
-      const vlanId = parseInt(idPart);
-      if (!isNaN(vlanId) && !cfg.vlans.some(v => v.id === vlanId)) {
-        cfg.vlans.push({ id: vlanId, name: `VLAN ${vlanId}` });
-      }
-    }
-  });
-
-  if (!cfg.hostname) {
-    cfg.hostname = "";
-  }
-
-  return cfg;
-}
-
-function finalizeInterface(iface: Partial<InterfaceInfo>): InterfaceInfo {
-  return {
-    name: iface.name || "Unknown",
-    description: iface.description || "",
-    speed: iface.speed || "auto",
-    duplex: iface.duplex || "auto",
-    status: iface.status || "unknown",
-    ip: iface.ip || "",
-    vlanAccess: iface.vlanAccess ?? null,
-    vlanTrunkAllowed: iface.vlanTrunkAllowed || [],
-    trunkAll: iface.trunkAll || false,
-    mode: iface.mode || "unknown",
-    mac: iface.mac || "",
-    mtu: iface.mtu || 1500,
-    type: iface.type || "Other",
-  };
-}
-
-function cidrFromMask(mask: string): number {
-  const octets = mask.split(".").map(Number);
-  let bits = 0;
-  for (const octet of octets) {
-    bits += (octet.toString(2).match(/1/g) || []).length;
-  }
-  return bits;
-}
-
-/* ─────────────────────────────────────────────
-   Topology Builder (pure function)
-   ───────────────────────────────────────────── */
-
-function maskFromCidr(cidr: number): string {
-  const bits = Math.min(Math.max(cidr, 0), 32);
-  const octets = [0, 0, 0, 0];
-  for (let i = 0; i < 4; i++) {
-    const shift = 24 - i * 8;
-    if (bits > shift) {
-      const localBits = Math.min(bits - shift, 8);
-      octets[i] = 256 - Math.pow(2, 8 - localBits);
-    }
-  }
-  return octets.join(".");
-}
-
-function buildTopology(cfg: ParsedConfig): VlanTopologyNode[] {
-  const nodes: VlanTopologyNode[] = [];
-  const nodeMap = new Set<string>();
-
-  // Root switch node
-  const switchId = "sw-core";
-  let swIp: string | undefined;
-  let swMask: string | undefined;
-  if (cfg.managementIp) {
-    swIp = cfg.managementIp;
-    const mgmtIface = cfg.interfaces.find(i => i.ip && i.ip.startsWith(cfg.managementIp));
-    if (mgmtIface && mgmtIface.ip) {
-      const [, cidrPart] = mgmtIface.ip.split("/");
-      if (cidrPart) {
-        swMask = maskFromCidr(parseInt(cidrPart));
-      }
-    }
-  }
-
-  nodes.push({
-    id: switchId,
-    label: cfg.hostname || "Unnamed Device",
-    type: "switch",
-    group: "infra",
-    connections: [],
-    ip: swIp,
-    subnetMask: swMask,
-    portIndex: swIp ? "Mgmt" : undefined
-  });
-  nodeMap.add(switchId);
-
-  // VLAN nodes
-  for (const vlan of cfg.vlans) {
-    const vlanId = `vlan-${vlan.id}`;
-    
-    // Find matching SVI interface to assign IP / Mask
-    const svi = cfg.interfaces.find(i => i.type === "SVI" && (i.name.toLowerCase() === `vlan${vlan.id}` || i.name.toLowerCase() === `vlan ${vlan.id}` || i.name.toLowerCase() === `irb.${vlan.id}`));
-    let ip = "";
-    let mask = "";
-    if (svi && svi.ip) {
-      const [ipPart, cidrPart] = svi.ip.split("/");
-      ip = ipPart;
-      mask = maskFromCidr(parseInt(cidrPart || "24"));
-    }
-
-    if (!nodeMap.has(vlanId)) {
-      nodes.push({
-        id: vlanId,
-        label: `${vlan.name} (VLAN ${vlan.id})`,
-        type: "vlan",
-        group: "vlan",
-        connections: [switchId],
-        ip: ip || undefined,
-        subnetMask: mask || undefined,
-        portIndex: svi ? svi.name : undefined
-      });
-      nodeMap.add(vlanId);
-      const swNode = nodes.find(n => n.id === switchId);
-      if (swNode && !swNode.connections.includes(vlanId)) swNode.connections.push(vlanId);
-    }
-  }
-
-  // Infer VLANs from interfaces not explicitly defined
-  const seenVlans = new Set(cfg.vlans.map(v => v.id));
-  for (const intf of cfg.interfaces) {
-    if (intf.vlanAccess !== null && !seenVlans.has(intf.vlanAccess)) {
-      const vlanId = `vlan-${intf.vlanAccess}`;
-      
-      const svi = cfg.interfaces.find(i => i.type === "SVI" && (i.name.toLowerCase() === `vlan${intf.vlanAccess}` || i.name.toLowerCase() === `vlan ${intf.vlanAccess}` || i.name.toLowerCase() === `irb.${intf.vlanAccess}`));
-      let ip = "";
-      let mask = "";
-      if (svi && svi.ip) {
-        const [ipPart, cidrPart] = svi.ip.split("/");
-        ip = ipPart;
-        mask = maskFromCidr(parseInt(cidrPart || "24"));
-      }
-
-      if (!nodeMap.has(vlanId)) {
-        nodes.push({
-          id: vlanId,
-          label: `Inferred VLAN ${intf.vlanAccess}`,
-          type: "vlan",
-          group: "vlan",
-          connections: [switchId],
-          ip: ip || undefined,
-          subnetMask: mask || undefined,
-          portIndex: svi ? svi.name : undefined
-        });
-        nodeMap.add(vlanId);
-        const swNode = nodes.find(n => n.id === switchId);
-        if (swNode && !swNode.connections.includes(vlanId)) swNode.connections.push(vlanId);
-      }
-      seenVlans.add(intf.vlanAccess);
-    }
-    for (const vlanId of intf.vlanTrunkAllowed) {
-      if (!seenVlans.has(vlanId)) {
-        const vId = `vlan-${vlanId}`;
-        if (!nodeMap.has(vId)) {
-          nodes.push({ id: vId, label: `VLAN ${vlanId}`, type: "vlan", group: "vlan", connections: [switchId] });
-          nodeMap.add(vId);
-          const swNode = nodes.find(n => n.id === switchId);
-          if (swNode && !swNode.connections.includes(vId)) swNode.connections.push(vId);
-        }
-      }
-    }
-    if (intf.trunkAll && intf.mode === "trunk") {
-      const trunkAllId = `trunk-all-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
-      if (!nodeMap.has(trunkAllId)) {
-        nodes.push({
-          id: trunkAllId,
-          label: `Trunk ALL (${intf.name})`,
-          type: "vlan",
-          group: "trunk-all",
-          connections: [switchId],
-          portIndex: intf.name,
-        });
-        nodeMap.add(trunkAllId);
-        const swNode = nodes.find(n => n.id === switchId);
-        if (swNode && !swNode.connections.includes(trunkAllId)) swNode.connections.push(trunkAllId);
-      }
-    }
-  }
-
-// Access port nodes
-  for (const intf of cfg.interfaces) {
-    if ((intf.mode === "access" || intf.mode === "unknown" || intf.mode === "routed") && intf.status !== "adminDown" && intf.type !== "SVI" && intf.type !== "VPN Tunnel" && intf.type !== "SD-WAN Member") {
-      const portId = `port-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
-      if (!nodeMap.has(portId)) {
-        const vlanTag = intf.vlanAccess ? ` (VLAN ${intf.vlanAccess})` : "";
-        
-        let portIp: string | undefined;
-        let portMask: string | undefined;
-        
-        if (intf.ip) {
-          const [ipPart, cidrPart] = intf.ip.split("/");
-          portIp = ipPart;
-          if (cidrPart) {
-            portMask = maskFromCidr(parseInt(cidrPart));
-          }
-        }
-
-        nodes.push({
-          id: portId,
-          label: `${intf.name}${vlanTag}`,
-          type: "port",
-          group: intf.vlanAccess ? `vlan-${intf.vlanAccess}` : "ungrouped",
-          connections: [switchId],
-          ip: portIp,
-          subnetMask: portMask,
-          portIndex: intf.name
-        });
-        nodeMap.add(portId);
-      }
-    }
-  }
-
-  // VPN Tunnel and SD-WAN Member nodes
-  for (const intf of cfg.interfaces) {
-    if (intf.type === "VPN Tunnel") {
-      const vpnNodeId = `vpn-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
-      if (!nodeMap.has(vpnNodeId)) {
-        const [ipPart, cidrPart] = intf.ip ? intf.ip.split("/") : ["", ""];
-        const mask = cidrPart ? maskFromCidr(parseInt(cidrPart)) : undefined;
-        nodes.push({
-          id: vpnNodeId,
-          label: intf.name,
-          type: "vpn",
-          group: "security",
-          connections: [switchId],
-          ip: ipPart || undefined,
-          subnetMask: mask || undefined,
-          portIndex: intf.name
-        });
-        nodeMap.add(vpnNodeId);
-        const swNode = nodes.find(n => n.id === switchId);
-        if (swNode && !swNode.connections.includes(vpnNodeId)) swNode.connections.push(vpnNodeId);
-      }
-    } else if (intf.type === "SD-WAN Member") {
-      const sdwanNodeId = `sdwan-${intf.name.replace(/[^a-zA-Z0-9]/g, "-")}`;
-      if (!nodeMap.has(sdwanNodeId)) {
-        const [ipPart, cidrPart] = intf.ip ? intf.ip.split("/") : ["", ""];
-        const mask = cidrPart ? maskFromCidr(parseInt(cidrPart)) : undefined;
-        nodes.push({
-          id: sdwanNodeId,
-          label: intf.name,
-          type: "sdwan",
-          group: "wan",
-          connections: [switchId],
-          ip: ipPart || undefined,
-          subnetMask: mask || undefined,
-          portIndex: intf.name
-        });
-        nodeMap.add(sdwanNodeId);
-        const swNode = nodes.find(n => n.id === switchId);
-        if (swNode && !swNode.connections.includes(sdwanNodeId)) swNode.connections.push(sdwanNodeId);
-      }
-    }
-  }
-
-  return nodes;
-}
-
-/* ─────────────────────────────────────────────
-   Topology Map Component (Absolute + SVG connectors)
-   ───────────────────────────────────────────── */
-
-const TopologicalMap = memo(function TopologicalMap({
-  nodes,
-  searchQuery = "",
-  onNodeSelect,
-}: {
-  nodes: VlanTopologyNode[];
-  searchQuery?: string;
-  onNodeSelect?: (nodeId: string | null) => void;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const [zoom, setZoom] = useState<number>(1);
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [viewMode, setViewMode] = useState<"RADIAL" | "TREE">("TREE");
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
-
-  const dragInfo = useRef<{
-    isPanning: boolean;
-    draggedNodeId: string | null;
-    startX: number;
-    startY: number;
-  }>({
-    isPanning: false,
-    draggedNodeId: null,
-    startX: 0,
-    startY: 0,
-  });
-
-  const switches = useMemo(() => nodes.filter(n => n.type === 'switch'), [nodes]);
-  const vlans = useMemo(() => nodes.filter(n => n.type === 'vlan'), [nodes]);
-  const ports = useMemo(() => nodes.filter(n => n.type === 'port'), [nodes]);
-  const routers = useMemo(() => nodes.filter(n => n.type === 'router'), [nodes]);
-
-  const searchLower = searchQuery.toLowerCase();
-
-  const isNodeMatched = useCallback((node: VlanTopologyNode) => {
-    if (!searchLower) return true;
-    return (
-      node.label.toLowerCase().includes(searchLower) ||
-      (node.ip && node.ip.toLowerCase().includes(searchLower)) ||
-      (node.portIndex && node.portIndex.toLowerCase().includes(searchLower)) ||
-      node.type.toLowerCase().includes(searchLower)
-    );
-  }, [searchLower]);
-
-  const isNodeFocused = useCallback((node: VlanTopologyNode) => {
-    if (!focusNodeId) return true;
-    if (node.id === focusNodeId) return true;
-    const focusedNode = nodes.find(n => n.id === focusNodeId);
-    if (focusedNode) {
-      return focusedNode.connections.includes(node.id) || node.connections.includes(focusNodeId);
-    }
-    return false;
-  }, [focusNodeId, nodes]);
-
-  const dynamicWidth = useMemo(() => Math.max(800, nodes.length * 85), [nodes.length]);
-  const dynamicHeight = useMemo(() => Math.max(600, Math.max(nodes.length * 45, 500)), [nodes.length]);
-
-  useEffect(() => {
-    const cx = dynamicWidth / 2;
-    const cy = dynamicHeight / 2;
-    const newPositions: Record<string, { x: number; y: number }> = {};
-
-    if (viewMode === "TREE") {
-      const layerGap = Math.max(140, Math.min(220, dynamicHeight / 5));
-      const routerY = 70;
-      const switchY = routerY + layerGap;
-      const vlanY = switchY + layerGap;
-      const hostY = vlanY + layerGap;
-
-      routers.forEach((r, i) => {
-        newPositions[r.id] = {
-          x: cx + (i - (routers.length - 1) / 2) * 180,
-          y: routerY + 30,
-        };
-      });
-
-      if (switches.length > 0) {
-        newPositions[switches[0].id] = { x: cx, y: switchY + 30 };
-      }
-
-      const vpns = nodes.filter(n => n.type === "vpn");
-      vpns.forEach((v, i) => {
-        newPositions[v.id] = {
-          x: cx - 220 - i * 70,
-          y: switchY + 30,
-        };
-      });
-
-      const sdwans = nodes.filter(n => n.type === "sdwan");
-      sdwans.forEach((s, i) => {
-        newPositions[s.id] = {
-          x: cx + 220 + i * 70,
-          y: switchY + 30,
-        };
-      });
-
-      const vlanSpacing = Math.max(100, dynamicWidth / Math.max(vlans.length, 1));
-      vlans.forEach((v, i) => {
-        const xPos = cx + (i - (vlans.length - 1) / 2) * Math.min(vlanSpacing, 160);
-        newPositions[v.id] = { x: xPos, y: vlanY + 30 };
-      });
-
-      vlans.forEach((vlanNode) => {
-        const vlanPorts = ports.filter(h => h.group === vlanNode.id);
-        const parentPos = newPositions[vlanNode.id] || { x: cx, y: vlanY + 30 };
-        vlanPorts.forEach((portNode, idx) => {
-          const offset = (idx - (vlanPorts.length - 1) / 2) * 100;
-          newPositions[portNode.id] = { x: parentPos.x + offset, y: hostY + 30 };
-        });
-      });
-
-      const orphanPorts = ports.filter(h => h.group !== "vlan-" && !vlans.some(v => v.id === h.group) && h.group !== "ungrouped");
-      orphanPorts.forEach((h, idx) => {
-        const offset = (idx - (orphanPorts.length - 1) / 2) * 100;
-        newPositions[h.id] = { x: cx + offset, y: hostY + 30 };
-      });
-    } else {
-      if (switches.length > 0) {
-        newPositions[switches[0].id] = { x: cx, y: cy };
-      }
-
-      routers.forEach((r, i) => {
-        const angle = -Math.PI / 2 + (i - (routers.length - 1) / 2) * 0.35;
-        const radius = Math.min(130, dynamicWidth * 0.15);
-        newPositions[r.id] = {
-          x: cx + radius * Math.cos(angle),
-          y: cy + radius * Math.sin(angle),
-        };
-      });
-
-      const vRadius = Math.min(180, dynamicWidth * 0.2);
-      vlans.forEach((v, i) => {
-        const angle = (i / (vlans.length || 1)) * 2 * Math.PI - Math.PI / 2;
-        newPositions[v.id] = {
-          x: cx + vRadius * Math.cos(angle),
-          y: cy + vRadius * Math.sin(angle),
-        };
-      });
-
-      ports.forEach((h) => {
-        const parentId = h.group;
-        const parentPos = newPositions[parentId] || newPositions[switches[0]?.id] || { x: cx, y: cy };
-        const siblings = ports.filter(port => port.group === h.group);
-        const index = siblings.findIndex(s => s.id === h.id);
-        const hRadius = Math.min(90, dynamicWidth * 0.1);
-        const angleOffset = Math.atan2(parentPos.y - cy, parentPos.x - cx);
-        const spread = Math.PI / 2.8;
-        const startAngle = angleOffset - spread / 2;
-        const step = siblings.length > 1 ? spread / (siblings.length - 1) : 0;
-        const angle = startAngle + index * step;
-        newPositions[h.id] = {
-          x: parentPos.x + hRadius * Math.cos(angle),
-          y: parentPos.y + hRadius * Math.sin(angle),
-        };
-      });
-
-      const securityNodes = nodes.filter(n => n.type === "vpn" || n.type === "sdwan");
-      const secRadius = Math.min(220, dynamicWidth * 0.25);
-      const secStart = Math.PI * 0.35;
-      const secEnd = Math.PI * 0.65;
-      const secSpread = secEnd - secStart;
-      const secStep = securityNodes.length > 1 ? secSpread / (securityNodes.length - 1) : 0;
-      securityNodes.forEach((node, idx) => {
-        const angle = securityNodes.length === 1 ? (secStart + secEnd) / 2 : secStart + idx * secStep;
-        newPositions[node.id] = {
-          x: cx + secRadius * Math.cos(angle),
-          y: cy + secRadius * Math.sin(angle),
-        };
-      });
-    }
-
-    nodes.forEach(n => {
-      if (!newPositions[n.id]) {
-        newPositions[n.id] = { x: cx, y: cy + 120 };
-      }
-    });
-
-    // Overlap resolution
-    const minDist = 95;
-    const nodeIds = Object.keys(newPositions);
-    for (let iter = 0; iter < 20; iter++) {
-      let moved = false;
-      for (let i = 0; i < nodeIds.length; i++) {
-        for (let j = i + 1; j < nodeIds.length; j++) {
-          const a = newPositions[nodeIds[i]];
-          const b = newPositions[nodeIds[j]];
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < minDist && dist > 0) {
-            const push = (minDist - dist) / 2 + 2;
-            const angle = Math.atan2(dy, dx);
-            a.x -= Math.cos(angle) * push;
-            a.y -= Math.sin(angle) * push;
-            b.x += Math.cos(angle) * push;
-            b.y += Math.sin(angle) * push;
-            moved = true;
-          }
-        }
-      }
-      if (!moved) break;
-    }
-
-    // Clamp to canvas bounds
-    const margin = 80;
-    for (const id of nodeIds) {
-      const p = newPositions[id];
-      p.x = Math.max(margin, Math.min(dynamicWidth - margin, p.x));
-      p.y = Math.max(margin, Math.min(dynamicHeight - margin, p.y));
-    }
-
-    setNodePositions(newPositions);
-
-    // Zoom to fit
-    const xs = Object.values(newPositions).map(p => p.x);
-    const ys = Object.values(newPositions).map(p => p.y);
-    if (xs.length === 0) {
-      setZoom(1);
-      setPanOffset({ x: 0, y: 0 });
-      return;
-    }
-    const graphMinX = Math.min(...xs) - 60;
-    const graphMaxX = Math.max(...xs) + 60;
-    const graphMinY = Math.min(...ys) - 40;
-    const graphMaxY = Math.max(...ys) + 40;
-    const graphW = graphMaxX - graphMinX || 1;
-    const graphH = graphMaxY - graphMinY || 1;
-    const containerW = dynamicWidth;
-    const containerH = dynamicHeight;
-    const fitZoom = Math.min(containerW / graphW, containerH / graphH, 2);
-    const finalZoom = Math.max(0.3, Math.min(fitZoom, 1.5));
-    const centerX = (graphMinX + graphMaxX) / 2;
-    const centerY = (graphMinY + graphMaxY) / 2;
-    const panX = containerW / 2 - centerX * finalZoom;
-    const panY = containerH / 2 - centerY * finalZoom;
-    setZoom(finalZoom);
-    setPanOffset({ x: panX, y: panY });
-  }, [nodes, viewMode, switches, vlans, ports, routers, dynamicWidth, dynamicHeight]);
-
-  // Canvas rendering
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const displayW = canvas.clientWidth;
-    const displayH = canvas.clientHeight;
-    canvas.width = displayW * dpr;
-    canvas.height = displayH * dpr;
-    ctx.scale(dpr, dpr);
-
-    ctx.clearRect(0, 0, displayW, displayH);
-
-    const isDark = document.documentElement.classList.contains("dark");
-
-    ctx.save();
-    ctx.translate(panOffset.x, panOffset.y);
-    ctx.scale(zoom, zoom);
-
-    // Draw grid
-    const gridSize = 40;
-    ctx.strokeStyle = isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.06)";
-    ctx.lineWidth = 1;
-    const viewLeft = -panOffset.x / zoom - 200;
-    const viewRight = (displayW - panOffset.x) / zoom + 200;
-    const viewTop = -panOffset.y / zoom - 200;
-    const viewBottom = (displayH - panOffset.y) / zoom + 200;
-    for (let x = Math.floor(viewLeft / gridSize) * gridSize; x < viewRight; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, viewTop);
-      ctx.lineTo(x, viewBottom);
-      ctx.stroke();
-    }
-    for (let y = Math.floor(viewTop / gridSize) * gridSize; y < viewBottom; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(viewLeft, y);
-      ctx.lineTo(viewRight, y);
-      ctx.stroke();
-    }
-
-    const allPositions = nodePositions;
-
-    // Draw edges
-    nodes.forEach(node => {
-      const start = allPositions[node.id];
-      if (!start) return;
-      const nodeVisible = isNodeFocused(node) && isNodeMatched(node);
-
-      node.connections.forEach(targetId => {
-        const end = allPositions[targetId];
-        if (!end) return;
-
-        const targetNode = nodes.find(n => n.id === targetId);
-        const targetVisible = targetNode ? isNodeFocused(targetNode) && isNodeMatched(targetNode) : false;
-        const finalAlpha = focusNodeId ? ((nodeVisible && targetVisible) ? 0.6 : 0.03) : (isNodeMatched(node) && targetNode && isNodeMatched(targetNode) ? 0.2 : 0.04);
-
-        ctx.beginPath();
-        ctx.moveTo(start.x, start.y);
-        const midX = (start.x + end.x) / 2;
-        ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
-
-        const isHoveredEdge = node.id === hoveredNodeId || targetId === hoveredNodeId;
-        const isFocusEdge = focusNodeId && (node.id === focusNodeId || targetId === focusNodeId);
-
-        if (isFocusEdge) {
-          ctx.strokeStyle = isDark ? "rgba(14, 179, 186, 0.7)" : "rgba(14, 179, 186, 0.8)";
-          ctx.lineWidth = 2.5;
-        } else if (isHoveredEdge) {
-          ctx.strokeStyle = isDark ? "rgba(239, 68, 68, 0.7)" : "rgba(220, 38, 38, 0.7)";
-          ctx.lineWidth = 2.5;
-        } else {
-          ctx.strokeStyle = isDark ? `rgba(255, 255, 255, ${finalAlpha})` : `rgba(30, 30, 46, ${finalAlpha})`;
-          ctx.lineWidth = 1.5;
-        }
-        ctx.stroke();
-      });
-    });
-
-    // Draw nodes
-    nodes.forEach(node => {
-      const pos = allPositions[node.id];
-      if (!pos) return;
-
-      const isFocused = isNodeFocused(node);
-      const isMatched = isNodeMatched(node);
-      const nodeAlpha = focusNodeId ? (isFocused ? 1 : 0.12) : (isMatched ? 1 : 0.2);
-      const isHovered = node.id === hoveredNodeId;
-
-      drawNode(ctx, node, pos.x, pos.y, isHovered, isFocused, isMatched, nodeAlpha, isDark);
-    });
-
-    ctx.restore();
-  }, [nodes, nodePositions, zoom, panOffset, hoveredNodeId, focusNodeId, searchLower, dynamicWidth, dynamicHeight, isNodeFocused, isNodeMatched]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Theme-aware node drawing
-  const drawNode = (
-    ctx: CanvasRenderingContext2D,
-    node: VlanTopologyNode,
-    x: number,
-    y: number,
-    isHovered: boolean,
-    isFocused: boolean,
-    isMatched: boolean,
-    alpha: number,
-    isDark: boolean,
-  ) => {
-    let color = "#ef4444";
-    let border = "rgba(239, 68, 68, 0.4)";
-
-    if (node.type === "vlan") {
-      color = "#c084fc";
-      border = "rgba(192, 132, 252, 0.4)";
-    } else if (node.type === "router") {
-      color = "#fbbf24";
-      border = "rgba(251, 191, 36, 0.4)";
-    } else if (node.type === "port") {
-      color = "#34d399";
-      border = "rgba(52, 211, 153, 0.3)";
-    } else if (node.type === "vpn") {
-      color = "#f43f5e";
-      border = "rgba(244, 63, 94, 0.4)";
-    } else if (node.type === "sdwan") {
-      color = "#3b82f6";
-      border = "rgba(59, 130, 246, 0.4)";
-    }
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(x, y);
-
-    if (isHovered || isFocused) {
-      ctx.shadowBlur = isFocused ? 20 : 15;
-      ctx.shadowColor = isFocused ? "rgba(14, 179, 186, 0.6)" : color;
-    }
-
-    const radius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
-
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.fillStyle = isDark ? "rgba(10, 10, 15, 0.95)" : "rgba(255, 255, 255, 0.95)";
-    ctx.fill();
-    ctx.strokeStyle = isFocused ? "rgba(14, 179, 186, 0.8)" : isHovered ? color : border;
-    ctx.lineWidth = isFocused ? 3 : isHovered ? 2.5 : 1.5;
-    ctx.stroke();
-
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1.5;
-
-    // Draw node icons (same as before but theme-aware)
-    if (node.type === "switch") {
-      ctx.beginPath();
-      ctx.moveTo(-12, -4); ctx.lineTo(12, -4);
-      ctx.moveTo(12, -4); ctx.lineTo(8, -7);
-      ctx.moveTo(12, -4); ctx.lineTo(8, -1);
-      ctx.moveTo(12, 4); ctx.lineTo(-12, 4);
-      ctx.moveTo(-12, 4); ctx.lineTo(-8, 1);
-      ctx.moveTo(-12, 4); ctx.lineTo(-8, 7);
-      ctx.stroke();
-    } else if (node.type === "router") {
-      ctx.beginPath();
-      ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(0, -6); ctx.lineTo(0, -13);
-      ctx.moveTo(0, -13); ctx.lineTo(-3, -10);
-      ctx.moveTo(0, -13); ctx.lineTo(3, -10);
-      ctx.moveTo(0, 6); ctx.lineTo(0, 13);
-      ctx.moveTo(0, 13); ctx.lineTo(-3, 10);
-      ctx.moveTo(0, 13); ctx.lineTo(3, 10);
-      ctx.moveTo(6, 0); ctx.lineTo(13, 0);
-      ctx.moveTo(13, 0); ctx.lineTo(10, -3);
-      ctx.moveTo(13, 0); ctx.lineTo(10, 3);
-      ctx.moveTo(-6, 0); ctx.lineTo(-13, 0);
-      ctx.moveTo(-13, 0); ctx.lineTo(-10, -3);
-      ctx.moveTo(-13, 0); ctx.lineTo(-10, 3);
-      ctx.stroke();
-    } else if (node.type === "vlan") {
-      for (let i = -1; i <= 1; i++) {
-        const offset = i * 5;
-        ctx.beginPath();
-        ctx.moveTo(0, -3 + offset);
-        ctx.lineTo(10, 1 + offset);
-        ctx.lineTo(0, 5 + offset);
-        ctx.lineTo(-10, 1 + offset);
-        ctx.closePath();
-        ctx.stroke();
-      }
-    } else if (node.type === "vpn") {
-      ctx.beginPath();
-      ctx.moveTo(0, -9); ctx.lineTo(8, -6); ctx.lineTo(8, 0);
-      ctx.quadraticCurveTo(8, 6, 0, 9);
-      ctx.quadraticCurveTo(-8, 6, -8, 0);
-      ctx.lineTo(-8, -6); ctx.closePath(); ctx.stroke();
-    } else if (node.type === "sdwan") {
-      ctx.beginPath();
-      ctx.arc(-4, 0, 4, 0.8 * Math.PI, 1.8 * Math.PI);
-      ctx.arc(2, -3, 5, 1.1 * Math.PI, 1.9 * Math.PI);
-      ctx.arc(6, 1, 4, 1.5 * Math.PI, 0.4 * Math.PI);
-      ctx.lineTo(-4, 4); ctx.closePath(); ctx.stroke();
-    } else {
-      ctx.beginPath(); ctx.rect(-10, -8, 20, 13); ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(-3, 5); ctx.lineTo(-5, 9); ctx.lineTo(5, 9); ctx.lineTo(3, 5);
-      ctx.closePath(); ctx.fill();
-    }
-
-    // Draw label
-    const linesToDraw: string[] = [node.label];
-    if (node.portIndex && node.type !== "switch") {
-      linesToDraw.push(`Port: ${node.portIndex}`);
-    }
-    if (node.ip) {
-      linesToDraw.push(`${node.ip}${node.subnetMask ? ` / ${node.subnetMask}` : ""}`);
-    }
-
-    const labelFont = isMatched || !searchLower ? "bold 11px monospace" : "11px monospace";
-    const detailFont = "10px monospace";
-    ctx.font = labelFont;
-    let maxWidth = 0;
-    linesToDraw.forEach(ln => {
-      const w = ctx.measureText(ln).width;
-      if (w > maxWidth) maxWidth = w;
-    });
-
-    const px = 8;
-    const py = 6;
-    const lineSpacing = 14;
-    const startY = radius + 14;
-
-    const rw = maxWidth + px * 2;
-    const rh = linesToDraw.length * lineSpacing + py * 2 - 4;
-    const rx = -maxWidth / 2 - px;
-    const ry = startY - py;
-    const rr = 6;
-
-    ctx.beginPath();
-    ctx.moveTo(rx + rr, ry);
-    ctx.lineTo(rx + rw - rr, ry);
-    ctx.arcTo(rx + rw, ry, rx + rw, ry + rr, rr);
-    ctx.lineTo(rx + rw, ry + rh - rr);
-    ctx.arcTo(rx + rw, ry + rh, rx + rw - rr, ry + rh, rr);
-    ctx.lineTo(rx + rr, ry + rh);
-    ctx.arcTo(rx, ry + rh, rx, ry + rh - rr, rr);
-    ctx.lineTo(rx, ry + rr);
-    ctx.arcTo(rx, ry, rx + rr, ry, rr);
-    ctx.closePath();
-
-    ctx.fillStyle = isDark ? "rgba(10, 10, 15, 0.92)" : "rgba(255, 255, 255, 0.92)";
-    ctx.strokeStyle = isFocused ? "rgba(14, 179, 186, 0.6)" : isHovered ? color : isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.1)";
-    ctx.lineWidth = isFocused ? 1.5 : 1;
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    linesToDraw.forEach((ln, idx) => {
-      const ly = startY + idx * lineSpacing;
-      if (idx === 0) {
-        ctx.fillStyle = isMatched || !searchLower ? color : isDark ? "rgba(255, 255, 255, 0.3)" : "rgba(0, 0, 0, 0.3)";
-        ctx.font = labelFont;
-      } else {
-        ctx.fillStyle = isDark ? "rgba(255, 255, 255, 0.6)" : "rgba(30, 30, 46, 0.6)";
-        ctx.font = detailFont;
-      }
-      ctx.fillText(ln, 0, ly);
-    });
-
-    ctx.restore();
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const localX = (e.clientX - rect.left - panOffset.x) / zoom;
-    const localY = (e.clientY - rect.top - panOffset.y) / zoom;
-
-    let clickedNodeId: string | null = null;
-
-    for (const node of nodes) {
-      const pos = nodePositions[node.id];
-      if (!pos) continue;
-      const nodeRadius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
-      const dx = localX - pos.x;
-      const dy = localY - pos.y;
-      if (dx * dx + dy * dy < nodeRadius * nodeRadius + 100) {
-        clickedNodeId = node.id;
-        break;
-      }
-    }
-
-    if (clickedNodeId) {
-      const pos = nodePositions[clickedNodeId];
-      dragInfo.current = {
-        isPanning: false,
-        draggedNodeId: clickedNodeId,
-        startX: localX - pos.x,
-        startY: localY - pos.y,
-      };
-    } else {
-      dragInfo.current = {
-        isPanning: true,
-        draggedNodeId: null,
-        startX: e.clientX - panOffset.x,
-        startY: e.clientY - panOffset.y,
-      };
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const localX = (e.clientX - rect.left - panOffset.x) / zoom;
-    const localY = (e.clientY - rect.top - panOffset.y) / zoom;
-
-    const info = dragInfo.current;
-
-    if (info.draggedNodeId) {
-      const margin = 40;
-      const dragX = Math.max(margin, Math.min(dynamicWidth - margin, localX - info.startX));
-      const dragY = Math.max(margin, Math.min(dynamicHeight - margin, localY - info.startY));
-      setNodePositions(prev => ({
-        ...prev,
-        [info.draggedNodeId!]: { x: dragX, y: dragY },
-      }));
-    } else if (info.isPanning) {
-      setPanOffset({
-        x: e.clientX - info.startX,
-        y: e.clientY - info.startY,
-      });
-    } else {
-      let foundHover: string | null = null;
-      for (const node of nodes) {
-        const pos = nodePositions[node.id];
-        if (!pos) continue;
-        const nodeRadius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
-        const dx = localX - pos.x;
-        const dy = localY - pos.y;
-        if (dx * dx + dy * dy < nodeRadius * nodeRadius + 100) {
-          foundHover = node.id;
-          break;
-        }
-      }
-      if (foundHover !== hoveredNodeId) {
-        setHoveredNodeId(foundHover);
-      }
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (dragInfo.current.draggedNodeId) {
-      // Was it a click (no significant drag)?
-      // If so, toggle focus
-    }
-    dragInfo.current.isPanning = false;
-    dragInfo.current.draggedNodeId = null;
-  };
-
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const localX = (e.clientX - rect.left - panOffset.x) / zoom;
-    const localY = (e.clientY - rect.top - panOffset.y) / zoom;
-
-    let clickedNodeId: string | null = null;
-    for (const node of nodes) {
-      const pos = nodePositions[node.id];
-      if (!pos) continue;
-      const nodeRadius = node.type === "switch" ? 30 : node.type === "vlan" || node.type === "router" ? 26 : 22;
-      const dx = localX - pos.x;
-      const dy = localY - pos.y;
-      if (dx * dx + dy * dy < nodeRadius * nodeRadius + 100) {
-        clickedNodeId = node.id;
-        break;
-      }
-    }
-
-    if (clickedNodeId) {
-      setFocusNodeId(prev => prev === clickedNodeId ? null : clickedNodeId);
-      onNodeSelect?.(clickedNodeId === focusNodeId ? null : clickedNodeId);
-    } else {
-      setFocusNodeId(null);
-      onNodeSelect?.(null);
-    }
-  };
-
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-
-    const zoomIntensity = 0.08;
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const delta = e.deltaY < 0 ? 1 : -1;
-    const newZoom = Math.min(Math.max(zoom * (1 + delta * zoomIntensity), 0.2), 4);
-
-    const xs = (mouseX - panOffset.x) / zoom;
-    const ys = (mouseY - panOffset.y) / zoom;
-
-    setZoom(newZoom);
-    setPanOffset({
-      x: mouseX - xs * newZoom,
-      y: mouseY - ys * newZoom,
-    });
-  };
-
-  const exportPng = () => {
-    const tempCanvas = document.createElement("canvas");
-    const exportWidth = 1920;
-    const exportHeight = 1080;
-    tempCanvas.width = exportWidth;
-    tempCanvas.height = exportHeight;
-
-    const ctx = tempCanvas.getContext("2d");
-    if (!ctx) return;
-
-    const isDark = document.documentElement.classList.contains("dark");
-    ctx.fillStyle = isDark ? "#020205" : "#ffffff";
-    ctx.fillRect(0, 0, exportWidth, exportHeight);
-
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-
-    Object.values(nodePositions).forEach(p => {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    });
-
-    const padding = 150;
-    const graphWidth = maxX - minX || 1;
-    const graphHeight = maxY - minY || 1;
-    const scaleX = (exportWidth - padding * 2) / graphWidth;
-    const scaleY = (exportHeight - padding * 2) / graphHeight;
-    const exportScale = Math.min(scaleX, scaleY, 1.5);
-
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-
-    ctx.save();
-    ctx.translate(exportWidth / 2 - centerX * exportScale, exportHeight / 2 - centerY * exportScale);
-    ctx.scale(exportScale, exportScale);
-
-    nodes.forEach(node => {
-      const start = nodePositions[node.id];
-      if (!start) return;
-      node.connections.forEach(targetId => {
-        const end = nodePositions[targetId];
-        if (!end) return;
-        ctx.beginPath();
-        ctx.moveTo(start.x, start.y);
-        const midX = (start.x + end.x) / 2;
-        ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
-        ctx.strokeStyle = "rgba(14, 179, 186, 0.4)";
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-      });
-    });
-
-    nodes.forEach(node => {
-      const pos = nodePositions[node.id];
-      if (!pos) return;
-      drawNode(ctx, node, pos.x, pos.y, false, true, true, 1, isDark);
-    });
-
-    ctx.restore();
-
-    const dataUrl = tempCanvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.download = "TopoMap_Topology.png";
-    link.href = dataUrl;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
+function Table({ head, children, empty }: { head: string[]; children: React.ReactNode; empty?: boolean }) {
   return (
-    <div className="relative w-full overflow-hidden bg-[var(--surface)] dark:bg-black/40 border border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center p-0 select-none">
-      <div className="absolute top-4 left-4 z-10 flex gap-1 bg-[var(--surface)] dark:bg-black/60 p-1 border border-[var(--glass-border)] rounded-lg">
-        <button
-          onClick={() => setViewMode("TREE")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${viewMode === "TREE" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-[var(--surface-raised)]"}`}
-        >
-          Tree
-        </button>
-        <button
-          onClick={() => setViewMode("RADIAL")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${viewMode === "RADIAL" ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground hover:bg-[var(--surface-raised)]"}`}
-        >
-          Radial
-        </button>
-      </div>
-
-      <div className="absolute top-4 right-4 z-10 flex gap-2">
-        {focusNodeId && (
-          <button
-            onClick={() => { setFocusNodeId(null); onNodeSelect?.(null); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--surface-raised)] border border-[var(--glass-border)] hover:bg-[var(--surface)] text-[11px] font-black text-foreground uppercase tracking-widest transition-all"
-          >
-            Clear Focus
-          </button>
-        )}
-        <button
-          onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); setFocusNodeId(null); onNodeSelect?.(null); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--glass-border)] hover:bg-[var(--surface-raised)] text-[11px] font-black text-foreground uppercase tracking-widest transition-all"
-        >
-          Reset View
-        </button>
-        <button
-          onClick={exportPng}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/80 border border-accent/20 text-[11px] font-black text-accent-foreground uppercase tracking-widest transition-all shadow-lg"
-        >
-          Export PNG
-        </button>
-      </div>
-
-      <canvas
-        ref={canvasRef}
-        className="w-full cursor-grab active:cursor-grabbing"
-        style={{ height: `${Math.max(500, Math.min(dynamicHeight, 900))}px` }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onClick={handleCanvasClick}
-        onWheel={handleWheel}
-      />
-
-      {focusNodeId && (() => {
-        const focusedNode = nodes.find(n => n.id === focusNodeId);
-        if (!focusedNode) return null;
-        const connectedNodes = nodes.filter(n => focusedNode.connections.includes(n.id) || n.connections.includes(focusedNode.id));
-        return (
-          <div className="absolute bottom-4 left-4 z-10 max-w-xs bg-[var(--surface)] dark:bg-black/80 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-4 text-[11px]">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="size-2.5 rounded-full" style={{ backgroundColor: focusedNode.type === "switch" ? "#ef4444" : focusedNode.type === "vlan" ? "#c084fc" : focusedNode.type === "router" ? "#fbbf24" : focusedNode.type === "vpn" ? "#f43f5e" : focusedNode.type === "sdwan" ? "#3b82f6" : "#34d399" }} />
-              <span className="font-black text-foreground uppercase tracking-widest">{focusedNode.label}</span>
-            </div>
-            {focusedNode.ip && <div className="text-muted font-mono">IP: {focusedNode.ip}{focusedNode.subnetMask ? ` / ${focusedNode.subnetMask}` : ""}</div>}
-            {focusedNode.portIndex && <div className="text-muted font-mono">Port: {focusedNode.portIndex}</div>}
-            <div className="text-muted/60 mt-1">{connectedNodes.length} connection{connectedNodes.length !== 1 ? "s" : ""}</div>
-          </div>
-        );
-      })()}
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] border-collapse">
+        <thead>
+          <tr className="border-b border-border">
+            {head.map((h) => (
+              <th key={h} className={th}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="[&>tr]:border-b [&>tr]:border-border-subtle">{children}</tbody>
+      </table>
+      {empty && <p className="py-6 text-center text-sm text-muted">Nothing matches.</p>}
     </div>
   );
-});
+}
 
-/* ─────────────────────────────────────────────
-   Running-Config Decoder Component
-   ───────────────────────────────────────────── */
+function Mono({ children }: { children: React.ReactNode }) {
+  return <span className="font-mono text-[13px]">{children}</span>;
+}
 
-export default function RunningConfigDecoderClient() {
-  const [config, setConfig] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<ActiveTab>("SYSTEM");
-  const [isDragging, setIsDragging] = useState(false);
-  const [fileMeta, setFileMeta] = useState<{ name: string; size: number } | null>(null);
+function Chip({ children }: { children: React.ReactNode }) {
+  return <span className="inline-block rounded-md border border-border px-1.5 py-0.5 text-xs text-muted">{children}</span>;
+}
 
-  const [parsed, setParsed] = useState<ParsedConfig | null>(null);
-  const [isParsing, setIsParsing] = useState(false);
-  const [parseProgress, setParseProgress] = useState(0);
-  const [topoSearch, setTopoSearch] = useState("");
-  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+export default function TopoMapClient() {
+  const [text, setText] = useState("");
+  const [vendor, setVendor] = useState<Vendor | "auto">("auto");
+  const [fileName, setFileName] = useState("");
+  const [tab, setTab] = useState<TabId>("map");
+  const [query, setQuery] = useState("");
+  const [grouped, setGrouped] = useState(true);
+  const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    setParsed(null);
-    setParseProgress(0);
+  const deferred = useDeferredValue(text);
+  const device = useMemo<ParsedDevice | null>(
+    () => (deferred.trim() ? parseConfig(deferred, vendor === "auto" ? undefined : vendor) : null),
+    [deferred, vendor],
+  );
+  const model = useMemo(() => (device ? buildMap(device) : null), [device]);
 
-    if (!config.trim()) {
-      setIsParsing(false);
+  const loadFile = async (file: File) => {
+    if (file.size > MAX_FILE) {
+      setError("That file is larger than 10 MB. Paste only the part you need.");
       return;
     }
-
-    let isCurrent = true;
-    setIsParsing(true);
-
-    parseUniversalConfigAsync(config, (progress) => {
-      if (isCurrent) {
-        setParseProgress(progress);
-      }
-    }).then((res) => {
-      if (isCurrent) {
-        setParsed(res);
-        setIsParsing(false);
-      }
-    }).catch(() => {
-      if (isCurrent) {
-        setParsed(null);
-        setIsParsing(false);
-      }
-    });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [config]);
-
-
-  const vendorBadge = useMemo(() => {
-    if (parsed && parsed.brand) {
-      return (
-        <span className="text-cyan-400 border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 rounded-full whitespace-nowrap">
-          {parsed.brand} {parsed.osVersion ? `(${parsed.osVersion})` : ""}
-        </span>
-      );
-    }
-    return <span className="text-muted/50 border border-white/10 bg-white/5 px-2 py-0.5 rounded-full whitespace-nowrap">Universal Profile</span>;
-  }, [parsed]);
-
-  const topologyNodes = useMemo(() => {
-    if (!parsed) return [];
-    return buildTopology(parsed);
-  }, [parsed]);
-
-  const loadSample = () => {
-    setParsed(null);
-    setParseProgress(0);
-    setConfig(SAMPLE_CONFIG);
-    setFileMeta(null);
+    setError("");
+    setFileName(file.name.replace(/\.[^.]+$/, ""));
+    setText(await file.text());
+    setVendor("auto");
+    setTab("map");
   };
 
-  const handleClear = () => {
-    setParsed(null);
-    setParseProgress(0);
-    setConfig("");
-    setFileMeta(null);
-  };
-
-  const processFile = (file: File) => {
-    setParsed(null);
-    setParseProgress(0);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      setConfig(content);
-      setFileMeta({ name: file.name, size: file.size });
-    };
-    reader.readAsText(file);
-  };
-
-  const portCounts = useMemo(() => {
-    if (!parsed) return { total: 0, up: 0, down: 0, trunk: 0, access: 0, vpn: 0, sdwan: 0 };
-    const total = parsed.interfaces.length;
-    const up = parsed.interfaces.filter(i => i.status === "up").length;
-    const down = parsed.interfaces.filter(i => i.status === "adminDown").length;
-    const trunk = parsed.interfaces.filter(i => i.mode === "trunk").length;
-    const access = parsed.interfaces.filter(i => i.mode === "access").length;
-    const vpn = parsed.interfaces.filter(i => i.type === "VPN Tunnel").length;
-    const sdwan = parsed.interfaces.filter(i => i.type === "SD-WAN Member").length;
-    return { total, up, down, trunk, access, vpn, sdwan };
-  }, [parsed]);
-
-  const statsCards = useMemo(() => {
-    if (!parsed) return [];
-    return [
-      { label: "Interfaces", value: portCounts.total, icon: Monitor, color: "text-blue-400" },
-      { label: "Active Ports", value: portCounts.up, icon: Activity, color: "text-emerald-400" },
-      { label: "VLANs Defined", value: parsed.vlans.length, icon: Layers, color: "text-purple-400" },
-      { label: "VPN Tunnels", value: portCounts.vpn, icon: Shield, color: "text-rose-400" },
-      { label: "Virtual Members", value: portCounts.sdwan, icon: Cpu, color: "text-amber-400" },
-      { label: "Trunk / Access Links", value: portCounts.trunk + portCounts.access, icon: Share2, color: "text-cyan-400" }
+  const tabs = useMemo(() => {
+    if (!device) return [] as { id: TabId; label: string; count?: number }[];
+    const t: { id: TabId; label: string; count?: number }[] = [
+      { id: "map", label: "Map" },
+      { id: "interfaces", label: "Interfaces", count: device.interfaces.length },
     ];
-  }, [parsed, portCounts]);
+    if (device.vlans.length) t.push({ id: "vlans", label: "VLANs", count: device.vlans.length });
+    if (device.zones.length) t.push({ id: "zones", label: "Zones", count: device.zones.length });
+    if (device.routes.length) t.push({ id: "routes", label: "Routes", count: device.routes.length });
+    if (device.policies.length) t.push({ id: "policies", label: "Policies", count: device.policies.length });
+    if (device.protocols.length || device.neighbors.length || device.vpns.length) t.push({ id: "routing", label: "Routing & VPN" });
+    return t;
+  }, [device]);
+
+  const activeTab: TabId = tabs.some((t) => t.id === tab) ? tab : "map";
+  const q = query.trim().toLowerCase();
+  const match = (...parts: (string | number | undefined)[]) => !q || parts.some((p) => String(p ?? "").toLowerCase().includes(q));
+
+  const exportJson = () => {
+    if (!device) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(device, null, 2)], { type: "application/json" }));
+    a.download = `${device.hostname || fileName || "device"}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const stats = device
+    ? [
+        { label: "Interfaces", value: `${device.interfaces.filter((i) => i.enabled).length} / ${device.interfaces.length}`, hint: "enabled / total" },
+        device.vlans.length ? { label: "VLANs", value: String(device.vlans.length) } : null,
+        device.zones.length ? { label: "Zones", value: String(device.zones.length) } : null,
+        { label: "Routes", value: String(device.routes.length) },
+        device.policies.length ? { label: "Policies", value: String(device.policies.length) } : null,
+        device.vpns.length ? { label: "VPN tunnels", value: String(device.vpns.length) } : null,
+      ].filter((s): s is { label: string; value: string; hint?: string } => !!s)
+    : [];
+
+  /* ------------------------------- tab bodies ------------------------------- */
+
+  const interfacesBody = (() => {
+    if (!device) return null;
+    const list = device.interfaces.filter((f) => match(f.name, f.description, f.zone, f.lag, f.vrf, f.vlan, f.ips.map(fmtIp).join(" ")));
+    const rows = grouped
+      ? groupPorts(list)
+      : list.map((f) => ({ ...groupPorts([f])[0] }));
+    const shown = rows.slice(0, ROW_CAP);
+    return (
+      <>
+        <Table head={["Interface", "Description", "Mode", "VLAN", "IP address", "Zone / LAG", "State"]} empty={!rows.length}>
+          {shown.map((g) => (
+            <tr key={g.names[0]}>
+              <td className={td}>
+                <Mono>{g.label}</Mono>
+                {g.names.length > 1 && <span className="ml-2 text-xs text-muted">{g.names.length} ports</span>}
+              </td>
+              <td className={`${td} text-muted`}>{g.description}</td>
+              <td className={td}>{g.mode === "unknown" ? <span className="text-muted">–</span> : g.mode}</td>
+              <td className={td}><Mono>{vlanText(g)}</Mono></td>
+              <td className={td}><Mono>{g.ips.join(", ")}</Mono></td>
+              <td className={`${td} text-muted`}>{[g.zone, g.lag && `in ${g.lag}`].filter(Boolean).join(" · ")}</td>
+              <td className={td}>{g.enabled ? <span className="text-accent">Enabled</span> : <span className="text-muted">Shut down</span>}</td>
+            </tr>
+          ))}
+        </Table>
+        {rows.length > ROW_CAP && <p className="text-xs text-muted">Showing the first {ROW_CAP} of {rows.length} rows. Use the search box to narrow it down.</p>}
+      </>
+    );
+  })();
+
+  const vlansBody = device && (
+    <Table head={["VLAN", "Name", "Gateway (SVI)", "Access ports", "Trunk ports"]} empty={!device.vlans.some((v) => match(v.id, v.name))}>
+      {device.vlans.filter((v) => match(v.id, v.name)).map((v) => {
+        const svi = device.interfaces.find((i) => i.kind === "vlan" && i.vlan === v.id && i.ips.length);
+        const access = device.interfaces.filter((i) => i.mode === "access" && i.vlan === v.id && !i.lag).length;
+        const trunks = device.interfaces.filter((i) => i.mode === "trunk" && !i.lag && (i.trunkVlans === "all" || (i.trunkVlans ?? []).includes(v.id))).length;
+        return (
+          <tr key={v.id}>
+            <td className={td}><Mono>{v.id}</Mono></td>
+            <td className={td}>{v.name}</td>
+            <td className={td}>{svi ? <Mono>{svi.ips.map(fmtIp).join(", ")}</Mono> : <span className="text-muted">–</span>}</td>
+            <td className={td}>{access}</td>
+            <td className={td}>{trunks}</td>
+          </tr>
+        );
+      })}
+    </Table>
+  );
+
+  const zonesBody = device && (
+    <Table head={["Zone", "Interfaces"]} empty={!device.zones.some((z) => match(z.name, z.interfaces.join(" ")))}>
+      {device.zones.filter((z) => match(z.name, z.interfaces.join(" "))).map((z) => (
+        <tr key={z.name}>
+          <td className={`${td} font-semibold`}>{z.name}</td>
+          <td className={td}>
+            <div className="flex flex-wrap gap-1.5">
+              {z.interfaces.map((n) => {
+                const f = device.interfaces.find((i) => i.name === n);
+                return <Chip key={n}>{n}{f?.ips.length ? ` · ${fmtIp(f.ips[0])}` : ""}</Chip>;
+              })}
+              {!z.interfaces.length && <span className="text-muted">–</span>}
+            </div>
+          </td>
+        </tr>
+      ))}
+    </Table>
+  );
+
+  const routesBody = device && (
+    <Table head={["Destination", "Next hop", "Interface", "Distance", "VRF"]} empty={!device.routes.some((r) => match(r.destination, r.nextHop, r.iface, r.vrf))}>
+      {device.routes.filter((r) => match(r.destination, r.nextHop, r.iface, r.vrf)).slice(0, ROW_CAP).map((r, i) => (
+        <tr key={i}>
+          <td className={td}><Mono>{r.destination}</Mono></td>
+          <td className={td}><Mono>{r.nextHop ?? "–"}</Mono></td>
+          <td className={td}>{r.iface ?? <span className="text-muted">–</span>}</td>
+          <td className={td}>{r.distance ?? <span className="text-muted">–</span>}</td>
+          <td className={`${td} text-muted`}>{r.vrf ?? ""}</td>
+        </tr>
+      ))}
+    </Table>
+  );
+
+  const policiesBody = device && (
+    <Table head={["#", "Name", "From", "To", "Source", "Destination", "Service", "Action"]} empty={!device.policies.some((p) => match(p.name, p.from.join(" "), p.to.join(" "), p.source.join(" "), p.destination.join(" "), p.service.join(" ")))}>
+      {device.policies.map((p, i) => ({ p, i })).filter(({ p }) => match(p.name, p.from.join(" "), p.to.join(" "), p.source.join(" "), p.destination.join(" "), p.service.join(" "))).slice(0, ROW_CAP).map(({ p, i }) => {
+        const allow = /^(accept|allow|permit)$/i.test(p.action);
+        const cell = (xs: string[]) => <span className="break-words">{xs.join(", ") || "–"}</span>;
+        return (
+          <tr key={i} className={p.enabled ? "" : "opacity-50"}>
+            <td className={`${td} text-muted`}>{i + 1}</td>
+            <td className={td}>{p.name}{!p.enabled && <span className="ml-2 text-xs text-muted">disabled</span>}</td>
+            <td className={td}>{cell(p.from)}</td>
+            <td className={td}>{cell(p.to)}</td>
+            <td className={td}>{cell(p.source)}</td>
+            <td className={td}>{cell(p.destination)}</td>
+            <td className={td}>{cell(p.service)}</td>
+            <td className={td}><span className={allow ? "text-accent font-semibold" : "text-muted"}>{p.action}</span></td>
+          </tr>
+        );
+      })}
+    </Table>
+  );
+
+  const routingBody = device && (
+    <div className="flex flex-col gap-6">
+      {device.protocols.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="toolsy-label">Routing protocols</h3>
+          <div className="flex flex-wrap gap-2">{device.protocols.map((p) => <Chip key={p}>{p}</Chip>)}</div>
+        </div>
+      )}
+      {device.neighbors.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="toolsy-label">Neighbors</h3>
+          <Table head={["Protocol", "Address", "Remote AS"]}>
+            {device.neighbors.map((n, i) => (
+              <tr key={i}>
+                <td className={td}>{n.protocol}</td>
+                <td className={td}><Mono>{n.address}</Mono></td>
+                <td className={td}>{n.remoteAs ?? "–"}</td>
+              </tr>
+            ))}
+          </Table>
+        </div>
+      )}
+      {device.vpns.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="toolsy-label">VPN tunnels</h3>
+          <Table head={["Name", "Peer", "Interface"]}>
+            {device.vpns.map((v, i) => (
+              <tr key={i}>
+                <td className={td}>{v.name}</td>
+                <td className={td}><Mono>{v.remote ?? "–"}</Mono></td>
+                <td className={td}>{v.iface ?? "–"}</td>
+              </tr>
+            ))}
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+
+  const showSearch = ["interfaces", "vlans", "zones", "routes", "policies"].includes(activeTab);
 
   return (
     <ToolContainer categoryId="network-security">
       <ToolHeader
         title="TopoMap"
-        description="Enterprise-grade local configuration parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline."
+        description="Paste or drop a config from a Cisco, Fortinet, Juniper or Palo Alto device. Mi lists its interfaces, VLANs, zones, routes and policies, and draws a map of what it connects to."
+        badge="Runs in your browser"
         categoryId="network-security"
       />
 
-      <div className="flex flex-col gap-6">
-
-        {/* INGESTION STREAM */}
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 px-1">
-            <div className="flex items-center gap-3">
-              <div className="size-8 rounded-lg bg-accent/10 flex items-center justify-center border border-accent/20">
-                <Terminal className="size-4 text-accent" />
-              </div>
-              <div className="flex flex-col">
-                <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground">Ingestion Stream</h2>
-                <p className="text-[9px] font-bold text-muted/50 uppercase tracking-wider">Tactical config analysis & forensics</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-2 mr-2 px-3 py-1.5 rounded-md bg-white/[0.02] border border-white/5">
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[9px] font-black uppercase tracking-widest text-muted/70">CFG // NETWORK & SECURITY</span>
-              </div>
-
-              <ToolButton variant="secondary" size="sm" onClick={loadSample}>
-                <Sparkles className="size-3 mr-2" />
-                Load Cisco Sample
-              </ToolButton>
-              <ToolButton
-                variant="secondary"
-                size="sm"
-                onClick={handleClear}
-                disabled={!config}
-                className="text-red-400/70 hover:text-red-400"
-              >
-                <Trash2 className="size-3 mr-2" />
-                Clear Session
-              </ToolButton>
-            </div>
-          </div>
-
-          <div
-            className={`relative group transition-all duration-500 ${isDragging ? "scale-[0.99] brightness-110" : ""}`}
-            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={e => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files?.[0]; if (file) processFile(file); }}
+      <ToolSection title="Configuration" description="Nothing is uploaded. The config is parsed on this page and never leaves your browser.">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            className="hidden"
+            accept=".txt,.cfg,.conf,.config,.xml,.log,.json,text/*"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void loadFile(f);
+              e.target.value = "";
+            }}
+          />
+          <ToolButton variant="secondary" size="sm" iconLeft={<FileUp className="size-4" />} onClick={() => fileRef.current?.click()}>
+            Open file
+          </ToolButton>
+          <select
+            aria-label="Load a sample config"
+            className="toolsy-input !w-auto !py-1.5 text-xs"
+            value=""
+            onChange={(e) => {
+              const s = SAMPLES.find((x) => x.id === e.target.value);
+              if (s) {
+                setText(s.text);
+                setVendor("auto");
+                setFileName(s.id);
+                setTab("map");
+                setError("");
+              }
+            }}
           >
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-accent/20 to-purple-500/20 rounded-[2rem] blur opacity-0 group-hover:opacity-100 transition duration-1000" />
-
-            <GlassCard className="relative flex flex-col gap-0 p-0 overflow-hidden border-white/5 bg-black/40">
-              <div className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-white/[0.02]">
-                <div className="flex items-center gap-6">
-                  <label className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20 hover:bg-accent/20 transition-colors cursor-pointer group/upload">
-                    <Upload className="size-3.5 text-accent" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-accent">Upload Config</span>
-                    <input type="file" className="hidden" accept=".txt,.cfg,.log" onChange={e => { const f = e.target.files?.[0]; if(f) processFile(f); }} />
-                  </label>
-
-                  <div className="hidden md:flex items-center gap-4 text-muted/40">
-                    <div className="flex items-center gap-1.5"><FileText className="size-3" /><span className="text-[9px] font-bold uppercase">.cfg</span></div>
-                    <div className="flex items-center gap-1.5"><FileCode className="size-3" /><span className="text-[9px] font-bold uppercase">.txt</span></div>
-                    <div className="flex items-center gap-1.5"><Terminal className="size-3" /><span className="text-[9px] font-bold uppercase">.log</span></div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  {fileMeta && (
-                    <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10 animate-fadeIn">
-                      <div className="flex flex-col items-end">
-                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">{fileMeta.name}</span>
-                        <span className="text-[8px] font-bold text-emerald-400/40 uppercase">{(fileMeta.size / 1024).toFixed(1)} KB</span>
-                      </div>
-                      <button onClick={() => { setFileMeta(null); setConfig(""); }} className="hover:text-red-400 transition-colors">
-                        <XCircle className="size-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="relative">
-                <ToolTextarea
-                  placeholder="Paste raw 'show running-config' output stream here..."
-                  value={config}
-                  onChange={(e) => setConfig(e.target.value)}
-                  className="min-h-[250px] font-mono text-[13px] leading-relaxed bg-transparent border-none focus:ring-0 px-6 py-6"
-                />
-              </div>
-            </GlassCard>
-          </div>
+            <option value="">Load a sample…</option>
+            {SAMPLES.map((s) => (
+              <option key={s.id} value={s.id}>{s.label}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Vendor"
+            className="toolsy-input !w-auto !py-1.5 text-xs"
+            value={vendor}
+            onChange={(e) => setVendor(e.target.value as Vendor | "auto")}
+          >
+            <option value="auto">Vendor: auto-detect</option>
+            {(["cisco", "fortinet", "juniper", "paloalto"] as Vendor[]).map((v) => (
+              <option key={v} value={v}>{VENDOR_LABEL[v]}</option>
+            ))}
+          </select>
+          {text && (
+            <ToolButton variant="ghost" size="sm" iconLeft={<Trash2 className="size-4" />} onClick={() => { setText(""); setFileName(""); setError(""); }}>
+              Clear
+            </ToolButton>
+          )}
         </div>
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f) void loadFile(f);
+          }}
+        >
+          <ToolTextarea
+            aria-label="Device configuration"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={"Paste a running-config here, or drop a file.\n\nCisco IOS / NX-OS · FortiOS · Junos (set or curly) · PAN-OS (set, curly or XML)"}
+            spellCheck={false}
+            showCount
+            error={error || undefined}
+            className="!min-h-[12rem]"
+          />
+        </div>
+      </ToolSection>
 
-        {/* PROGRESS LOADER FOR ASYNC PARSING */}
-        {config && isParsing && (
-          <GlassCard className="py-20 flex flex-col items-center gap-6 text-center border-white/5 bg-black/40 animate-fadeIn">
-            <div className="relative size-16">
-              <div className="absolute inset-0 rounded-full border-4 border-accent/10 border-t-accent animate-spin" />
-              <div className="absolute inset-2 rounded-full border-4 border-purple-500/10 border-b-purple-500 animate-spin" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+      {device && model && (
+        <>
+          <ToolSection>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-foreground">{device.hostname || "Unnamed device"}</h2>
+                <p className="text-sm text-muted">
+                  {[VENDOR_LABEL[device.vendor], device.model, ROLE_LABEL[device.role], device.osVersion].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {device.mgmtIp && (
+                  <div className="text-right">
+                    <div className="toolsy-label">Management IP</div>
+                    <Mono>{device.mgmtIp}</Mono>
+                  </div>
+                )}
+                <ToolButton variant="secondary" size="sm" iconLeft={<Download className="size-4" />} onClick={exportJson}>JSON</ToolButton>
+              </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-black uppercase tracking-widest text-accent">Ingesting Configuration</h3>
-              <p className="text-[10px] text-muted/50 font-black uppercase tracking-wider">Parsing configuration streams asynchronously... {parseProgress}%</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {stats.map((s) => (
+                <div key={s.label} className="rounded-xl border border-border bg-surface px-4 py-3" title={s.hint}>
+                  <div className="toolsy-label">{s.label}</div>
+                  <div className="text-lg font-bold tabular-nums">{s.value}</div>
+                </div>
+              ))}
             </div>
-            <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-accent to-purple-500 transition-all duration-300" style={{ width: `${parseProgress}%` }} />
-            </div>
-          </GlassCard>
-        )}
+            {device.warnings.map((w) => (
+              <div key={w} className="flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted">
+                <AlertTriangle className="size-4 mt-0.5 shrink-0 text-accent" />
+                {w}
+              </div>
+            ))}
+          </ToolSection>
 
-        {/* POST-ANALYSIS DASHBOARD */}
-        {config && !isParsing && (
-          <div className="flex flex-col gap-6 animate-fadeIn">
-
-            {/* WORKSPACE TABS */}
-            <div className="flex items-center gap-2 p-1.5 bg-black/40 border border-white/5 rounded-xl self-start">
-              {TABS.map(t => {
-                const Icon = t.icon;
-                const isActive = activeTab === t.id;
-                return (
+          <ToolSection>
+            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-border -mt-2">
+              <div role="tablist" className="flex gap-1 overflow-x-auto">
+                {tabs.map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => setActiveTab(t.id)}
-                    className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isActive ? "bg-accent text-accent-foreground shadow-[0_0_15px_rgba(var(--accent),0.3)]" : "text-muted hover:text-foreground hover:bg-white/5"}`}
+                    role="tab"
+                    aria-selected={activeTab === t.id}
+                    onClick={() => setTab(t.id)}
+                    className={`px-3 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${
+                      activeTab === t.id ? "border-accent text-foreground" : "border-transparent text-muted hover:text-foreground"
+                    }`}
                   >
-                    <Icon className="size-3.5" />
                     {t.label}
+                    {t.count !== undefined && <span className="ml-1.5 text-xs text-muted tabular-nums">{t.count}</span>}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+              {showSearch && (
+                <div className="flex items-center gap-3 pb-2">
+                  {activeTab === "interfaces" && (
+                    <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
+                      <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} className="accent-[var(--accent)]" />
+                      Group similar ports
+                    </label>
+                  )}
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search…"
+                    aria-label="Search"
+                    className="toolsy-input !w-48 !py-1.5 text-sm"
+                  />
+                </div>
+              )}
             </div>
 
-            {/* TAB: SYSTEM OVERVIEW */}
-            {activeTab === "SYSTEM" && (
-              <div className="flex flex-col gap-5">
-                {!parsed ? (
-                  <GlassCard className="py-20 flex flex-col items-center gap-4 text-center border-dashed border-white/10">
-                    <AlertTriangle className="size-12 text-amber-400/30" />
-                    <div className="flex flex-col gap-1">
-                      <h3 className="text-sm font-black uppercase tracking-widest text-amber-400/80">Unable to Parse Config</h3>
-                      <p className="text-xs text-muted/50 font-medium">Ensure the input follows standard Cisco IOS running-config syntax.</p>
-                    </div>
-                  </GlassCard>
-                ) : (
-                  <>
-                    {/* Stats Bar */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                      {statsCards.map((s, i) => (
-                        <GlassCard key={i} className="p-4 flex flex-col gap-1 border-white/5">
-                          <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-muted/60">
-                            <s.icon className="size-3.5" />
-                            {s.label}
-                          </div>
-                          <div className={`text-xl font-black ${s.color}`}>{s.value}</div>
-                        </GlassCard>
-                      ))}
-                    </div>
-
-                    {/* Device Identity */}
-                    <GlassCard className="flex flex-col gap-5">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
-                          <Server className="size-3.5" /> Device Identity
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold">
-                            {vendorBadge}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
-                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Hostname</label>
-                          <div className="flex items-center gap-3">
-                            <Fingerprint className="size-4 text-accent" />
-                            <span className="text-[13px] font-black text-foreground truncate">{parsed.hostname || "Unnamed Device"}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
-                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Device Type</label>
-                          <div className="flex items-center gap-3">
-                            <Activity className="size-4 text-cyan-400" />
-                            <span className="text-[13px] font-black text-foreground truncate">{parsed.deviceType || "Switch/Router"}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
-                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Hardware Model</label>
-                          <div className="flex items-center gap-3">
-                            <Server className="size-4 text-purple-400" />
-                            <span className="text-[13px] font-black text-foreground truncate">{parsed.brand && parsed.model ? `${parsed.brand} ${parsed.model}` : "Unknown Device"}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
-                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Operating System Version</label>
-                          <div className="flex items-center gap-3">
-                            <Cpu className="size-4 text-amber-400" />
-                            <span className="text-[13px] font-black text-foreground truncate">{parsed.osVersion || "Not Detected"}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-3 p-4 rounded-2xl bg-black/40 border border-white/5">
-                          <label className="text-[8px] font-black uppercase tracking-widest text-muted/40">Management IP</label>
-                          <div className="flex items-center gap-3">
-                            <Globe className="size-4 text-emerald-400" />
-                            <span className="text-[13px] font-black text-emerald-400 font-mono truncate">{parsed.managementIp || "Not Configured"}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </GlassCard>
-
-                    {/* Routing Protocols */}
-                    <GlassCard className="flex flex-col gap-5">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
-                          <Radio className="size-3.5" /> Active Routing Protocols
-                        </div>
-                      </div>
-                      {parsed.routingProtocols.length === 0 ? (
-                        <div className="py-8 flex flex-col items-center gap-3 border-2 border-dashed border-white/5 rounded-[32px]">
-                          <Radio className="size-8 text-muted/10" />
-                          <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No Routing Protocols Detected</span>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {parsed.routingProtocols.map(proto => (
-                            <div key={proto} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent/10 border border-accent/20 text-[10px] font-black uppercase tracking-widest text-accent">
-                              <Zap className="size-3.5" />
-                              {proto}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </GlassCard>
-
-                    {/* VLAN Registry */}
-                    <GlassCard className="flex flex-col gap-5">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted">
-                          <Layers className="size-3.5" /> VLAN Registry
-                        </div>
-                        <span className="text-[9px] font-bold text-muted/40 uppercase tracking-widest">{parsed.vlans.length} Defined</span>
-                      </div>
-                      {parsed.vlans.length === 0 ? (
-                        <div className="py-8 flex flex-col items-center gap-3 border-2 border-dashed border-white/5 rounded-[32px]">
-                          <Layers className="size-8 text-muted/10" />
-                          <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">No VLANs Defined</span>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                          {parsed.vlans.map(vlan => (
-                            <div key={vlan.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] transition-colors">
-                              <div className="size-8 rounded-lg bg-accent/10 flex items-center justify-center text-[10px] font-black text-accent">{vlan.id}</div>
-                              <div className="flex flex-col min-w-0">
-                                <span className="text-[10px] font-bold text-foreground truncate">{vlan.name}</span>
-                                <span className="text-[8px] font-black text-muted/40 uppercase tracking-widest">VLAN {vlan.id}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </GlassCard>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* TAB: PORT MAPPING */}
-            {activeTab === "PORT_MAP" && (
-              <div className="flex flex-col gap-5">
-                <div className="flex items-center gap-3 mb-2">
-                  <LayoutGrid className="size-5 text-accent" />
-                  <div className="flex flex-col">
-                    <h2 className="text-sm font-black uppercase tracking-[0.2em]">Interface Port Mapping</h2>
-                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Discovered interfaces with speed, description, and VLAN config</p>
-                  </div>
-                </div>
-
-                {!parsed || parsed.interfaces.length === 0 ? (
-                  <GlassCard className="py-20 flex flex-col items-center gap-4 text-center border-dashed border-white/10">
-                    <Monitor className="size-12 text-muted/20" />
-                    <div className="flex flex-col gap-1">
-                      <h3 className="text-sm font-black uppercase tracking-widest text-muted/80">No Interfaces Discovered</h3>
-                      <p className="text-xs text-muted/50 font-medium">Paste a valid running-config to enumerate interfaces and port mappings.</p>
-                    </div>
-                  </GlassCard>
-                ) : (
-                  <GlassCard className="flex flex-col gap-0 p-0 overflow-hidden">
-                    <div className="grid grid-cols-[160px_1fr_80px_100px_100px_120px] p-4 bg-white/[0.02] border-b border-white/5 text-[9px] font-black uppercase tracking-widest text-muted/60">
-                      <div>Interface</div>
-                      <div>Description</div>
-                      <div>Speed</div>
-                      <div>Status</div>
-                      <div>Mode / Type</div>
-                      <div>VLAN</div>
-                    </div>
-                    <div className="flex flex-col max-h-[600px] overflow-y-auto custom-scrollbar">
-                      {parsed.interfaces.map((intf, idx) => {
-                        const statusColor = intf.status === "up" ? "text-emerald-400" : intf.status === "adminDown" ? "text-red-400" : intf.status === "down" ? "text-amber-400" : "text-muted/40";
-                        const statusIcon = intf.status === "up" ? CheckCircle2 : intf.status === "adminDown" ? XCircle : intf.status === "down" ? AlertTriangle : AlertTriangle;
-                        const StatusIcon = statusIcon;
-                        return (
-                          <div key={idx} className="grid grid-cols-[160px_1fr_80px_100px_100px_120px] p-4 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors items-center">
-                            <div className="flex items-center gap-2">
-                              <Monitor className="size-3.5 text-accent/60" />
-                              <span className="text-[11px] font-mono font-bold text-foreground">{intf.name}</span>
-                            </div>
-                            <div className="text-[10px] font-medium text-muted/80 truncate max-w-[300px]">
-                              {intf.description || <span className="text-muted/20 italic">No description</span>}
-                            </div>
-                            <div className="text-[10px] font-mono text-muted">{intf.speed === "auto" ? "Auto" : `${intf.speed}`}</div>
-                            <div className="flex items-center gap-1.5">
-                              <StatusIcon className={`size-3 ${statusColor}`} />
-                              <span className={`text-[9px] font-black uppercase tracking-wider ${statusColor}`}>
-                                {intf.status === "adminDown" ? "ADMIN DOWN" : intf.status === "unknown" ? "UNKNOWN" : intf.status.toUpperCase()}
-                              </span>
-                            </div>
-                            <div className={`text-[9px] font-black uppercase tracking-wider ${intf.type === "VPN Tunnel" ? "text-rose-400" : intf.type === "SD-WAN Member" ? "text-amber-400" : intf.mode === "trunk" ? "text-amber-400" : intf.mode === "access" ? "text-cyan-400" : "text-muted/40"}`}>
-                              {intf.type === "VPN Tunnel" || intf.type === "SD-WAN Member" ? intf.type : intf.mode}
-                            </div>
-                            <div className="flex items-center gap-1 flex-wrap">
-                              {intf.vlanAccess !== null ? (
-                                <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-black text-cyan-400">A:{intf.vlanAccess}</span>
-                              ) : intf.trunkAll ? (
-                                <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[9px] font-black text-amber-400">T:ALL</span>
-                              ) : intf.vlanTrunkAllowed.length > 0 ? (
-                                <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[9px] font-black text-amber-400">T:{intf.vlanTrunkAllowed.join(",")}</span>
-                              ) : intf.ip ? (
-                                <span className="px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-[9px] font-mono text-accent">{intf.ip}</span>
-                              ) : (
-                                <span className="text-[8px] text-muted/20">—</span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </GlassCard>
-                )}
-              </div>
-            )}
-
-            {/* TAB: VISUAL SCHEMA */}
-            {activeTab === "SCHEMA" && (
-              <div className="flex flex-col gap-5">
-                <div className="flex items-center gap-3 mb-2">
-                  <Map className="size-5 text-accent" />
-                  <div className="flex flex-col">
-                    <h2 className="text-sm font-black uppercase tracking-[0.2em]">Network Topology Schema</h2>
-                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Interactive layout of discovered switch ports, VLAN families, and routing links</p>
-                  </div>
-                </div>
-
-                {topologyNodes.length === 0 ? (
-                  <GlassCard className="py-20 flex flex-col items-center gap-4 text-center border-dashed border-[var(--glass-border)]">
-                    <Map className="size-12 text-muted/20" />
-                    <div className="flex flex-col gap-1">
-                      <h3 className="text-sm font-black uppercase tracking-widest text-foreground/80">No Topology Available</h3>
-                      <p className="text-xs text-muted/50 font-medium">Parse a config with interfaces and VLANs to generate a visual network schema.</p>
-                    </div>
-                  </GlassCard>
-                ) : (
-                  <GlassCard className="flex flex-col gap-6 p-6">
-                    <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-muted">
-                      <Map className="size-3.5" /> Topology Graph
-                      <span className="text-muted/40 font-normal normal-case tracking-normal ml-2">
-                        ({topologyNodes.length} nodes)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex-1">
-                        <input
-                          type="text"
-                          value={topoSearch}
-                          onChange={(e) => setTopoSearch(e.target.value)}
-                          placeholder="Search nodes by name, IP, VLAN, or port..."
-                          className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--input-bg)] px-4 py-2.5 pl-10 text-sm font-medium text-foreground outline-none transition-all duration-200 focus:border-accent/40 focus:ring-4 focus:ring-accent/10 placeholder:text-muted/40"
-                        />
-                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </div>
-                      {focusNodeId && (
-                        <button
-                          onClick={() => setFocusNodeId(null)}
-                          className="px-3 py-2.5 rounded-xl border border-[var(--glass-border)] bg-[var(--surface-raised)] text-[11px] font-black uppercase tracking-widest text-foreground hover:bg-[var(--surface)] transition-all"
-                        >
-                          Clear Focus
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Topology Canvas */}
-                    <TopologicalMap
-                      nodes={topologyNodes}
-                      searchQuery={topoSearch}
-                      onNodeSelect={(id) => setFocusNodeId(id)}
-                    />
-
-                    {/* Legend */}
-                    <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-[var(--surface-raised)] border border-[var(--glass-border)]">
-                      <span className="text-[11px] font-black uppercase tracking-widest text-muted/60">Legend</span>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-accent/30 border border-accent/50" /><span className="text-[11px] font-bold text-muted">Core Switch</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-purple-500/30 border border-purple-500/50" /><span className="text-[11px] font-bold text-muted">VLAN Segment</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-emerald-500/30 border border-emerald-500/50" /><span className="text-[11px] font-bold text-muted">Access Port</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-rose-500/30 border border-rose-500/50" /><span className="text-[11px] font-bold text-muted">VPN Tunnel</span></div>
-                      <div className="flex items-center gap-2"><div className="size-3 rounded bg-blue-500/30 border border-blue-500/50" /><span className="text-[11px] font-bold text-muted">SD-WAN</span></div>
-                    </div>
-                  </GlassCard>
-                )}
-              </div>
-            )}
-
-          </div>
-        )}
-
-      </div>
+            {activeTab === "map" && <TopoMap model={model} fileName={device.hostname || fileName || "topology"} />}
+            {activeTab === "interfaces" && interfacesBody}
+            {activeTab === "vlans" && vlansBody}
+            {activeTab === "zones" && zonesBody}
+            {activeTab === "routes" && routesBody}
+            {activeTab === "policies" && policiesBody}
+            {activeTab === "routing" && routingBody}
+          </ToolSection>
+        </>
+      )}
     </ToolContainer>
   );
 }

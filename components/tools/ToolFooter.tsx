@@ -262,26 +262,26 @@ const TOOL_MANUALS: Record<string, StaticManual> = {
     ]
   },
   "running-config-decoder": {
-    title: "Infrastructure Manual",
-    subtitle: "Parsing Configuration Blocks & Topology Maps",
+    title: "Config Reading Guide",
+    subtitle: "What TopoMap extracts from a device config",
     columns: [
       {
-        title: "STATE MATCHING",
+        title: "SUPPORTED FORMATS",
         variant: "info",
         icon: Activity,
-        description: "Scans raw text syntax to dynamically extract hostnames, firmware versions, active interfaces, routing parameters, and logical subnets without pre-defined templates."
+        description: "Cisco IOS and NX-OS, FortiOS, Junos (set commands or curly braces) and PAN-OS (set, curly or XML export). The vendor is detected automatically and can be overridden."
       },
       {
-        title: "INTERFACE MAPPING",
+        title: "WHAT YOU GET",
         variant: "success",
         icon: CheckCircle2,
-        description: "Identifies physical ethernet ports, virtual interfaces, logical VLANs, and active tunnels to automatically map the system connectivity graph."
+        description: "Identity, interfaces with IPs and VLANs, zones, static routes, routing protocols, BGP neighbors, VPN tunnels and firewall policies, taken only from what the config states."
       },
       {
-        title: "TOPOLOGY RESOLUTION",
+        title: "ONE DEVICE, ONE VIEW",
         variant: "warning",
         icon: Shield,
-        description: "Calculates deterministic canvas coordinates for peripheral nodes around the central Core Switch, locking layout coordinates permanently to ensure zero jitter."
+        description: "A single config knows its own side only. The map shows what this device connects to. Linking several devices into one network map needs more than one config."
       }
     ]
   },

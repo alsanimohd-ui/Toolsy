@@ -33,6 +33,7 @@ Before committing: `typecheck`, `lint` and `test` must all pass.
 - `app/page.tsx` is the homepage (server component) with `SiteHeader`, `ToolsExplorer`, `SiteFooter`.
 - `app/tools/layout.tsx` wraps everything under `/tools` in the workspace shell (sidebar + tab bar + panel). Tools open as tabs without a full page reload; `WorkspaceContext` keeps state in sync with the URL.
 - Each tool is its own folder under `app/tools/` with a `client-page.tsx`. Tool logic belongs in `lib/` (pure functions, with tests in `lib/__tests__/`).
+- TopoMap (`running-config-decoder`) parses configs in `lib/netconfig/` (one parser per vendor into a shared `ParsedDevice` model, plus `map.ts` for the diagram data). Add new vendors there with a test in `lib/__tests__/netconfig.test.ts`.
 - Server routes are in `app/api/` (port check, API lab, VirusTotal proxy). `lib/ssrf-utils.ts` guards outbound requests; do not bypass it.
 - Tool pages use `ToolContainer` + `ToolHeader` + `ToolSection` from `@/components/tools`. Do not copy these components.
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T18:26:54.809Z",
+  "generatedAt": "2026-10-19T18:45:17.986Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -109,7 +109,7 @@
         "name": "TopoMap",
         "slug": "running-config-decoder",
         "categoryId": "network-security",
-        "description": "Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline.",
+        "description": "Paste a Cisco, Fortinet, Juniper or Palo Alto config and get its interfaces, VLANs, zones, routes and policies, plus a map of what the device connects to. Runs entirely in your browser.",
         "isExternal": false
       },
       {

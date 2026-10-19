@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-10-19T18:26:54.816Z_
+_Generated: 2026-10-19T18:45:17.991Z_
 
 ---
 
@@ -39,7 +39,7 @@ _Generated: 2026-10-19T18:26:54.816Z_
 | Threat Inspector | `threat-inspector` | Local-first file analysis & VirusTotal reputation check. Extract IOCs and detect threats securely. |
 | Port Checker | `port-checker` | Instantly check the connectivity status, latency, and service of any port on any host. |
 | PCAP Analyzer | `pcap-analyzer` | High-performance forensic workstation with virtualized stream analysis and local packet triage. |
-| TopoMap | `running-config-decoder` | Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline. |
+| TopoMap | `running-config-decoder` | Paste a Cisco, Fortinet, Juniper or Palo Alto config and get its interfaces, VLANs, zones, routes and policies, plus a map of what the device connects to. Runs entirely in your browser. |
 
 #### Data & Analytics (3)
 | Name | Slug | Description |

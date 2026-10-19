@@ -208,7 +208,7 @@ export const tools: Tool[] = [
     name: "TopoMap",
     slug: "running-config-decoder",
     route: getToolPath("network-security", "running-config-decoder"),
-    description: "Enterprise-grade local config parser. Ingest switch or router configs, map interface VLANs, detect routing schemas, and build interactive network topologies completely offline.",
+    description: "Paste a Cisco, Fortinet, Juniper or Palo Alto config and get its interfaces, VLANs, zones, routes and policies, plus a map of what the device connects to. Runs entirely in your browser.",
     category: toolCategories["network-security"].label,
     categoryId: "network-security",
     icon: "CFG",
