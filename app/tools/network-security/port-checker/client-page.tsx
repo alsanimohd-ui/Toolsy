@@ -1,707 +1,422 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
+import { ToolContainer, ToolHeader, ToolSection, ToolInput, ToolButton } from "@/components/tools";
 import {
-  ToolContainer,
-  ToolHeader,
-} from "@/components/tools";
-import { 
-  Globe, 
-  Activity, 
-  CheckCircle2,
-  XCircle,
   AlertTriangle,
-  Clock,
-  Server,
-  Network,
-  Zap,
-  Settings2,
-  Shield,
-  Crosshair,
-  Filter,
-  Radio,
-  Wifi,
-  ArrowUpDown,
+  CheckCircle2,
   ChevronDown,
-  ChevronUp
+  ChevronRight,
+  Clock,
+  Copy,
+  Network,
+  ShieldOff,
+  XCircle,
+  type LucideIcon,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import GlassCard from "@/components/ui/GlassCard";
-import { PORT_ENCYCLOPEDIA, PortIntelligence } from "@/lib/port-intelligence";
-import { parseClientPorts, scanPortLocally } from "@/lib/local-port-scanner";
+import { PORT_ENCYCLOPEDIA } from "@/lib/port-intelligence";
+import {
+  calibrateRefusedLatency,
+  isLocalTarget,
+  parseClientPorts,
+  scanPortLocally,
+  terminalCommand,
+} from "@/lib/local-port-scanner";
 
-/* ─────────────────────────────────────────────
-   Types & Interfaces
-  ───────────────────────────────────────────── */
+type Status = "OPEN" | "CLOSED" | "TIMEOUT" | "UNREACHABLE" | "BLOCKED" | "ERROR";
 
 interface ScanResult {
   host: string;
   port: number;
   protocol: "tcp" | "udp";
-  status: "OPEN" | "CLOSED" | "TIMEOUT" | "UNREACHABLE" | "ERROR";
+  status: Status;
   latency: number;
   message: string;
 }
 
-interface BulkScanResponse {
-  host: string;
-  protocol: "tcp" | "udp";
-  results: ScanResult[];
-}
+type Mode = "browser" | "server";
 
-interface Preset {
-  port: number;
-  label: string;
-  desc: string;
-}
+const MAX_PORTS = 100;
 
-/* ─────────────────────────────────────────────
-   Constants
-  ───────────────────────────────────────────── */
-
-const PRESETS: Preset[] = [
-  { port: 80, label: "HTTP", desc: "Web Server" },
-  { port: 443, label: "HTTPS", desc: "Secure Web Server" },
-  { port: 21, label: "FTP", desc: "File Transfer Protocol" },
-  { port: 22, label: "SSH", desc: "Secure Shell" },
-  { port: 25, label: "SMTP", desc: "Mail Transfer Protocol" },
-  { port: 53, label: "DNS", desc: "Domain Name System" },
-  { port: 3306, label: "MySQL", desc: "Database" },
-  { port: 5432, label: "PostgreSQL", desc: "Database" },
-  { port: 27017, label: "MongoDB", desc: "Database" },
-  { port: 6379, label: "Redis", desc: "In-memory Store" },
-  { port: 3389, label: "RDP", desc: "Remote Desktop" },
-  { port: 8080, label: "HTTP-ALT", desc: "Alternative Web Server" },
+const PRESETS = [
+  { port: 3000, label: "3000" },
+  { port: 5173, label: "5173" },
+  { port: 8080, label: "8080" },
+  { port: 80, label: "HTTP 80" },
+  { port: 443, label: "HTTPS 443" },
+  { port: 22, label: "SSH 22" },
+  { port: 3306, label: "MySQL 3306" },
+  { port: 5432, label: "Postgres 5432" },
+  { port: 6379, label: "Redis 6379" },
+  { port: 27017, label: "Mongo 27017" },
+  { port: 3389, label: "RDP 3389" },
 ];
 
-const STATUS_FILTERS = ["ALL", "OPEN", "CLOSED", "TIMEOUT", "UNREACHABLE", "ERROR"] as const;
+const STATUS_STYLE: Record<Status, { label: string; icon: LucideIcon; className: string }> = {
+  OPEN: { label: "Open", icon: CheckCircle2, className: "text-emerald-600 dark:text-emerald-400" },
+  CLOSED: { label: "Closed", icon: XCircle, className: "text-red-600 dark:text-red-400" },
+  TIMEOUT: { label: "No response", icon: Clock, className: "text-amber-600 dark:text-amber-400" },
+  UNREACHABLE: { label: "Unreachable", icon: AlertTriangle, className: "text-red-600 dark:text-red-400" },
+  BLOCKED: { label: "Browser-blocked", icon: ShieldOff, className: "text-amber-600 dark:text-amber-400" },
+  ERROR: { label: "Error", icon: AlertTriangle, className: "text-red-600 dark:text-red-400" },
+};
 
-/* ─────────────────────────────────────────────
-   Component
-  ───────────────────────────────────────────── */
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-xl border border-border bg-surface p-1">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={value === o.id}
+          onClick={() => onChange(o.id)}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+            value === o.id ? "bg-accent text-[#04181a]" : "text-muted hover:text-foreground"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function PortCheckerClient() {
-  const [host, setHost] = useState<string>("");
-  const [portInput, setPortInput] = useState<string>("");
+  const [host, setHost] = useState("");
+  const [portInput, setPortInput] = useState("");
   const [protocol, setProtocol] = useState<"tcp" | "udp">("tcp");
-  const [timeoutMs, setTimeoutMs] = useState<number>(3000);
-  const [scanMode, setScanMode] = useState<"local" | "remote">("remote");
+  const [timeoutMs, setTimeoutMs] = useState(3000);
+  const [modeOverride, setModeOverride] = useState<Mode | null>(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<BulkScanResponse | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [selectedPort, setSelectedPort] = useState<number | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  const [sortField, setSortField] = useState<"port" | "latency" | "status">("port");
-  const [sortAsc, setSortAsc] = useState(true);
-  const [showResultsTable, setShowResultsTable] = useState(true);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [results, setResults] = useState<ScanResult[]>([]);
+  const [scanned, setScanned] = useState<{ host: string; protocol: "tcp" | "udp"; mode: Mode } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  // Real-time scan states
-  const [currentScanningPort, setCurrentScanningPort] = useState<number | null>(null);
-  const [localScanProgress, setLocalScanProgress] = useState<number>(0);
-  const [totalToScan, setTotalToScan] = useState<number>(0);
-  const [scanningResults, setScanningResults] = useState<ScanResult[]>([]);
+  const autoMode: Mode = isLocalTarget(host) ? "browser" : "server";
+  const mode = modeOverride ?? autoMode;
+  const ports = useMemo(() => parseClientPorts(portInput), [portInput]);
+  const selected = useMemo(() => new Set(portInput.split(",").map((p) => p.trim())), [portInput]);
+
+  const canScan = !isScanning && host.trim() !== "" && ports.length > 0;
 
   const handleScan = async () => {
-    if (!host || !portInput) return;
-    
+    if (!canScan) return;
+    setError(null);
+    setResults([]);
+    setExpanded(null);
+
+    if (ports.length > MAX_PORTS) {
+      setError(`Too many ports (${ports.length}). Check at most ${MAX_PORTS} at a time.`);
+      return;
+    }
+
+    const target = host.trim();
     setIsScanning(true);
-    setScanResult(null);
-    setScanningResults([]);
-    setSelectedPort(null);
-    setCurrentScanningPort(null);
-    setLocalScanProgress(0);
+    setProgress({ done: 0, total: ports.length });
+    setScanned({ host: target, protocol, mode });
 
     try {
-      if (scanMode === "remote") {
-        const parsed = parseClientPorts(portInput);
-        setTotalToScan(parsed.length);
-        
-        // Start API fetch
-        const apiPromise = fetch("/api/network/port-check", {
+      if (mode === "server") {
+        const res = await fetch("/api/network/port-check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ host, port: portInput, protocol, timeout: timeoutMs }),
-        }).then(res => res.json());
-
-        // Increment scan progress visually
-        for (let i = 0; i < parsed.length; i++) {
-          setCurrentScanningPort(parsed[i]);
-          setLocalScanProgress(i + 1);
-          await new Promise(r => setTimeout(r, Math.min(80, 800 / parsed.length)));
-        }
-
-        const data = await apiPromise;
-        setScanResult(data);
-      } else {
-        const parsed = parseClientPorts(portInput);
-        setTotalToScan(parsed.length);
-        if (protocol === "udp") {
-          const results: ScanResult[] = parsed.map(p => ({
-            host,
-            port: p,
-            protocol: "udp",
-            status: "ERROR",
-            latency: 0,
-            message: "UDP scanning is not supported in browser-local mode. The browser sandbox environment lacks raw UDP socket capabilities."
-          }));
-          setScanningResults(results);
-          setScanResult({ host, protocol: "udp", results });
+          body: JSON.stringify({ host: target, port: portInput, protocol, timeout: timeoutMs }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(
+            res.status === 403
+              ? `${data.error} The server cannot see your local network. Switch to "My browser" to check it.`
+              : data.error ?? "The check failed."
+          );
         } else {
-          const results: ScanResult[] = [];
-          for (let i = 0; i < parsed.length; i++) {
-            const p = parsed[i];
-            setCurrentScanningPort(p);
-            setLocalScanProgress(i + 1);
-            
-            const res = await scanPortLocally(host, p, timeoutMs);
-            const intermediateResult: ScanResult = {
-              host: res.host,
-              port: res.port,
-              protocol: res.protocol,
-              status: res.status as ScanResult["status"],
-              latency: res.latency,
-              message: res.message
-            };
-            results.push(intermediateResult);
-            // Append intermediate result so UI renders it immediately
-            setScanningResults([...results]);
-          }
-          setScanResult({ host, protocol: "tcp", results });
+          setResults(data.results);
         }
+      } else if (protocol === "udp") {
+        setError("A browser cannot send UDP packets. Use the server for public hosts, or run nmap -sU locally.");
+      } else {
+        const baseline = await calibrateRefusedLatency(target);
+        const queue = [...ports];
+        let done = 0;
+        const worker = async () => {
+          for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
+            const r = await scanPortLocally(target, p, timeoutMs, baseline);
+            setResults((prev) => [...prev, r]);
+            setProgress({ done: ++done, total: ports.length });
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(6, ports.length) }, worker));
       }
     } catch {
-      // ignore
+      setError("The check failed. Check your connection and try again.");
     } finally {
       setIsScanning(false);
-      setCurrentScanningPort(null);
     }
   };
 
-  const handlePresetSelect = (presetPort: number) => {
-    const current = portInput.trim();
-    if (!current) {
-      setPortInput(String(presetPort));
-    } else {
-      const ports = current.split(",").map(p => p.trim()).filter(Boolean);
-      if (!ports.includes(String(presetPort))) {
-        ports.push(String(presetPort));
-        setPortInput(ports.join(", "));
-      }
+  const togglePreset = (port: number) => {
+    const list = portInput.split(",").map((p) => p.trim()).filter(Boolean);
+    const key = String(port);
+    setPortInput((list.includes(key) ? list.filter((p) => p !== key) : [...list, key]).join(", "));
+  };
+
+  const copyCommand = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
     }
   };
 
-  const displayResults = useMemo(() => {
-    if (isScanning && scanMode === "local") {
-      return scanningResults;
-    }
-    return scanResult ? scanResult.results : [];
-  }, [isScanning, scanMode, scanningResults, scanResult]);
-
-  const filteredResults = useMemo(() => {
-    let results = displayResults;
-    if (statusFilter !== "ALL") {
-      results = results.filter(r => r.status === statusFilter);
-    }
-    results = [...results].sort((a, b) => {
-      let cmp = 0;
-      if (sortField === "port") cmp = a.port - b.port;
-      else if (sortField === "latency") cmp = a.latency - b.latency;
-      else if (sortField === "status") cmp = a.status.localeCompare(b.status);
-      return sortAsc ? cmp : -cmp;
-    });
-    return results;
-  }, [displayResults, statusFilter, sortField, sortAsc]);
-
-  const toggleSort = (field: "port" | "latency" | "status") => {
-    if (sortField === field) {
-      setSortAsc(!sortAsc);
-    } else {
-      setSortField(field);
-      setSortAsc(true);
-    }
-  };
-
-  const selectedIntelligence: PortIntelligence | null = useMemo(() => {
-    if (selectedPort === null) return null;
-    return PORT_ENCYCLOPEDIA[selectedPort] || null;
-  }, [selectedPort]);
-
-  const openCount = useMemo(() => displayResults.filter(r => r.status === "OPEN").length || 0, [displayResults]);
-  const closedCount = useMemo(() => displayResults.filter(r => r.status === "CLOSED").length || 0, [displayResults]);
-  const timeoutCount = useMemo(() => displayResults.filter(r => r.status === "TIMEOUT").length || 0, [displayResults]);
-
-  const getStatusInfo = (status: string) => {
-    switch (status) {
-      case "OPEN": return { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2, border: "border-emerald-500/20" };
-      case "CLOSED": return { color: "text-red-400", bg: "bg-red-500/10", icon: XCircle, border: "border-red-500/20" };
-      case "TIMEOUT": return { color: "text-amber-400", bg: "bg-amber-500/10", icon: Clock, border: "border-amber-500/20" };
-      case "UNREACHABLE": return { color: "text-red-400", bg: "bg-red-500/10", icon: AlertTriangle, border: "border-red-500/20" };
-      case "ERROR": return { color: "text-rose-500", bg: "bg-rose-500/10", icon: AlertTriangle, border: "border-rose-500/20" };
-      default: return { color: "text-muted", bg: "bg-white/5", icon: AlertTriangle, border: "border-white/10" };
-    }
-  };
+  const sorted = useMemo(() => [...results].sort((a, b) => a.port - b.port), [results]);
+  const count = (s: Status) => results.filter((r) => r.status === s).length;
 
   return (
     <ToolContainer categoryId="network-security">
       <ToolHeader
         title="Port Checker"
-        description="Cinematic network utility to instantly query service availability and diagnose firewall configurations."
+        description="Check whether a TCP port is reachable: your own machine and local network from the browser, public hosts from our server."
         categoryId="network-security"
       />
 
-      <div className="flex flex-col gap-6 pb-16">
-        
-        {/* TARGETING SECTION */}
-        <section className="flex flex-col gap-6">
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-accent/70">
-              <Crosshair className="size-4" /> 01. Targeting
-            </div>
-            
-            <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
-              {[
-                { id: "local", label: "Local (Browser)", icon: Zap },
-                { id: "remote", label: "Remote (Server)", icon: Server }
-              ].map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => setScanMode(m.id as "local" | "remote")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
-                    ${scanMode === m.id 
-                      ? "bg-accent text-white shadow-lg shadow-accent/20" 
-                      : "text-muted hover:text-foreground hover:bg-white/5"}`}
-                >
-                  <m.icon className="size-3" /> {m.label}
-                </button>
+      <ToolSection>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ToolInput
+            label="Host or IP"
+            placeholder="localhost, 192.168.1.10 or example.com"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleScan()}
+            spellCheck={false}
+            className="font-mono"
+          />
+          <ToolInput
+            label="Ports"
+            hint="comma or range"
+            placeholder="3000, 5432, 8000-8010"
+            value={portInput}
+            onChange={(e) => setPortInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleScan()}
+            spellCheck={false}
+            className="font-mono"
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p) => (
+            <button
+              key={p.port}
+              type="button"
+              onClick={() => togglePreset(p.port)}
+              aria-pressed={selected.has(String(p.port))}
+              className={`rounded-lg border px-2.5 py-1 font-mono text-xs transition-colors ${
+                selected.has(String(p.port))
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-border text-muted hover:text-foreground"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
+          <div className="flex flex-col gap-2">
+            <span className="toolsy-label">Check from</span>
+            <Segmented
+              label="Check from"
+              value={mode}
+              onChange={(m) => setModeOverride(m)}
+              options={[
+                { id: "browser", label: "My browser" },
+                { id: "server", label: "Our server" },
+              ]}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="toolsy-label">Protocol</span>
+            <Segmented
+              label="Protocol"
+              value={protocol}
+              onChange={setProtocol}
+              options={[
+                { id: "tcp", label: "TCP" },
+                { id: "udp", label: "UDP" },
+              ]}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="toolsy-label">Timeout</span>
+            <select
+              value={timeoutMs}
+              onChange={(e) => setTimeoutMs(Number(e.target.value))}
+              className="toolsy-input h-9 px-3 text-xs"
+              aria-label="Timeout"
+            >
+              {[1000, 2000, 3000, 5000, 10000].map((t) => (
+                <option key={t} value={t}>
+                  {t / 1000}s
+                </option>
               ))}
+            </select>
+          </div>
+          <ToolButton
+            onClick={handleScan}
+            disabled={!canScan}
+            loading={isScanning}
+            iconLeft={<Network className="size-4" />}
+            className="md:ml-auto"
+          >
+            {isScanning ? "Checking…" : "Check ports"}
+          </ToolButton>
+        </div>
+
+        <p className="text-xs leading-relaxed text-muted">
+          {mode === "browser"
+            ? "Runs in your browser, so it can reach localhost and your local network. A browser cannot open raw TCP connections, so it detects services by how they react to an HTTP request. For an exact answer, use the command shown under each port."
+            : "Runs on our server, so it only reaches public hosts. localhost and private addresses are blocked."}
+        </p>
+      </ToolSection>
+
+      {error && (
+        <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-300">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {(isScanning || results.length > 0) && scanned && (
+        <ToolSection>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm font-semibold">
+              <span className="text-emerald-600 dark:text-emerald-400">{count("OPEN")} open</span>
+              <span className="text-red-600 dark:text-red-400">{count("CLOSED")} closed</span>
+              <span className="text-amber-600 dark:text-amber-400">
+                {count("TIMEOUT") + count("BLOCKED")} no answer / blocked
+              </span>
             </div>
+            <span className="font-mono text-xs text-muted">
+              {scanned.host} · {scanned.protocol.toUpperCase()} · {isScanning ? `${progress.done}/${progress.total}` : `${results.length} checked`}
+            </span>
           </div>
 
-          <GlassCard className="p-8 flex flex-col gap-8 border-l-4 border-l-accent bg-accent/[0.02]">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-              <div className="md:col-span-2 flex flex-col gap-3">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted/60 flex items-center gap-2">
-                  <Globe className="size-3" /> Target Host or IP
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={host}
-                    onChange={(e) => setHost(e.target.value)}
-                    placeholder="e.g. scanme.nmap.org"
-                    className="toolsy-input w-full bg-black/40 border-2 border-white/5 font-mono text-sm pl-12 h-14 rounded-2xl focus:border-accent/40 transition-all"
-                    onKeyDown={(e) => e.key === "Enter" && handleScan()}
-                  />
-                  <Server className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted/40" />
-                </div>
-              </div>
-
-              <div className="md:col-span-2 flex flex-col gap-3">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted/60 flex items-center gap-2">
-                  <Network className="size-3" /> Ports (comma/range)
-                </label>
-                <input
-                  type="text"
-                  value={portInput}
-                  onChange={(e) => setPortInput(e.target.value)}
-                  placeholder="e.g. 80,443,8080-8090"
-                  className="toolsy-input w-full bg-black/40 border-2 border-white/5 font-mono text-sm h-14 rounded-2xl focus:border-accent/40 transition-all px-6"
-                  onKeyDown={(e) => e.key === "Enter" && handleScan()}
-                />
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted/60 flex items-center gap-2">
-                  <Radio className="size-3" /> Protocol
-                </label>
-                <div className="flex gap-2 h-14">
-                  {[
-                    { id: "tcp", label: "TCP", icon: Wifi },
-                    { id: "udp", label: "UDP", icon: Radio }
-                  ].map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => setProtocol(p.id as "tcp" | "udp")}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all
-                        ${protocol === p.id
-                          ? "bg-accent text-white border-accent shadow-lg shadow-accent/20"
-                          : "bg-black/40 border-white/5 text-muted hover:border-white/20"}`}
-                    >
-                      <p.icon className="size-3.5" /> {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          {isScanning && (
+            <div className="h-1 overflow-hidden rounded-full bg-border" aria-hidden>
+              <div
+                className="h-full bg-accent transition-[width] duration-150"
+                style={{ width: scanned.mode === "browser" ? `${(progress.done / Math.max(progress.total, 1)) * 100}%` : "40%" }}
+              />
             </div>
+          )}
 
-            {/* Presets Grid */}
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] font-black uppercase tracking-widest text-muted/40">Common Services (click to add)</span>
-                <button 
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-muted hover:text-accent transition-colors"
-                >
-                  <Settings2 className="size-3" /> {showAdvanced ? "Hide Advanced" : "Advanced"}
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.port}
-                    onClick={() => handlePresetSelect(p.port)}
-                    className={`px-4 py-2 rounded-xl border font-mono text-[10px] uppercase tracking-wider transition-all
-                      ${portInput.split(",").map(x => x.trim()).includes(String(p.port))
-                        ? "bg-accent text-white border-accent shadow-lg shadow-accent/20" 
-                        : "bg-white/[0.02] border-white/5 text-muted hover:bg-white/[0.06] hover:border-white/10"}`}
-                  >
-                    {p.label} <span className="opacity-40 ml-1">:{p.port}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <AnimatePresence>
-              {showAdvanced && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                  <div className="p-6 rounded-2xl bg-black/40 border border-white/5 flex flex-col gap-4">
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-muted/60">
-                        <span>Timeout Threshold</span>
-                        <span className="text-accent">{timeoutMs}ms</span>
-                      </div>
-                      <input type="range" min="500" max="10000" step="500" value={timeoutMs} onChange={(e) => setTimeoutMs(Number(e.target.value))} className="accent-accent w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer" />
-                    </div>
-                    {scanMode === "local" && (
-                      <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                        <AlertTriangle className="size-4 text-amber-500 shrink-0" />
-                        <p className="text-[10px] text-amber-200/60 uppercase font-bold leading-relaxed">Local mode uses browser fetch and is subject to CORS/mixed-content policies. Best for internal web services.</p>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {scanMode === "local" && protocol === "udp" && (
-              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10 flex items-start gap-3">
-                <AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" />
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">UDP Scan Unsupported Locally</span>
-                  <p className="text-[11px] text-amber-200/60 font-medium leading-relaxed">
-                    UDP scanning is technically unsupported inside browser sandboxes. The browser sandbox environment lacks raw UDP socket capabilities.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <button 
-              onClick={handleScan}
-              disabled={isScanning || !host || !portInput}
-              className="w-full h-16 bg-accent text-white rounded-2xl font-black uppercase tracking-[0.3em] text-sm hover:opacity-90 disabled:opacity-20 transition-all shadow-[0_0_40px_rgba(var(--accent-rgb),0.3)] active:scale-[0.98] flex items-center justify-center gap-3"
-            >
-              {isScanning ? <Activity className="size-5 animate-pulse" /> : <Network className="size-5" />}
-              {isScanning ? "Engaging Radar..." : "Initiate Scan"}
-            </button>
-          </GlassCard>
-        </section>
-
-        {/* Real-time scan visualizer timeline */}
-        {(isScanning || displayResults.length > 0) && (
-          <section className="flex flex-col gap-4">
-            <div className="flex items-center justify-between ml-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-accent/70 flex items-center gap-2">
-                <Activity className="size-4 animate-pulse" /> Radar Scan Feed
-              </span>
-              {isScanning && (
-                <span className="text-[9px] font-mono text-muted/60 uppercase">
-                  Checking port <span className="text-accent font-black">:{currentScanningPort}</span> ({localScanProgress}/{totalToScan})
-                </span>
-              )}
-            </div>
-            
-            <GlassCard className="p-6 flex flex-col gap-6 relative overflow-hidden">
-              {/* Progress bar */}
-              {isScanning && (
-                <div className="absolute top-0 left-0 right-0 h-1 bg-white/5">
-                  <motion.div
-                    className="h-full bg-accent"
-                    initial={{ width: "0%" }}
-                    animate={{ width: `${(localScanProgress / totalToScan) * 100}%` }}
-                    transition={{ ease: "easeInOut", duration: 0.1 }}
-                  />
-                </div>
-              )}
-              
-              {/* Port Matrix Grid */}
-              <div className="flex flex-wrap gap-2.5 max-h-36 overflow-y-auto p-1 custom-scrollbar">
-                {parseClientPorts(portInput).map((portNum) => {
-                  const res = displayResults.find(r => r.port === portNum);
-                  const isCurrent = currentScanningPort === portNum;
-                  
-                  let bg = "bg-white/[0.02] border-white/5 text-muted/40";
-                  let border = "border-white/5";
-                  let text = "text-muted/40";
-                  
-                  if (res) {
-                    if (res.status === "OPEN") {
-                      bg = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]";
-                      border = "border-emerald-500/30";
-                      text = "text-emerald-400";
-                    } else if (res.status === "CLOSED") {
-                      bg = "bg-red-500/10 text-red-400 border-red-500/25";
-                      border = "border-red-500/25";
-                      text = "text-red-400";
-                    } else if (res.status === "TIMEOUT") {
-                      bg = "bg-amber-500/10 text-amber-400 border-amber-500/25";
-                      border = "border-amber-500/25";
-                      text = "text-amber-400";
-                    } else {
-                      bg = "bg-rose-500/10 text-rose-400 border-rose-500/25";
-                      border = "border-rose-500/25";
-                      text = "text-rose-400";
-                    }
-                  } else if (isCurrent) {
-                    bg = "bg-accent/20 border-accent text-accent animate-pulse shadow-[0_0_12px_var(--accent-glow)]";
-                    border = "border-accent";
-                    text = "text-accent";
-                  }
-
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted">
+                  <th className="w-8 py-2" />
+                  <th className="py-2 pr-4 font-semibold">Port</th>
+                  <th className="py-2 pr-4 font-semibold">Status</th>
+                  <th className="py-2 pr-4 font-semibold">Time</th>
+                  <th className="py-2 font-semibold">Service</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r) => {
+                  const s = STATUS_STYLE[r.status];
+                  const Icon = s.icon;
+                  const intel = PORT_ENCYCLOPEDIA[r.port];
+                  const open = expanded === r.port;
+                  const cmd = terminalCommand(scanned.host, r.port);
                   return (
-                    <div
-                      key={portNum}
-                      onClick={() => res && setSelectedPort(portNum)}
-                      className={`px-3 py-1.5 rounded-lg border text-[10px] font-mono font-black tracking-wider flex items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95 ${bg} ${border} ${text}`}
-                    >
-                      {portNum}
-                    </div>
+                    <Fragment key={r.port}>
+                      <tr
+                        onClick={() => setExpanded(open ? null : r.port)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setExpanded(open ? null : r.port);
+                          }
+                        }}
+                        tabIndex={0}
+                        aria-expanded={open}
+                        className="cursor-pointer border-b border-border/60 hover:bg-surface focus-visible:bg-surface"
+                      >
+                        <td className="py-3 text-muted">
+                          {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                        </td>
+                        <td className="py-3 pr-4 font-mono font-semibold">{r.port}</td>
+                        <td className="py-3 pr-4">
+                          <span className={`inline-flex items-center gap-1.5 font-semibold ${s.className}`}>
+                            <Icon className="size-4" />
+                            {s.label}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-xs text-muted">{r.latency}ms</td>
+                        <td className="py-3 text-muted">{intel ? intel.name : "—"}</td>
+                      </tr>
+                      {open && (
+                        <tr className="border-b border-border/60 bg-surface">
+                          <td />
+                          <td colSpan={4} className="space-y-3 py-4 pr-4 text-sm">
+                            <p>{r.message}</p>
+                            {intel && (
+                              <div className="space-y-2 text-muted">
+                                <p>{intel.description}</p>
+                                {intel.warning && (
+                                  <p className="text-amber-700 dark:text-amber-300">{intel.warning}</p>
+                                )}
+                                {intel.hardening.length > 0 && (
+                                  <ul className="list-disc space-y-1 pl-5">
+                                    {intel.hardening.map((h) => (
+                                      <li key={h}>{h}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
+                            {scanned.mode === "browser" && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="toolsy-label">Exact check in your terminal</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyCommand(cmd)}
+                                    className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground"
+                                  >
+                                    <Copy className="size-3.5" />
+                                    {copied ? "Copied" : "Copy"}
+                                  </button>
+                                </div>
+                                <pre className="overflow-x-auto rounded-lg border border-border bg-background p-3 font-mono text-xs">{cmd}</pre>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
-              </div>
-            </GlassCard>
-          </section>
-        )}
-
-        {/* RESULTS SECTION */}
-        <section className="flex flex-col gap-6">
-          <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.5em] text-muted/40 ml-2">
-            <Activity className="size-4" /> 02. Analysis
+              </tbody>
+            </table>
           </div>
-          
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-            {/* Summary + Table */}
-            <div className="xl:col-span-7 flex flex-col gap-6">
-              {/* Summary Bar */}
-              <GlassCard className="p-6">
-                {!scanResult ? (
-                  <div className="flex flex-col items-center justify-center py-8 gap-3">
-                    <Radio className="size-8 text-muted/10" />
-                    <span className="text-[9px] font-black text-muted/30 uppercase tracking-[0.2em]">Awaiting Scan Data</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                      <div className="flex items-center gap-3">
-                        <CheckCircle2 className="size-4 text-emerald-400" />
-                        <span className="text-xs font-black text-emerald-400">{openCount} Open</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <XCircle className="size-4 text-red-400" />
-                        <span className="text-xs font-black text-red-400">{closedCount} Closed</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Clock className="size-4 text-amber-400" />
-                        <span className="text-xs font-black text-amber-400">{timeoutCount} Timed Out</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-[9px] text-muted/40 font-mono">
-                      {scanResult.host} / {scanResult.protocol.toUpperCase()}
-                    </div>
-                  </div>
-                )}
-              </GlassCard>
-
-              {/* Filter Bar */}
-              {scanResult && scanResult.results.length > 0 && (
-                <GlassCard className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Filter className="size-3.5 text-muted/40" />
-                      <span className="text-[9px] font-black uppercase tracking-widest text-muted/40 mr-2">Filter</span>
-                      <div className="flex gap-1">
-                        {STATUS_FILTERS.map(f => (
-                          <button
-                            key={f}
-                            onClick={() => setStatusFilter(f)}
-                            className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all
-                              ${statusFilter === f ? "bg-accent/20 text-accent border border-accent/30" : "text-muted/60 hover:text-foreground hover:bg-white/5"}`}
-                          >
-                            {f === "ALL" ? `All (${scanResult.results.length})` : f}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowResultsTable(!showResultsTable)}
-                      className="text-muted/40 hover:text-foreground transition-colors"
-                    >
-                      {showResultsTable ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                    </button>
-                  </div>
-                </GlassCard>
-              )}
-
-              {/* Results Table */}
-              {scanResult && scanResult.results.length > 0 && showResultsTable && (
-                <GlassCard className="overflow-hidden">
-                  <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="border-b border-white/5 bg-white/[0.02]">
-                          <th className="p-4 cursor-pointer" onClick={() => toggleSort("port")}>
-                            <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted/40">
-                              Port <ArrowUpDown className="size-3" />
-                            </div>
-                          </th>
-                          <th className="p-4 cursor-pointer" onClick={() => toggleSort("status")}>
-                            <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted/40">
-                              Status <ArrowUpDown className="size-3" />
-                            </div>
-                          </th>
-                          <th className="p-4 cursor-pointer" onClick={() => toggleSort("latency")}>
-                            <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted/40">
-                              Latency <ArrowUpDown className="size-3" />
-                            </div>
-                          </th>
-                          <th className="p-4">
-                            <span className="text-[8px] font-black uppercase tracking-widest text-muted/40">Service</span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredResults.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="p-8 text-center text-[9px] font-black uppercase tracking-widest text-muted/20">
-                              No matching results
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredResults.map((r, i) => {
-                            const info = getStatusInfo(r.status);
-                            const iconClass = info.color;
-                            const Icon = info.icon;
-                            const intel = PORT_ENCYCLOPEDIA[r.port];
-                            return (
-                              <tr
-                                key={i}
-                                onClick={() => setSelectedPort(r.port)}
-                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedPort(r.port); } }}
-                                tabIndex={0}
-                                role="button"
-                                aria-label={`Port ${r.port}: ${r.status}`}
-                                className={`border-b border-white/[0.03] cursor-pointer transition-all hover:bg-white/[0.03] ${selectedPort === r.port ? "bg-accent/5" : ""}`}
-                              >
-                                <td className="p-4">
-                                  <span className="text-sm font-black font-mono text-foreground">:{r.port}</span>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex items-center gap-2">
-                                    <Icon className={`size-3.5 ${iconClass}`} />
-                                    <span className={`text-[10px] font-black uppercase tracking-wider ${iconClass}`}>{r.status}</span>
-                                  </div>
-                                </td>
-                                <td className="p-4">
-                                  <span className="text-[11px] font-mono font-bold text-muted">{r.latency}ms</span>
-                                </td>
-                                <td className="p-4">
-                                  {intel ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[9px] font-black text-foreground uppercase">{intel.name}</span>
-                                      <span className="text-[8px] font-mono text-muted/40">{intel.protocol}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[9px] font-mono text-muted/40">Unknown</span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </GlassCard>
-              )}
-            </div>
-
-            {/* Intelligence Panel */}
-            <GlassCard className="xl:col-span-5 p-8">
-              {!selectedIntelligence ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-12 gap-6 border-2 border-dashed border-white/5 rounded-[32px]">
-                  <Shield className="size-16 text-muted/10" />
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black text-muted/30 uppercase tracking-[0.2em]">Select a Port for Intelligence</span>
-                    <span className="text-[8px] font-bold text-muted/20 uppercase tracking-widest">Click any row in the results table above</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-8">
-                  <div className="flex items-center justify-between border-b border-white/5 pb-6">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-xl font-black uppercase tracking-tight text-foreground">{selectedIntelligence.name}</h3>
-                        <span className="px-2 py-1 rounded-lg bg-accent/10 border border-accent/20 text-[9px] font-black text-accent">{selectedIntelligence.protocol}</span>
-                      </div>
-                      <p className="text-xs text-muted/60">{selectedIntelligence.description}</p>
-                    </div>
-                    <div className={`px-4 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest shadow-lg shadow-black/20
-                      ${selectedIntelligence.riskClassification.includes('CRITICAL') ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
-                      {selectedIntelligence.riskClassification}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="flex flex-col gap-6">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted/40">Common Usage</span>
-                        <p className="text-[11px] text-foreground/80 leading-relaxed font-medium">{selectedIntelligence.commonUsage}</p>
-                      </div>
-                      {selectedIntelligence.warning && (
-                        <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/10 flex flex-col gap-2">
-                           <span className="text-[9px] font-black uppercase tracking-widest text-red-400 flex items-center gap-2"><AlertTriangle className="size-3" /> Security Warning</span>
-                           <p className="text-[11px] text-red-200/60 font-medium">{selectedIntelligence.warning}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 flex items-center gap-2"><Shield className="size-4" /> Hardening</span>
-                      <div className="flex flex-col gap-3">
-                        {selectedIntelligence.hardening.map((h, i) => (
-                          <div key={i} className="flex items-start gap-3 text-[11px] text-muted/80">
-                            <CheckCircle2 className="size-4 text-emerald-500 shrink-0 mt-0.5" />
-                            <span className="leading-relaxed">{h}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {scanResult && (
-                    <div className="mt-4 pt-4 border-t border-white/5 flex items-center gap-4">
-                      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-muted/40">
-                        <Globe className="size-3" /> {scanResult.host}
-                      </div>
-                      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-muted/40">
-                        <Radio className="size-3" /> {scanResult.protocol.toUpperCase()}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </GlassCard>
-          </div>
-        </section>
-      </div>
+        </ToolSection>
+      )}
     </ToolContainer>
   );
 }

@@ -1,7 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { parseClientPorts, scanPortLocally } from "@/lib/local-port-scanner";
+import { isLocalTarget, parseClientPorts, scanPortLocally } from "@/lib/local-port-scanner";
 
 describe("local-port-scanner", () => {
+  describe("isLocalTarget", () => {
+    it("detects loopback and private hosts", () => {
+      for (const h of ["localhost", "127.0.0.1", "10.1.2.3", "172.20.0.5", "192.168.1.1", "[::1]", "nas.local"]) {
+        expect(isLocalTarget(h)).toBe(true);
+      }
+    });
+
+    it("treats public hosts as non-local", () => {
+      for (const h of ["", "example.com", "8.8.8.8", "172.32.0.1"]) {
+        expect(isLocalTarget(h)).toBe(false);
+      }
+    });
+  });
+
   describe("parseClientPorts", () => {
     it("parses single port correctly", () => {
       expect(parseClientPorts("80")).toEqual([80]);
@@ -67,6 +81,26 @@ describe("local-port-scanner", () => {
       const result = await scanPortLocally("localhost", 80, 1000);
       expect(result.status).toBe("OPEN");
       expect(result.latency).toBeGreaterThanOrEqual(40);
+    });
+
+    it("uses the calibrated baseline to tell refused from non-HTTP services", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 40));
+        throw new TypeError("Failed to fetch");
+      }));
+
+      const slowBaseline = await scanPortLocally("localhost", 5000, 1000, 40);
+      expect(slowBaseline.status).toBe("CLOSED");
+      const fastBaseline = await scanPortLocally("localhost", 5000, 1000, 2);
+      expect(fastBaseline.status).toBe("OPEN");
+    });
+
+    it("reports browser-restricted ports as BLOCKED without fetching", async () => {
+      const mockFetch = vi.fn();
+      vi.stubGlobal("fetch", mockFetch);
+      const result = await scanPortLocally("localhost", 22, 1000);
+      expect(result.status).toBe("BLOCKED");
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it("resolves as TIMEOUT when fetch is aborted", async () => {
