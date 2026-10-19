@@ -70,26 +70,26 @@ const TOOL_MANUALS: Record<string, StaticManual> = {
     ]
   },
   "pcap-analyzer": {
-    title: "Packet Forensic Manual",
-    subtitle: "Understanding Network Traffic Analysis",
+    title: "Packet Capture Guide",
+    subtitle: "What the analyzer shows and what it does not",
     columns: [
       {
-        title: "CONVERSATION TRIAGE",
+        title: "STREAMS",
         variant: "info",
         icon: Activity,
-        description: "Analyze packet sequences to reconstruct TCP streams, UDP conversations, and application layer sessions. Crucial for detecting protocol anomalies and diagnosing connection latency."
+        description: "Packets are grouped by protocol and both endpoints (address and port). Open a stream to filter its packets, or follow a TCP stream to read the data exchanged in each direction."
       },
       {
-        title: "IOC EXTRACTION",
-        variant: "danger",
-        icon: Shield,
-        description: "Identify Indicators of Compromise such as suspicious IP destinations, unrecognized DNS queries, unencrypted cleartext credentials, or malicious payload signatures embedded in the streams."
+        title: "INDICATORS",
+        variant: "success",
+        icon: CheckCircle2,
+        description: "Domains from DNS queries, HTTP Host headers and TLS server names, plus IP addresses and requested URLs. Copy them into a block list or a reputation lookup."
       },
       {
-        title: "ANOMALY DETECTION",
+        title: "LIMITS",
         variant: "warning",
         icon: AlertTriangle,
-        description: "Flags out-of-order packets, duplicate ACKs, zero window advertisements, and unusual retransmissions which indicate packet loss, network congestion, or potential denial-of-service attempts."
+        description: "TLS traffic stays encrypted: only the server name in the handshake is visible. Fragmented IP packets and out-of-order TCP data are not reassembled, and there is no retransmission or loss analysis."
       }
     ]
   },
