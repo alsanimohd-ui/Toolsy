@@ -1,65 +1,32 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
 import PortCheckerClient from "@/app/tools/network-security/port-checker/client-page";
 
-// Mock Next.js Link
-vi.mock("next/link", () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
-  ),
-}));
-
-// Mock framer-motion to avoid animation issues in test
-vi.mock("framer-motion", () => ({
-  motion: {
-    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
-    button: ({ children, ...props }: React.HTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+const fill = (host: string, ports: string) => {
+  fireEvent.change(screen.getByPlaceholderText(/localhost, 192\.168/), { target: { value: host } });
+  fireEvent.change(screen.getByPlaceholderText(/3000, 5432/), { target: { value: ports } });
+};
 
 describe("PortChecker UI", () => {
-  it("displays warning card when UDP is selected in Local (Browser) mode", async () => {
+  it("picks the browser for local hosts and the server for public ones", () => {
     render(<PortCheckerClient />);
 
-    // Click "Local (Browser)" mode button
-    const localModeBtn = screen.getByText("Local (Browser)");
-    fireEvent.click(localModeBtn);
+    fill("localhost", "3000");
+    expect(screen.getByRole("radio", { name: "My browser" }).getAttribute("aria-checked")).toBe("true");
 
-    // Click "UDP" protocol button
-    const udpBtn = screen.getByText("UDP");
-    fireEvent.click(udpBtn);
-
-    // Verify that the warning message is displayed in the UI
-    const warning = screen.getByText(/UDP scanning is technically unsupported inside browser sandboxes/i);
-    expect(warning).toBeDefined();
+    fill("example.com", "443");
+    expect(screen.getByRole("radio", { name: "Our server" }).getAttribute("aria-checked")).toBe("true");
   });
 
-  it("returns structured scan error status and explanation when attempting UDP scan in Local mode", async () => {
+  it("explains that UDP is not possible from the browser", async () => {
     render(<PortCheckerClient />);
 
-    // Switch to Local mode and UDP protocol
-    fireEvent.click(screen.getByText("Local (Browser)"));
-    fireEvent.click(screen.getByText("UDP"));
+    fill("127.0.0.1", "53");
+    fireEvent.click(screen.getByRole("radio", { name: "UDP" }));
+    fireEvent.click(screen.getByRole("button", { name: /Check ports/i }));
 
-    // Enter target host and port
-    const hostInput = screen.getByPlaceholderText("e.g. scanme.nmap.org");
-    fireEvent.change(hostInput, { target: { value: "127.0.0.1" } });
-
-    // The ports input is queried by placeholder or generic selector
-    const portInput = screen.getByPlaceholderText("e.g. 80,443,8080-8090");
-    fireEvent.change(portInput, { target: { value: "53" } });
-
-    // Click "Initiate Scan"
-    const scanBtn = screen.getByRole("button", { name: /Initiate Scan/i });
-    fireEvent.click(scanBtn);
-
-    // Verify that the structured error result is listed
-    const errorStatuses = await screen.findAllByText("ERROR");
-    expect(errorStatuses.length).toBeGreaterThan(0);
-
-    const desc = screen.getByText(/browser sandbox environment/i);
-    expect(desc).toBeDefined();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/cannot send UDP/i);
   });
 });
