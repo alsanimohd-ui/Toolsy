@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-18T21:32:49.240Z",
+  "generatedAt": "2026-10-19T17:56:19.663Z",
   "version": "1.0.0",
   "projectName": "Toolsy (Mi)",
   "platform": {
@@ -172,6 +172,7 @@
       "log-store.ts",
       "log-worker-protocol.ts",
       "log-worker.ts",
+      "pcap.ts",
       "port-intelligence.ts",
       "regex-analyzer.ts",
       "regex-engine.ts",
