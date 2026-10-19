@@ -1,6 +1,6 @@
 # Manifest — Toolsy (Mi)
 
-_Generated: 2026-10-19T18:45:17.991Z_
+_Generated: 2026-10-19T19:16:57.295Z_
 
 ---
 
@@ -151,6 +151,7 @@ Keyframes: toolsy, grid, hud, gradient, pulse, orbit, orbit, text, scan, hex, au
 - `lib/log-worker.ts`
 - `lib/pcap.ts`
 - `lib/port-intelligence.ts`
+- `lib/qr-payload.ts`
 - `lib/regex-analyzer.ts`
 - `lib/regex-engine.ts`
 - `lib/regex-worker.ts`
